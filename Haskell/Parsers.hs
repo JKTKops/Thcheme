@@ -2,15 +2,16 @@ module Parsers (readExpr) where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
 import Control.Monad (liftM, guard)
+import Control.Monad.Except (throwError)
 import Numeric (readInt, readOct, readHex)
 
-import LispVal
+import LispVal (LispVal (..), LispErr (..), ThrowsError)
 
 
-readExpr :: String -> LispVal
+readExpr :: String -> ThrowsError LispVal
 readExpr input = case parse parseExpr "Lisp" input of
-    Left err  -> String $ "No match: " ++ show err
-    Right val -> val
+    Left err  -> throwError $ Parser err
+    Right val -> return val
 
 parseExpr :: Parser LispVal
 parseExpr = try parseNumber 

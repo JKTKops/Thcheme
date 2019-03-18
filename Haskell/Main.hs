@@ -2,15 +2,17 @@ module Main where
 
 import System.Environment
 import System.IO (hFlush, stdout)
+import Control.Monad (liftM)
 
-import LispVal
 import Parsers (readExpr)
 import Evaluation (eval)
+import LispVal (extractValue, trapError)
 
 main :: IO ()
 main = do
   expr <- prompt ">>> "
-  print . eval $ readExpr expr
+  evaled <- return . liftM show $ readExpr expr >>= eval
+  putStrLn . extractValue $ trapError evaled
   main
   where
     prompt s = do
