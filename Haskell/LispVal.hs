@@ -14,6 +14,7 @@ data LispVal = Atom String
              | DottedList [LispVal] LispVal
              | Number Integer
              | String String
+             | Char Char
              | Bool Bool
 
 instance Show LispVal where show = showVal
@@ -40,6 +41,11 @@ showVal :: LispVal -> String
 showVal (Atom s) = s
 showVal (Number n) = show n
 showVal (String s) = "\"" ++ s ++ "\""
+showVal (Char c)   = "#\\" ++ case c of
+    ' '       -> "space"
+    '\t'      -> "tab"
+    '\n'      -> "newline"
+    otherwise -> pure c
 showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
 showVal (List ls) = "(" ++ unwordsList ls ++ ")"

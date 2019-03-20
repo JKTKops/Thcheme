@@ -15,6 +15,7 @@ readExpr input = case parse parseExpr "Lisp" input of
 
 parseExpr :: Parser LispVal
 parseExpr = try parseNumber 
+         <|> try parseChar -- #\atom is a valid name for an atom 
          <|> parseAtom 
          <|> parseString
          <|> parseQuoted
@@ -93,6 +94,18 @@ parseNumber = do
 
         liftNumber :: Integer -> Parser LispVal
         liftNumber = return . Number
+
+parseChar :: Parser LispVal
+parseChar = do
+    prefix <- string "#\\"
+    char   <- do try $ string "space"
+                 return ' '
+              <|> do try $ string "newline"
+                     return '\n'
+              <|> do try $ string "tab" 
+                     return '\t'
+              <|> anyChar
+    return $ Char char
 
 parseList :: Parser LispVal
 parseList = liftM List $ sepBy parseExpr spaces
