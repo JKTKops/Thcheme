@@ -21,8 +21,7 @@ apply func args = maybe
                 $ lookup func primitives
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
-primitives = [
-               ("+", numericBinop (+))
+primitives = [ ("+", numericBinop (+))
              , ("-", numericBinop (-))
              , ("*", numericBinop (*))
              , ("/", numericBinop div)
@@ -35,6 +34,19 @@ primitives = [
              , ("boolean?", guardOneArg isBool)
              , ("list?", guardOneArg isList)
              , ("pair?", guardOneArg isPair)
+             , ("=", numBoolBinop (==))
+             , ("<", numBoolBinop (<))
+             , (">", numBoolBinop (>))
+             , ("/=", numBoolBinop (/=))
+             , (">=", numBoolBinop (>=))
+             , ("<=", numBoolBinop (<=))
+             , ("&&", boolBoolBinop (&&))
+             , ("||", boolBoolBinop (||))
+             , ("string=?", strBoolBinop (==))
+             , ("string<?", strBoolBinop (<))
+             , ("string>?", strBoolBinop (>))
+             , ("string<=?", strBoolBinop (<=))
+             , ("string>=?", strBoolBinop (>=))
              ]
 
 numericBinop :: (Integer -> Integer -> Integer)
@@ -42,11 +54,35 @@ numericBinop :: (Integer -> Integer -> Integer)
              -> ThrowsError LispVal
 numericBinop op           []  = throwError $ NumArgs 2 []
 numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params        = mapM unpackNum params >>= return . Number . foldl1 op
+numericBinop op params        = mapM unwrapNum params >>= return . Number . foldl1 op
 
-unpackNum :: LispVal -> ThrowsError Integer
-unpackNum (Number n) = return n
-unpackNum notNum     = throwError $ TypeMismatch "number" notNum
+boolBinop :: (LispVal -> ThrowsError a) -- unwrapper
+          -> (a -> a -> Bool) -- binary boolean operation
+          -> [LispVal] -- args; expects 2
+          -> ThrowsError LispVal -- output LispVal:Bool
+boolBinop unwrapper op args =
+    if length args /= 2
+    then throwError $ NumArgs 2 args
+    else do
+        left <- unwrapper $ args !! 0
+        right <- unwrapper $ args !! 1
+        return . Bool $ left `op` right
+
+numBoolBinop = boolBinop unwrapNum
+strBoolBinop = boolBinop unwrapStr
+boolBoolBinop = boolBinop unwrapBool
+
+unwrapNum :: LispVal -> ThrowsError Integer
+unwrapNum (Number n) = return n
+unwrapNum notNum     = throwError $ TypeMismatch "number" notNum
+
+unwrapStr :: LispVal -> ThrowsError String
+unwrapStr (String s) = return s
+unwrapStr notString  = throwError $ TypeMismatch "string" notString
+
+unwrapBool :: LispVal -> ThrowsError Bool
+unwrapBool (Bool b) = return b
+unwrapBool notBool  = throwError $ TypeMismatch "boolean" notBool
 
 guardOneArg :: (LispVal -> LispVal) -> [LispVal] -> ThrowsError LispVal
 guardOneArg func args@[x] = return $ func x
