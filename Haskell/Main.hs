@@ -7,31 +7,35 @@ import Control.Monad (liftM)
 import Parsers (readExpr)
 import Evaluation (eval)
 import LispVal (extractValue, trapError)
+import Environment (Env, nullEnv, runIOThrows, liftThrows)
 
 main :: IO ()
 main = do
     args <- getArgs
     if length args == 0
     then runRepl
-    else evalAndPrint $ head args
+    else runOne $ head args
         
 runRepl :: IO ()
-runRepl = until_ (== "quit") (prompt ">>> ") evalAndPrint
+runRepl = nullEnv >>= until_ (== "quit") (prompt ">>> ") . evalAndPrint
+
+runOne :: String -> IO ()
+runOne expr = nullEnv >>= flip evalAndPrint expr
 
 until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
 until_ pred prompt action = do
-    result <- prompt
-    if pred result
+    input <- prompt
+    if pred input
     then return ()
-    else action result >> until_ pred prompt action
+    else action input >> until_ pred prompt action
 
-evalAndPrint :: String -> IO ()
-evalAndPrint expr = evalString expr >>= putStrLn
+evalAndPrint :: Env -> String -> IO ()
+evalAndPrint env expr = evalString env expr >>= putStrLn
 
-evalString :: String -> IO String
-evalString expr = return . extractValue $ evaluationOutput where
-    evaluationOutput = trapError . liftM show $ evaluation
-    evaluation = readExpr expr >>= eval
+evalString :: Env -> String -> IO String
+evalString env expr = runIOThrows $ evaluationOutput where
+    evaluationOutput = liftM show $ evaluation
+    evaluation = (liftThrows $ readExpr expr) >>= eval env
 
 prompt :: String -> IO String
 prompt s = flushStr s >> getLine

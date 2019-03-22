@@ -28,7 +28,7 @@ data LispErr = NumArgs Integer [LispVal]
              | UnboundVar String String
              | Default String
 
-instance Show LispErr where show = showErr
+instance Show LispErr where show = ("Error: " ++ ) . showErr
 
 type ThrowsError = Either LispErr
 
