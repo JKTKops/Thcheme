@@ -9,6 +9,7 @@ module LispVal (
 import Text.ParserCombinators.Parsec (ParseError)
 import Control.Monad.Except (throwError, catchError)
 
+-- TODO maybe R5RS numeric tower, or just some sort of float at least
 data LispVal = Atom String
              | List [LispVal]
              | DottedList [LispVal] LispVal
