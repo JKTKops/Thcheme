@@ -6,8 +6,8 @@ import Control.Monad (liftM)
 
 import Parsers (readExpr)
 import Evaluation (eval)
-import LispVal (extractValue, trapError)
-import Environment (Env, nullEnv, runIOThrows, liftThrows)
+import LispVal (Env, extractValue, trapError)
+import Environment (primitiveBindings, runIOThrows, liftThrows)
 
 main :: IO ()
 main = do
@@ -17,10 +17,10 @@ main = do
     else runOne $ head args
         
 runRepl :: IO ()
-runRepl = nullEnv >>= until_ (== "quit") (prompt ">>> ") . evalAndPrint
+runRepl = primitiveBindings >>= until_ (== "quit") (prompt ">>> ") . evalAndPrint
 
 runOne :: String -> IO ()
-runOne expr = nullEnv >>= flip evalAndPrint expr
+runOne expr = primitiveBindings >>= flip evalAndPrint expr
 
 until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
 until_ pred prompt action = do

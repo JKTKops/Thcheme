@@ -4,10 +4,8 @@ import Data.IORef
 import Control.Monad.Except (liftM, liftIO, throwError)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)
 
-import LispVal
-
--- TODO use Data.HashMap.Lazy instead
-type Env = IORef [(String, IORef LispVal)]
+import Primitives (primitives)
+import LispVal (Env, LispErr (..), LispVal (..), ThrowsError, extractValue, trapError)
 
 type IOThrowsError = ExceptT LispErr IO
 
@@ -53,6 +51,10 @@ bindVars envRef bindings = readIORef envRef
 
 nullEnv :: IO Env
 nullEnv = newIORef []
+
+primitiveBindings :: IO Env
+primitiveBindings = nullEnv >>= (flip bindVars $ map makePrimitive primitives)
+    where makePrimitive (name, func) = (name, Primitive func name)
     
 liftThrows :: ThrowsError a -> IOThrowsError a
            -- (MonadError m a) => Either e a -> m a

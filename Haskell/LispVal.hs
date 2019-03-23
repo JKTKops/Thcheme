@@ -1,13 +1,17 @@
 module LispVal (
-  LispVal (..),
-  LispErr (..),
-  ThrowsError,
-  trapError,
-  extractValue
-) where
+    Env
+    , LispVal (..)
+    , LispErr (..)
+    , ThrowsError
+    , trapError
+    , extractValue
+    ) where
 
 import Text.ParserCombinators.Parsec (ParseError)
 import Control.Monad.Except (throwError, catchError)
+import Data.IORef
+
+type Env = IORef [(String, IORef LispVal)]
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
 data LispVal = Atom String
@@ -17,6 +21,13 @@ data LispVal = Atom String
              | String String
              | Char Char
              | Bool Bool
+             | Primitive ([LispVal] -> ThrowsError LispVal) String
+             | Func { params  :: [String]
+                    , vararg  :: Maybe String
+                    , body    :: [LispVal]
+                    , closure :: Env 
+                    , name    :: Maybe String
+                    }
 
 instance Show LispVal where show = showVal
 
@@ -51,6 +62,11 @@ showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
 showVal (List ls) = "(" ++ unwordsList ls ++ ")"
 showVal (DottedList ls l) = "(" ++ unwordsList ls ++ " . " ++ show l ++ ")"
+showVal (Primitive _ name) = "<Function " ++ name ++ ">"
+showVal (Func args varargs body env name) = "(" ++ (maybe "lambda" id name)
+    ++ " (" ++ unwords args ++ (case varargs of
+        Nothing  -> ""
+        Just arg -> " . " ++ arg) ++ ") ...)"
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname

@@ -2,20 +2,13 @@
 {-# LANGUAGE ExistentialQuantification #-}
 module Evaluation (eval) where
 
-import Control.Monad.Except (catchError, throwError)
+import Control.Monad.Except (liftIO, catchError, throwError)
 import Control.Monad (liftM, mapM)
 import qualified Data.Char as C 
     (ord, chr)
 
 import LispVal
 import Environment
-import qualified Primitives.Math as Math
-import qualified Primitives.List as List
-import qualified Primitives.Bool as BoolOps
-import qualified Primitives.Char as CharOps
-import qualified Primitives.Comparison as Comparison
-import qualified Primitives.TypeCheck as TypeCheck
-import qualified Primitives.TypeTransformers as TypeCast
 
 eval :: Env -> LispVal -> IOThrowsError LispVal
 eval env val@(String _) = return val
@@ -29,70 +22,56 @@ eval env (List [Atom "if", pred, conseq, alt]) = do
     case result of
         Bool False -> eval env alt
         otherwise  -> eval env conseq
+
 eval env (List [Atom "set!", Atom var, form]) =
     eval env form >>= setVar env var
+
 eval env (List [Atom "define", Atom var, form]) =
     eval env form >>= defineVar env var
-eval env (List (Atom func : args)) = mapM (eval env) args >>= liftThrows . apply func
+
+eval env (List (Atom "define" : List (Atom name : params) : body)) =
+     makeFuncNormal env params body (Just name) >>= defineVar env name
+
+eval env (List (Atom "define" : DottedList (Atom name : params) varargs : body)) =
+     makeFuncVarargs varargs env params body (Just name) >>= defineVar env name
+
+eval env (List (Atom "lambda" : List params : body)) =
+     makeFuncNormal env params body Nothing
+
+eval env (List (Atom "lambda" : DottedList params varargs : body)) =
+     makeFuncVarargs varargs env params body Nothing
+
+eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
+     makeFuncVarargs varargs env [] body Nothing
+
+eval env (List (function : args)) = do
+     func <- eval env function
+     argVals <- mapM (eval env) args
+     apply func argVals
 eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
-apply :: String -> [LispVal] -> ThrowsError LispVal
-apply func args = maybe 
-                    (throwError $ NotFunction "Unrecognized primitive function" func)
-                    ($ args) 
-                $ lookup func primitives
--- TODO replace list structure with a HashMap String ([LispVal] -> ThrowsError LispVal)
--- from Data.HashMap.Strict
--- Safe to assume we need all functions so laziness is wasted overhead
-primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
-primitives = [ ("+", (Math.+))
-             , ("-", (Math.-))
-             , ("*", (Math.*))
-             , ("/", (Math./))
-             , ("mod", Math.mod)
-             , ("quotient", Math.quot)
-             , ("remainder", Math.rem)
-             , ("symbol?", TypeCheck.isSymbol)
-             , ("string?", TypeCheck.isString)
-             , ("char?", TypeCheck.isChar)
-             , ("number?", TypeCheck.isNumber)
-             , ("boolean?", TypeCheck.isBool)
-             , ("list?", TypeCheck.isList)
-             , ("pair?", TypeCheck.isPair)
-             , ("&&", BoolOps.boolAnd)
-             , ("||", BoolOps.boolOr)
-             , ("not", BoolOps.boolNot)
-             , ("=", Comparison.numeq)
-             , ("<", Comparison.numlt)
-             , (">", Comparison.numgt)
-             , ("/=", Comparison.numne)
-             , (">=", Comparison.numge)
-             , ("<=", Comparison.numle)
-             , ("string=?", Comparison.streq)
-             , ("string<?", Comparison.strlt)
-             , ("string>?", Comparison.strgt)
-             , ("string<=?", Comparison.strle)
-             , ("string>=?", Comparison.strge)
-             , ("char=?", Comparison.chareq)
-             , ("char<?", Comparison.charlt)
-             , ("char>?", Comparison.chargt)
-             , ("char<=?", Comparison.charle)
-             , ("char>=?", Comparison.charge)
-             , ("eq?", Comparison.eqv)
-             , ("eqv?", Comparison.eqv)
-             , ("equal?", Comparison.equal)
-             , ("char-upcase", CharOps.toUpper)
-             , ("char-downcase", CharOps.toLower)
-             , ("char-alphabetic?", CharOps.isAlpha)
-             , ("char-numeric?", CharOps.isNumber)
-             , ("char-whitespace?", CharOps.isSpace)
-             , ("char-upper-case?", CharOps.isUpper)
-             , ("char-lower-case?", CharOps.isLower)
-             , ("car", List.car)
-             , ("cdr", List.cdr)
-             , ("cons", List.cons)
-             , ("char->integer", TypeCast.charToNumber)
-             , ("integer->char", TypeCast.numberToChar)
-             , ("number->string", TypeCast.numberToString)
-             , ("string->number", TypeCast.stringToNumber)
-             ]
+apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
+apply (Primitive func _) args = liftThrows $ func args
+apply (Func params varargs body closure _) args =
+    if num params /= num args && varargs == Nothing
+    then throwError $ NumArgs (num params) args
+    else (liftIO . bindVars closure $ zip params args)
+            >>= bindVarargs varargs >>= evalBody
+    where remainingArgs = drop (length params) args
+          num = toInteger . length
+          evalBody env = liftM last $ mapM (eval env) body
+          bindVarargs arg env = case arg of
+            Just argName -> liftIO $ bindVars env [(argName, List $ remainingArgs)]
+            Nothing      -> return env
+apply notFunc _ = throwError . NotFunction "Not a function" $ show notFunc
+
+makeFunc :: Maybe String 
+         -> Env 
+         -> [LispVal] 
+         -> [LispVal] 
+         -> Maybe String 
+         -> IOThrowsError LispVal
+makeFunc varargs env params body name =
+    return $ Func (map show params) varargs body env name
+makeFuncNormal = makeFunc Nothing
+makeFuncVarargs = makeFunc . Just . show
