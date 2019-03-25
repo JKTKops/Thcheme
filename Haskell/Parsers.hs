@@ -14,7 +14,7 @@ readExpr input = case parse parseExpr "Lisp" input of
     Right val -> return val
 
 parseExpr :: Parser LispVal
-parseExpr = try parseNumber 
+parseExpr = try parseNumber -- TODO negative numbers
          <|> try parseChar -- #\atom is a valid name for an atom 
          <|> parseAtom 
          <|> parseString
@@ -40,8 +40,13 @@ parseString = do
         notEscape = noneOf "\\\"\0\n\r\v\t\b\f"
         escape = do
             d <- char '\\'
-            c <- oneOf "\\\"nrvtbf"
-            return [c]
+            c <- oneOf "\\\"nrt"
+            return . pure $ case c of
+                '\\' -> '\\'
+                '"'  -> '"'
+                'n'  -> '\n'
+                'r'  -> '\r'
+                't'  -> '\t'
 
 parseAtom :: Parser LispVal
 parseAtom = do
@@ -102,6 +107,8 @@ parseChar = do
                  return ' '
               <|> do try $ string "newline"
                      return '\n'
+              <|> do try $ string "carriage-return"
+                     return '\r'
               <|> do try $ string "tab" 
                      return '\t'
               <|> anyChar

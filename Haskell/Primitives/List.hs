@@ -1,29 +1,65 @@
-module Primitives.List
-    ( car
-    , cdr
-    , cons
-    ) where
+module Primitives.List (primitives) where
 
-import Control.Monad.Except (throwError)
+import Prelude hiding (sequence)
+import Control.Monad (liftM)
+import Control.Monad.Except (throwError, (>=>))
+import Control.Monad.Writer (Writer, writer, runWriter)
 
-import LispVal
+import LispVal ( LispVal ( List
+                         , DottedList)
+               , LispErr ( TypeMismatch
+                         , NumArgs)
+               , RawPrimitive
+               , ThrowsError)
 
-car :: [LispVal] -> ThrowsError LispVal
+primitives = ("cons", cons) : compositions [1..4] [("a", car), ("d", cdr)]
+
+car :: RawPrimitive
 car [List (x:xs)]        = return x
 car [DottedList(x:xs) _] = return x
 car [badArg]             = throwError $ TypeMismatch "pair" badArg
 car badArgs              = throwError $ NumArgs 1 badArgs
 
-cdr :: [LispVal] -> ThrowsError LispVal
+cdr :: RawPrimitive
 cdr [List (x:xs)]         = return $ List xs
 cdr [DottedList [_] x]    = return x
 cdr [DottedList (_:xs) x] = return $ DottedList xs x
 cdr [badArg]              = throwError $ TypeMismatch "pair" badArg
 cdr badArgs               = throwError $ NumArgs 1 badArgs
 
-cons :: [LispVal] -> ThrowsError LispVal
+cons :: RawPrimitive
 cons [x, List []]            = return $ List [x]
 cons [x, List xs]            = return . List $ x:xs
 cons [x, DottedList xs last] = return $ DottedList (x:xs) last
 cons [x, y]                  = return $ DottedList [x] y
 cons badArgs                 = throwError $ NumArgs 2 badArgs
+
+compositions :: [Int] -> [(String, RawPrimitive)] -> [(String, RawPrimitive)]
+compositions nums = map writerToPrim . logChooseN nums
+    where writerToPrim :: Writer String [RawPrimitive] -> (String, RawPrimitive)
+          writerToPrim w = let (prims, log) = runWriter w
+                           in ("c" ++ log ++ "r", foldr1 sequence prims)
+
+returnOut :: ([LispVal] -> ThrowsError LispVal) -- (RawPrimitive)
+          -> ([LispVal] -> ThrowsError [LispVal])
+returnOut = (liftM pure .)
+{-# INLINE returnOut #-}
+
+-- The fully general type signature is
+-- sequence :: (Monad m, Applicative f) => (a -> m b) -> (f b -> m c) -> a -> mc
+sequence :: RawPrimitive -- ^ First primitive to execute
+         -> RawPrimitive -- ^ Use the result of first primitive as argument to this primitive
+         -> RawPrimitive
+sequence f g = returnOut f >=> g
+
+logChooseN :: (Monoid m) => [Int] -> [(m, a)] -> [Writer m [a]]
+logChooseN ns as = do
+    num <- ns 
+    choice <- foldr (.) id (replicate num $ addChoice as) [return []]
+    return choice
+    where
+        addChoice :: (Monoid m) => [(m, a)] -> [Writer m [a]] -> [Writer m [a]]
+        addChoice as ws = do (iden, val) <- as
+                             w <- ws
+                             return $ do let (list, log) = runWriter w
+                                         writer (val:list, iden `mappend` log)

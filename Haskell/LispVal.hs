@@ -1,5 +1,6 @@
-module LispVal (
-    Env
+module LispVal 
+    ( Env
+    , RawPrimitive
     , LispVal (..)
     , LispErr (..)
     , ThrowsError
@@ -11,7 +12,9 @@ import Text.ParserCombinators.Parsec (ParseError)
 import Control.Monad.Except (throwError, catchError)
 import Data.IORef
 
+-- Defined here to avoid circular dependencies
 type Env = IORef [(String, IORef LispVal)]
+type RawPrimitive = [LispVal] -> ThrowsError LispVal
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
 data LispVal = Atom String
@@ -21,7 +24,7 @@ data LispVal = Atom String
              | String String
              | Char Char
              | Bool Bool
-             | Primitive ([LispVal] -> ThrowsError LispVal) String
+             | Primitive RawPrimitive String
              | Func { params  :: [String]
                     , vararg  :: Maybe String
                     , body    :: [LispVal]
@@ -52,11 +55,12 @@ extractValue (Right val) = val
 showVal :: LispVal -> String
 showVal (Atom s) = s
 showVal (Number n) = show n
-showVal (String s) = "\"" ++ s ++ "\""
+showVal (String s) = show s
 showVal (Char c)   = "#\\" ++ case c of
     ' '       -> "space"
     '\t'      -> "tab"
     '\n'      -> "newline"
+    '\r'      -> "carriage-return"
     otherwise -> pure c
 showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
@@ -80,6 +84,7 @@ showErr (NumArgs expected found)      = "Expected " ++ show expected
 showErr (TypeMismatch expected found) = "Invalid type: expected " ++ expected
     ++ ", found " ++ show found
 showErr (Parser parseErr)             = "Parse error at " ++ show parseErr
+showErr (Default message)             = message
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map show

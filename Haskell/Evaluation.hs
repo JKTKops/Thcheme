@@ -2,7 +2,8 @@
 {-# LANGUAGE ExistentialQuantification #-}
 module Evaluation (eval) where
 
-import Control.Monad.Except (liftIO, catchError, throwError)
+import Data.IORef (IORef, readIORef, newIORef)
+import Control.Monad.Except (ExceptT (ExceptT), liftIO, catchError, throwError)
 import Control.Monad (liftM, mapM)
 import qualified Data.Char as C 
     (ord, chr)
@@ -71,7 +72,20 @@ makeFunc :: Maybe String
          -> [LispVal] 
          -> Maybe String 
          -> IOThrowsError LispVal
-makeFunc varargs env params body name =
+makeFunc varargs env params body name = 
     return $ Func (map show params) varargs body env name
+    {-
+    ExceptT $ do
+        env' <- readIORef env
+        deepCopy <- mapM copy env'
+        newEnv <- newIORef deepCopy
+        return . return $ Func (map show params) varargs body newEnv name
+    where copy :: (String, IORef LispVal) -> IO (String, IORef LispVal)
+          copy (name, ref) = do
+            lv <- readIORef ref
+            copy <- newIORef lv
+            return (name, copy)
+            -}
+
 makeFuncNormal = makeFunc Nothing
 makeFuncVarargs = makeFunc . Just . show

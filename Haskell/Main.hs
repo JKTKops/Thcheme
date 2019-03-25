@@ -6,8 +6,8 @@ import Control.Monad (liftM)
 
 import Parsers (readExpr)
 import Evaluation (eval)
-import LispVal (Env, extractValue, trapError)
-import Environment (primitiveBindings, runIOThrows, liftThrows)
+import LispVal (extractValue, trapError)
+import Environment (Env, primitiveBindings, runIOThrows, liftThrows)
 
 main :: IO ()
 main = do

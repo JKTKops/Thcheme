@@ -1,4 +1,16 @@
-module Environment where
+module Environment 
+    ( Env -- re-exported from LispVal where it does not belong
+    , IOThrowsError
+    , isBound
+    , getVar
+    , setVar
+    , defineVar
+    , bindVars
+    , nullEnv
+    , primitiveBindings
+    , liftThrows
+    , runIOThrows
+    ) where
 
 import Data.IORef
 import Control.Monad.Except (liftM, liftIO, throwError)

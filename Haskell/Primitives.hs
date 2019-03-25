@@ -1,6 +1,6 @@
 module Primitives (primitives) where
 
-import LispVal
+import LispVal (LispVal, ThrowsError, RawPrimitive)
 import qualified Primitives.Math as Math
 import qualified Primitives.List as List
 import qualified Primitives.Bool as BoolOps
@@ -9,18 +9,13 @@ import qualified Primitives.Comparison as Comparison
 import qualified Primitives.TypeCheck as TypeCheck
 import qualified Primitives.TypeTransformers as TypeCast
 
--- TODO replace list structure with a HashMap String ([LispVal] -> ThrowsError LispVal)
+-- TODO replace list structure with a HashMap String (RawPrimitive)
 -- from Data.HashMap.Strict
 -- Safe to assume we need all functions so laziness is wasted overhead
-primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
-primitives = [ ("+", (Math.+))
-             , ("-", (Math.-))
-             , ("*", (Math.*))
-             , ("/", (Math./))
-             , ("mod", Math.mod)
-             , ("quotient", Math.quot)
-             , ("remainder", Math.rem)
-             , ("symbol?", TypeCheck.isSymbol)
+primitives :: [(String, RawPrimitive)]
+primitives = Math.primitives ++
+             List.primitives ++
+             [ ("symbol?", TypeCheck.isSymbol)
              , ("string?", TypeCheck.isString)
              , ("char?", TypeCheck.isChar)
              , ("number?", TypeCheck.isNumber)
@@ -56,11 +51,11 @@ primitives = [ ("+", (Math.+))
              , ("char-whitespace?", CharOps.isSpace)
              , ("char-upper-case?", CharOps.isUpper)
              , ("char-lower-case?", CharOps.isLower)
-             , ("car", List.car)
-             , ("cdr", List.cdr)
-             , ("cons", List.cons)
-             , ("char->integer", TypeCast.charToNumber)
-             , ("integer->char", TypeCast.numberToChar)
+             , ("char->number", TypeCast.charToNumber)
+             , ("char->string", TypeCast.charToString)
+             , ("list->string", TypeCast.listToString)
+             , ("number->char", TypeCast.numberToChar)
              , ("number->string", TypeCast.numberToString)
+             , ("string->list", TypeCast.stringToList)
              , ("string->number", TypeCast.stringToNumber)
              ]
