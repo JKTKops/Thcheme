@@ -14,7 +14,7 @@ readExpr input = case parse parseExpr "Lisp" input of
     Right val -> return val
 
 parseExpr :: Parser LispVal
-parseExpr = try parseNumber -- TODO negative numbers
+parseExpr = try parseNumber 
          <|> try parseChar -- #\atom is a valid name for an atom 
          <|> parseAtom 
          <|> parseString
@@ -26,7 +26,7 @@ parseExpr = try parseNumber -- TODO negative numbers
 
 
 symbol :: Parser Char
-symbol = oneOf "!@#$%^&*-_=+|:/?<>~"
+symbol = oneOf "!@#$%^&*-_=+|:\\/?<>~"
 
 spaces :: Parser ()
 spaces = skipMany1 space
@@ -37,7 +37,7 @@ parseString = do
     x <- many (fmap return notEscape <|> escape <|> fmap return space)
     char '"'
     return $ String . concat $ x where
-        notEscape = noneOf "\\\"\0\n\r\v\t\b\f"
+        notEscape = noneOf "\\\"\n\r\t"
         escape = do
             d <- char '\\'
             c <- oneOf "\\\"nrt"
@@ -58,16 +58,19 @@ parseAtom = do
         "#f" -> Bool False
         _    -> Atom atom
 
-data Base = Bin | Oct | Dec | Hex deriving (Eq, Show, Enum, Bounded)
-
 parseNumber :: Parser LispVal
 parseNumber = do
+    sign <- optionMaybe $ char '-'
     prefix <- parseRadixPrefix <|> return "#d"
-    many1 (digit <|> oneOf "abcdef") >>= case prefix of
+    num <- many1 (digit <|> oneOf "abcdef") >>= case prefix of
         "#b" -> parseBin
         "#o" -> parseOct
         "#d" -> parseDec
         "#h" -> parseHex
+    if sign == Nothing
+    then return num
+    else case num of
+        (Number n) -> return . Number $ negate n
     where
         parseRadixPrefix :: Parser String
         parseRadixPrefix = do
@@ -105,13 +108,15 @@ parseChar = do
     prefix <- string "#\\"
     char   <- do try $ string "space"
                  return ' '
-              <|> do try $ string "newline"
-                     return '\n'
-              <|> do try $ string "carriage-return"
-                     return '\r'
-              <|> do try $ string "tab" 
-                     return '\t'
-              <|> anyChar
+              <|> (do try $ string "newline"
+                      return '\n')
+              <|> (do try $ string "carriage-return"
+                      return '\r')
+              <|> (do try $ string "tab" 
+                      return '\t')
+              <|> (try $ do c <- anyChar
+                            notFollowedBy $ alphaNum <|> symbol
+                            return c)
     return $ Char char
 
 parseList :: Parser LispVal
