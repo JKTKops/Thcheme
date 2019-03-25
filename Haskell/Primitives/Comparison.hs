@@ -1,10 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
-module Primitives.Comparison 
-    ( numeq, numne, numlt, numgt, numle, numge
-    , streq, strlt, strgt, strle, strge
-    , chareq, charlt, chargt, charle, charge
-    , eqv, equal
-    ) where
+module Primitives.Comparison (primitives) where
 
 import Control.Monad (liftM)
 import Control.Monad.Except (throwError, catchError)
@@ -14,36 +9,46 @@ import LispVal
 import Primitives.Bool (boolBinop)
 import Primitives.Unwrappers
 
--- boolBinop :: (LispVal -> a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+primitives = typeSpecific ++ [("eq?", eqv), ("eqv?", eqv), ("equal?", equal)]
 
-numBoolBinop :: (Integer -> Integer -> Bool) -> [LispVal] -> ThrowsError LispVal
+typeSpecific = [ primGen builtin | (PrimBuilder primGen) <- primBuilders, builtin <- builtinComparisons ]
+
+builtinComparisons :: Ord a => [(String, a -> a -> Bool)]
+builtinComparisons = [ ("=", (==))
+                     , ("<", (<))
+                     , (">", (>))
+                     , ("<=", (<=))
+                     , (">=", (>=))
+                     ]
+
+data PrimBuilder = forall a. Ord a => 
+                      PrimBuilder ((String, a -> a -> Bool) -> (String, RawPrimitive))
+
+primBuilders = [PrimBuilder makeNumPrim, PrimBuilder makeStrPrim, PrimBuilder makeCharPrim]
+  where makePrim :: String -- type name
+                 -> Bool   -- appends '?' if False, nothing if True
+                 -> ((a -> a -> Bool) -> RawPrimitive)
+                 -> (String, a -> a -> Bool)
+                 -> (String, RawPrimitive)
+        makePrim name isNum primGen (opName, op) = 
+            (name ++ opName ++ (if isNum then "" else "?"), primGen op)
+        makeNumPrim :: (String, Integer -> Integer -> Bool) -> (String, RawPrimitive)
+        makeNumPrim = makePrim "" True numBoolBinop
+        makeStrPrim = makePrim "string" False strBoolBinop
+        makeCharPrim = makePrim "char" False charBoolBinop
+
+-- boolBinop :: (LispVal -> a) -> (a -> a -> Bool) -> RawPrimitive
+
+numBoolBinop :: (Integer -> Integer -> Bool) -> RawPrimitive
 numBoolBinop = boolBinop unwrapNum
-strBoolBinop :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
+strBoolBinop :: (String -> String -> Bool) -> RawPrimitive
 strBoolBinop = boolBinop unwrapStr
-charBoolBinop :: (Char -> Char -> Bool) -> [LispVal] -> ThrowsError LispVal
+charBoolBinop :: (Char -> Char -> Bool) -> RawPrimitive
 charBoolBinop = boolBinop unwrapChar
 
-numeq = numBoolBinop (==)
-numne = numBoolBinop (/=)
-numlt = numBoolBinop (<)
-numgt = numBoolBinop (>)
-numle = numBoolBinop (<=)
-numge = numBoolBinop (>=)
-
-streq = strBoolBinop (==)
-strlt = strBoolBinop (<)
-strgt = strBoolBinop (>)
-strle = strBoolBinop (<=)
-strge = strBoolBinop (>=)
-
-chareq = charBoolBinop (==)
-charlt = charBoolBinop (<)
-chargt = charBoolBinop (>)
-charle = charBoolBinop (<=)
-charge = charBoolBinop (>=)
-
 -- EQUIVALENCE FUNCTIONS
-eqv :: [LispVal] -> ThrowsError LispVal
+-- TODO some notion of function equivalence?
+eqv :: RawPrimitive
 eqv [(Bool x), (Bool y)]                   = return . Bool $ x == y
 eqv [(Number x), (Number y)]               = return . Bool $ x == y
 eqv [(String s), (String t)]               = return . Bool $ s == t
@@ -96,7 +101,7 @@ coerceEquals x y (Coercer coercer) =
        return $ coercedx == coercedy
     `catchError` (const $ return False)
 
-equal :: [LispVal] -> ThrowsError LispVal
+equal :: RawPrimitive
 equal [(DottedList xs x), (DottedList ys y)] =
                            equal [List $ xs ++ [x], List $ ys ++ [y]]
 equal [(List xs), (List ys)]                 = return . Bool

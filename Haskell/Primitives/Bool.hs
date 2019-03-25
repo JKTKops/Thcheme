@@ -1,19 +1,18 @@
-module Primitives.Bool 
-    ( boolBinop
-    , boolAnd
-    , boolOr
-    , boolNot
-    ) where
+module Primitives.Bool (primitives, boolBinop) where
 
 import Control.Monad.Except (throwError)
 
 import LispVal
 import Primitives.Unwrappers (unwrapBool)
 
+primitives = [ ("&&", boolAnd)
+             , ("||", boolOr)
+             , ("not", boolNot)
+             ]
+
 boolBinop :: (LispVal -> ThrowsError a) -- unwrapper
           -> (a -> a -> Bool) -- binary boolean operation
-          -> [LispVal] -- args; expects 2
-          -> ThrowsError LispVal -- output LispVal:Bool
+          -> RawPrimitive
 boolBinop unwrapper op [left, right] = do
     left' <- unwrapper left
     right' <- unwrapper right
@@ -25,7 +24,7 @@ boolBoolBinop = boolBinop unwrapBool
 boolAnd = boolBoolBinop (&&)
 boolOr  = boolBoolBinop (||)
 
-boolNot :: [LispVal] -> ThrowsError LispVal
+boolNot :: RawPrimitive 
 boolNot [(Bool False)] = return $ Bool True
 boolNot [_]            = return $ Bool False
 boolNot badArgs        = throwError $ NumArgs 1 badArgs

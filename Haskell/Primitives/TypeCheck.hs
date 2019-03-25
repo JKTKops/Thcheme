@@ -1,16 +1,18 @@
-module Primitives.TypeCheck
-    ( isSymbol
-    , isString
-    , isChar
-    , isNumber
-    , isBool
-    , isList
-    , isPair
-    ) where
+module Primitives.TypeCheck (primitives) where
     
 import Control.Monad.Except (throwError)
 
 import LispVal
+
+primitives = map (\(x, y) -> (x, guardOneArg y))
+             [ ("boolean?", bool)
+             , ("char?", char)
+             , ("list?", list)
+             , ("number?", number)
+             , ("pair?", pair)
+             , ("string?", string) 
+             , ("symbol?", symbol)
+             ]
 
 isSymbol = guardOneArg symbol
 isString = guardOneArg string

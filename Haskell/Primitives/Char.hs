@@ -1,12 +1,4 @@
-module Primitives.Char 
-    ( toLower
-    , toUpper
-    , isAlpha
-    , isNumber
-    , isSpace
-    , isUpper
-    , isLower
-    ) where
+module Primitives.Char (primitives) where
 
 import Control.Monad.Except (throwError)
 import qualified Data.Char as C 
@@ -14,19 +6,22 @@ import qualified Data.Char as C
 
 import LispVal
 
-charTest :: (Char -> Bool) -> [LispVal] -> ThrowsError LispVal
-charTest func [(Char c)] = return . Bool $ func c
-charTest _ badArgs       = throwError $ NumArgs 1 badArgs
-
-isAlpha  = charTest C.isAlpha
-isNumber = charTest C.isNumber
-isSpace  = charTest C.isSpace
-isUpper  = charTest C.isUpper
-isLower  = charTest C.isLower
-
-charTrans :: (Char -> Char) -> [LispVal] -> ThrowsError LispVal
-charTrans func [(Char c)] = return . Char $ func c
-charTrans _ badArgs      = throwError $ NumArgs 1 badArgs
-
-toLower = charTrans C.toLower
-toUpper = charTrans C.toUpper
+primitives = (mapSnd (makeCharPrim Bool) 
+                [ ("char-alphabetic?", C.isAlpha)
+                , ("char-numeric?", C.isNumber)
+                , ("char-whitespace?", C.isSpace)
+                , ("char-upper-case?", C.isUpper)
+                , ("char-lower-case?", C.isLower)
+                ]) ++
+             (mapSnd (makeCharPrim Char)
+                [ ("char-upcase", C.toUpper)
+                , ("char-downcase", C.toLower)
+                ])
+  where mapSnd :: (a -> b) -> [(c, a)] -> [(c, b)]
+        mapSnd _ [] = []
+        mapSnd f ((x, y):ps) = (x, f y): mapSnd f ps
+        
+makeCharPrim :: (a -> LispVal) -> (Char -> a) -> RawPrimitive
+makeCharPrim cons func [(Char c)] = return . cons $ func c
+makeCharPrim _ _ [badArg]         = throwError $ TypeMismatch "char" badArg
+makeCharPrim _ _ badArgs          = throwError $ NumArgs 1 badArgs
