@@ -1,63 +1,57 @@
-module Primitives.TypeTransformers 
-    ( charToNumber
-    , charToString
-    , listToString
-    , numberToString
-    , numberToChar
-    , stringToList
-    , stringToNumber
-    ) where
+module Primitives.TypeTransformers (primitives) where
     
 import Data.Char (chr, ord)
 import Control.Monad.Except (throwError)
 
 import LispVal
 
-charToNumber    = typeTransformer charToNumberH
-charToString    = typeTransformer charToStringH
-listToString    = typeTransformer listToStringH
-numberToString  = typeTransformer numberToStringH
-numberToChar    = typeTransformer numberToCharH
-stringToList    = typeTransformer stringToListH
-stringToNumber  = typeTransformer stringToNumberH
+primitives = [ (name, typeTransformer transform) | (name, transform) <-
+                 [ ("char->number", charToNumber)
+                 , ("char->string", charToString)
+                 , ("list->string", listToString)
+                 , ("number->string", numberToString)
+                 , ("number->char", numberToChar)
+                 , ("string->list", stringToList)
+                 , ("string->number", stringToNumber)
+                 ]
+             ]
 
 typeTransformer :: (LispVal -> ThrowsError LispVal) -- transformer
-                -> [LispVal]
-                -> ThrowsError LispVal
+                -> RawPrimitive
 typeTransformer t [x]     = t x
 typeTransformer _ badArgs = throwError $ NumArgs 1 badArgs
 
-charToNumberH :: LispVal -> ThrowsError LispVal
-charToNumberH (Char c) = return . Number . fromIntegral $ ord c
-charToNumberH notChar  = throwError $ TypeMismatch "char" notChar
+charToNumber :: LispVal -> ThrowsError LispVal
+charToNumber (Char c) = return . Number . fromIntegral $ ord c
+charToNumber notChar  = throwError $ TypeMismatch "char" notChar
 
-charToStringH :: LispVal -> ThrowsError LispVal
-charToStringH (Char c) = return $ String [c]
-charToStringH notChar  = throwError $ TypeMismatch "char" notChar
+charToString :: LispVal -> ThrowsError LispVal
+charToString (Char c) = return $ String [c]
+charToString notChar  = throwError $ TypeMismatch "char" notChar
 
-listToStringH :: LispVal -> ThrowsError LispVal
-listToStringH (List chars) = return . String =<< mapchars chars where
+listToString :: LispVal -> ThrowsError LispVal
+listToString (List chars) = return . String =<< mapchars chars where
     mapchars :: [LispVal] -> ThrowsError String
     mapchars []              = return $ []
     mapchars ((Char c) : cs) = return . (c :) =<< mapchars cs
     mapchars (notChar : _)   = throwError $ TypeMismatch "char" notChar
-listToStringH notList      = throwError $ TypeMismatch "list" notList
+listToString notList      = throwError $ TypeMismatch "list" notList
 
-numberToCharH :: LispVal -> ThrowsError LispVal
-numberToCharH (Number n) = return . Char . chr $ fromIntegral n
-numberToCharH notNum     = throwError $ TypeMismatch "number" notNum
+numberToChar :: LispVal -> ThrowsError LispVal
+numberToChar (Number n) = return . Char . chr $ fromIntegral n
+numberToChar notNum     = throwError $ TypeMismatch "number" notNum
 
-numberToStringH :: LispVal -> ThrowsError LispVal
-numberToStringH (Number n) = return . String $ show n
-numberToStringH notNum     = throwError $ TypeMismatch "number" notNum
+numberToString :: LispVal -> ThrowsError LispVal
+numberToString (Number n) = return . String $ show n
+numberToString notNum     = throwError $ TypeMismatch "number" notNum
 
-stringToListH :: LispVal -> ThrowsError LispVal
-stringToListH (String s) = return . List $ map Char s
-stringToListH notStr     = throwError $ TypeMismatch "string" notStr
+stringToList :: LispVal -> ThrowsError LispVal
+stringToList (String s) = return . List $ map Char s
+stringToList notStr     = throwError $ TypeMismatch "string" notStr
 
-stringToNumberH :: LispVal -> ThrowsError LispVal
-stringToNumberH (String s) = let parsed = reads s in
-    if null parsed
+stringToNumber :: LispVal -> ThrowsError LispVal
+stringToNumber (String s) = let parsed = reads s in
+    if null parsed || snd (head parsed) /= ""
     then return $ Bool False
     else return . Number . fst $ parsed !! 0
-stringToNumberH notStr     = throwError $ TypeMismatch "string" notStr
+stringToNumber notStr     = throwError $ TypeMismatch "string" notStr

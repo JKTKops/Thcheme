@@ -1,6 +1,6 @@
 module Primitives (primitives) where
 
-import LispVal (LispVal, ThrowsError, RawPrimitive)
+import LispVal (LispVal, LispErr (Quit), ThrowsError, RawPrimitive)
 import qualified Primitives.Math as Math
 import qualified Primitives.List as List
 import qualified Primitives.Bool as BoolOps
@@ -19,11 +19,8 @@ primitives = Math.primitives ++
              CharOps.primitives ++
              Comparison.primitives ++
              TypeCheck.primitives ++
-             [ ("char->number", TypeCast.charToNumber)
-             , ("char->string", TypeCast.charToString)
-             , ("list->string", TypeCast.listToString)
-             , ("number->char", TypeCast.numberToChar)
-             , ("number->string", TypeCast.numberToString)
-             , ("string->list", TypeCast.stringToList)
-             , ("string->number", TypeCast.stringToNumber)
-             ]
+             TypeCast.primitives ++
+             [("quit", quit)]
+
+quit :: [LispVal] -> ThrowsError LispVal
+quit _ = Left Quit

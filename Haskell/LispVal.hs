@@ -6,6 +6,7 @@ module LispVal
     , ThrowsError
     , trapError
     , extractValue
+    , isTerminationError
     ) where
 
 import Text.ParserCombinators.Parsec (ParseError)
@@ -41,6 +42,7 @@ data LispErr = NumArgs Integer [LispVal]
              | NotFunction String String
              | UnboundVar String String
              | Default String
+             | Quit
 
 instance Show LispErr where show = ("Error: " ++ ) . showErr
 
@@ -51,6 +53,10 @@ trapError action = catchError action (return . show)
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
+
+isTerminationError :: ThrowsError LispVal -> Bool
+isTerminationError (Left Quit) = True
+isTerminationError _           = False
 
 showVal :: LispVal -> String
 showVal (Atom s) = s
@@ -85,6 +91,7 @@ showErr (TypeMismatch expected found) = "Invalid type: expected " ++ expected
     ++ ", found " ++ show found
 showErr (Parser parseErr)             = "Parse error at " ++ show parseErr
 showErr (Default message)             = message
+showErr Quit                          = "quit invoked"
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map show
