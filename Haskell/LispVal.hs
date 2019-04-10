@@ -4,18 +4,28 @@ module LispVal
     , LispVal (..)
     , LispErr (..)
     , ThrowsError
+    , IOThrowsError
     , trapError
     , extractValue
     , isTerminationError
+    , liftThrows
+    , runIOThrows
     ) where
 
 import Text.ParserCombinators.Parsec (ParseError)
-import Control.Monad.Except (throwError, catchError)
+import Data.Maybe (fromMaybe)
+import Data.HashMap.Strict (HashMap)
 import Data.IORef
+import Control.Monad.Except (liftM, liftIO, throwError, catchError)
+import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import System.IO (Handle)
+
+
 
 -- Defined here to avoid circular dependencies
-type Env = IORef [(String, IORef LispVal)]
+type Env = IORef (HashMap String (IORef LispVal))
 type RawPrimitive = [LispVal] -> ThrowsError LispVal
+type IOPrimitive  = [LispVal] -> IOThrowsError LispVal
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
 data LispVal = Atom String
@@ -32,6 +42,8 @@ data LispVal = Atom String
                     , closure :: Env 
                     , name    :: Maybe String
                     }
+             | IOFunc IOPrimitive
+             | Port Handle
 
 instance Show LispVal where show = showVal
 
@@ -58,6 +70,16 @@ isTerminationError :: ThrowsError LispVal -> Bool
 isTerminationError (Left Quit) = True
 isTerminationError _           = False
 
+type IOThrowsError = ExceptT LispErr IO
+
+liftThrows :: ThrowsError a -> IOThrowsError a
+           -- (MonadError m a) => Either e a -> m a
+liftThrows (Left err)  = throwError err
+liftThrows (Right val) = return val
+
+runIOThrows :: IOThrowsError String -> IO String
+runIOThrows action = (extractValue . trapError) <$> runExceptT action
+
 showVal :: LispVal -> String
 showVal (Atom s) = s
 showVal (Number n) = show n
@@ -67,13 +89,13 @@ showVal (Char c)   = "#\\" ++ case c of
     '\t'      -> "tab"
     '\n'      -> "newline"
     '\r'      -> "carriage-return"
-    otherwise -> pure c
+    _         -> pure c
 showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
 showVal (List ls) = "(" ++ unwordsList ls ++ ")"
 showVal (DottedList ls l) = "(" ++ unwordsList ls ++ " . " ++ show l ++ ")"
 showVal (Primitive _ name) = "<Function " ++ name ++ ">"
-showVal (Func args varargs body env name) = "(" ++ (maybe "lambda" id name)
+showVal (Func args varargs body env name) = "(" ++ fromMaybe "lambda" name
     ++ " (" ++ unwords args ++ (case varargs of
         Nothing  -> ""
         Just arg -> " . " ++ arg) ++ ") ...)"

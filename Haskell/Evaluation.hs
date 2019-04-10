@@ -2,11 +2,13 @@
 {-# LANGUAGE ExistentialQuantification #-}
 module Evaluation (eval) where
 
+import Data.Maybe (isNothing)
 import Data.IORef (IORef, readIORef, newIORef)
 import Control.Monad.Except (ExceptT (ExceptT), liftIO, catchError, throwError)
 import Control.Monad (liftM, mapM)
 import qualified Data.Char as C 
     (ord, chr)
+import qualified Data.HashMap.Strict as Map
 
 import LispVal
 import Environment
@@ -22,7 +24,7 @@ eval env (List [Atom "if", pred, conseq, alt]) = do
     result <- eval env pred
     case result of
         Bool False -> eval env alt
-        otherwise  -> eval env conseq
+        _          -> eval env conseq
 
 eval env (List [Atom "set!", Atom var, form]) =
     eval env form >>= setVar env var
@@ -54,15 +56,15 @@ eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badFo
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 apply (Primitive func _) args = liftThrows $ func args
 apply (Func params varargs body closure _) args =
-    if num params /= num args && varargs == Nothing
+    if num params /= num args && isNothing varargs 
     then throwError $ NumArgs (num params) args
-    else (liftIO . bindVars closure $ zip params args)
+    else (liftIO . bindVars closure . Map.fromList $ zip params args)
             >>= bindVarargs varargs >>= evalBody
     where remainingArgs = drop (length params) args
           num = toInteger . length
-          evalBody env = liftM last $ mapM (eval env) body
+          evalBody env = last <$> mapM (eval env) body
           bindVarargs arg env = case arg of
-            Just argName -> liftIO $ bindVars env [(argName, List $ remainingArgs)]
+            Just argName -> liftIO . bindVars env $ Map.fromList [(argName, List remainingArgs)]
             Nothing      -> return env
 apply notFunc _ = throwError . NotFunction "Not a function" $ show notFunc
 

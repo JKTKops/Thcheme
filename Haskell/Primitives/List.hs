@@ -40,17 +40,12 @@ compositions nums = map writerToPrim . logChooseN nums
           writerToPrim w = let (prims, log) = runWriter w
                            in ("c" ++ log ++ "r", foldr1 sequence prims)
 
-returnOut :: ([LispVal] -> ThrowsError LispVal) -- (RawPrimitive)
-          -> ([LispVal] -> ThrowsError [LispVal])
-returnOut = (liftM pure .)
-{-# INLINE returnOut #-}
-
 -- The fully general type signature is
 -- sequence :: (Monad m, Applicative f) => (a -> m b) -> (f b -> m c) -> a -> mc
 sequence :: RawPrimitive -- ^ First primitive to execute
          -> RawPrimitive -- ^ Use the result of first primitive as argument to this primitive
          -> RawPrimitive
-sequence f g = returnOut f >=> g
+sequence f g = f >=> g . return
 
 logChooseN :: (Monoid m) => [Int] -> [(m, a)] -> [Writer m [a]]
 logChooseN ns as = do
