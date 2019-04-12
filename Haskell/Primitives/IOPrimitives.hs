@@ -18,6 +18,7 @@ primitives = [ ("apply", applyProc)
              , ("read", readProc)
              , ("read-line", readLineProc)
              , ("write", writeProc)
+             , ("write-port", writeToPort)
              , ("read-contents", readContents)
              , ("read-all", readAll)
              ]
@@ -54,12 +55,15 @@ readLineProc = IPrim 0 $ \case
 
 writeProc :: IOPrimitive
 writeProc = IPrim 1 write
-  where
-    write :: IBuiltin
-    write [obj]           = write [obj, Port stdout]
-    write [obj, Port hdl] = liftIO $ hPrint hdl obj >> return (Bool True)
-    write [obj, badArg]   = throwError $ TypeMismatch "port" badArg
-    write badArgs         = throwError $ NumArgs 1 badArgs
+
+writeToPort :: IOPrimitive
+writeToPort = IPrim 2 write
+
+write :: IBuiltin
+write [obj]           = write [obj, Port stdout]
+write [obj, Port hdl] = liftIO $ hPrint hdl obj >> return (Bool True)
+write [obj, badArg]   = throwError $ TypeMismatch "port" badArg
+write badArgs         = throwError $ NumArgs 1 badArgs
 
 readContents :: IOPrimitive
 readContents = IPrim 1 $ \case

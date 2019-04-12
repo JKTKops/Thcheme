@@ -19,6 +19,7 @@ module LispVal
 import Text.ParserCombinators.Parsec (ParseError)
 import Data.Maybe (fromMaybe)
 import Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as Map
 import Data.IORef
 import Control.Monad.Except (liftM, liftIO, throwError, catchError)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)

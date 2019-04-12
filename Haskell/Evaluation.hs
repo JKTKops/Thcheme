@@ -3,7 +3,7 @@ module Evaluation (eval, apply) where
 
 import Data.Maybe (isNothing)
 import Data.IORef (IORef, readIORef, newIORef)
-import Control.Monad.Except (ExceptT (ExceptT), liftIO, catchError, throwError)
+import Control.Monad.Except (ExceptT (ExceptT), liftIO, catchError, throwError, lift)
 import Control.Monad (liftM, mapM)
 import qualified Data.Char as C (ord, chr)
 import qualified Data.HashMap.Strict as Map
@@ -51,19 +51,45 @@ eval env (List [Atom "load", String filename]) =
      load filename >>= fmap last . mapM (eval env)
 
 eval env (List (function : args)) = do
-     func <- eval env function
+     func <- case function of
+        Primitive {}   -> return function
+        IOPrimitive {} -> return function
+        _              -> eval env function
      argVals <- mapM (eval env) args
      apply func argVals
 
 eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
+-- This might break >2 arg behavior for numeric binops, CHECK
+wrapPrim :: LispVal -> IO LispVal
+wrapPrim prim@(Primitive arity func _) = makeWrapper arity prim
+
+wrapPrim prim@(IOPrimitive arity _ _) = makeWrapper arity prim 
+
+makeWrapper :: Arity -> LispVal -> IO LispVal
+makeWrapper arity prim = do
+    emptyClosure <- newIORef Map.empty
+    return $ Func varNames Nothing [List $ prim : map Atom varNames] emptyClosure Nothing
+  where varNames :: [String]
+        varNames = take arity $ map pure ['a'..]
+
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 
 -- Applications of primitive functions
 -- TODO partial application
--- add arity to primitive constructors
-apply (Primitive arity func _) args = liftThrows $ func args
-apply (IOPrimitive arity func _) args = func args
+apply prim@(Primitive arity func _) args = 
+    if length args >= arity
+    then liftThrows $ func args
+    else do
+        wrapped <- lift $ wrapPrim prim
+        apply wrapped args
+
+apply prim@(IOPrimitive arity func _) args = 
+    if length args >= arity
+    then func args
+    else do
+        wrapped <- lift $ wrapPrim prim
+        apply wrapped args
 
 -- Applications of user-defined functions
 apply (Func params varargs body closure _) args =
