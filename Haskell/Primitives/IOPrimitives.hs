@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Primitives.IOPrimitives (primitives) where
 
 import System.IO (IOMode(..)
@@ -5,8 +6,7 @@ import System.IO (IOMode(..)
                  , getLine, stdin, stdout)
 import Control.Monad.Except (throwError, liftIO)
 
-import LispVal (LispVal(..), LispErr(..), IOThrowsError, IOPrimitive
-               , liftThrows)
+import LispVal 
 import Parsers (readExpr, load)
 import Evaluation (apply)
 
@@ -23,38 +23,52 @@ primitives = [ ("apply", applyProc)
              ]
 
 applyProc :: IOPrimitive
-applyProc [func, List args] = apply func args
-applyProc (func : args)     = apply func args
+applyProc = IPrim 1 $ \case
+    [func, List args] -> apply func args
+    (func : args)     -> apply func args
 
 makePort :: IOMode -> IOPrimitive
-makePort mode [String filename] = Port <$> liftIO (openFile filename mode)
-makePort _ [badArg]             = throwError $ TypeMismatch "string" badArg
-makePort _ badArgs              = throwError $ NumArgs 1 badArgs
+makePort mode = IPrim 1 $ \case
+    [String filename] -> Port <$> liftIO (openFile filename mode)
+    [badArg]          -> throwError $ TypeMismatch "string" badArg
+    badArgs           -> throwError $ NumArgs 1 badArgs
 
 closePort :: IOPrimitive
-closePort [Port port] = liftIO $ hClose port >> return (Bool True)
-closePort _           = return $ Bool False
+closePort = IPrim 1 $ \case
+    [Port port] -> liftIO $ hClose port >> return (Bool True)
+    _           -> return $ Bool False
 
 readProc :: IOPrimitive
-readProc []         = readProc [Port stdin]
-readProc [Port hdl] = liftIO (hGetLine hdl) >>= liftThrows . readExpr
-readProc [badArg]   = throwError $ TypeMismatch "port" badArg
-readProc badArgs    = throwError $ NumArgs 1 badArgs
+readProc = IPrim 0 read
+  where 
+    read :: IBuiltin
+    read []         = read [Port stdin]
+    read [Port hdl] = liftIO (hGetLine hdl) >>= liftThrows . readExpr
+    read [badArg]   = throwError $ TypeMismatch "port" badArg
+    read badArgs    = throwError $ NumArgs 1 badArgs
 
 readLineProc :: IOPrimitive
-readLineProc []      = String <$> liftIO getLine
-readLineProc badArgs = throwError $ NumArgs 0 badArgs
+readLineProc = IPrim 0 $ \case
+    []      -> String <$> liftIO getLine
+    badArgs -> throwError $ NumArgs 0 badArgs
 
 writeProc :: IOPrimitive
-writeProc [obj]           = writeProc [obj, Port stdout]
-writeProc [obj, Port hdl] = liftIO $ hPrint hdl obj >> return (Bool True)
-writeProc [obj, badArg]   = throwError $ TypeMismatch "port" badArg
-writeProc badArgs         = throwError $ NumArgs 1 badArgs
+writeProc = IPrim 1 write
+  where
+    write :: IBuiltin
+    write [obj]           = write [obj, Port stdout]
+    write [obj, Port hdl] = liftIO $ hPrint hdl obj >> return (Bool True)
+    write [obj, badArg]   = throwError $ TypeMismatch "port" badArg
+    write badArgs         = throwError $ NumArgs 1 badArgs
 
 readContents :: IOPrimitive
-readContents [String filename] = String <$> liftIO (readFile filename)
-readContents [badArg]          = throwError $ TypeMismatch "string" badArg
-readContents badArgs           = throwError $ NumArgs 1 badArgs
+readContents = IPrim 1 $ \case
+    [String filename] -> String <$> liftIO (readFile filename)
+    [badArg]          -> throwError $ TypeMismatch "string" badArg
+    badArgs           -> throwError $ NumArgs 1 badArgs
 
 readAll :: IOPrimitive
-readAll [String filename] = List <$> load filename
+readAll = IPrim 1 $ \case 
+    [String filename] -> List <$> load filename
+    [badArg]          -> throwError $ TypeMismatch "string" badArg
+    badArgs           -> throwError $ NumArgs 1 badArgs

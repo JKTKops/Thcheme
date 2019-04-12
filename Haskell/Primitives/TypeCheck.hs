@@ -1,17 +1,19 @@
+{-# LANGUAGE LambdaCase #-}
 module Primitives.TypeCheck (primitives) where
     
 import Control.Monad.Except (throwError)
 
 import LispVal
 
-primitives = map (\(x, y) -> (x, guardOneArg y))
-             [ ("boolean?", bool)
-             , ("char?", char)
-             , ("list?", list)
-             , ("number?", number)
-             , ("pair?", pair)
-             , ("string?", string) 
-             , ("symbol?", symbol)
+primitives = [ (name, guardOneArg func) | (name, func) <-
+                 [ ("boolean?", bool)
+                 , ("char?", char)
+                 , ("list?", list)
+                 , ("number?", number)
+                 , ("pair?", pair)
+                 , ("string?", string) 
+                 , ("symbol?", symbol)
+                 ]
              ]
 
 isSymbol = guardOneArg symbol
@@ -22,9 +24,10 @@ isBool   = guardOneArg bool
 isList   = guardOneArg list
 isPair   = guardOneArg pair
 
-guardOneArg :: (LispVal -> LispVal) -> [LispVal] -> ThrowsError LispVal
-guardOneArg func [x] = return $ func x
-guardOneArg _ args   = throwError $ NumArgs 1 args
+guardOneArg :: (LispVal -> LispVal) -> RawPrimitive 
+guardOneArg func = RPrim 1 $ \case
+    [x] -> return $ func x
+    badArgs -> throwError $ NumArgs 1 badArgs
 
 symbol :: LispVal -> LispVal
 symbol (Atom _) = Bool True

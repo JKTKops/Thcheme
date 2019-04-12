@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Primitives.TypeTransformers (primitives) where
     
 import Data.Char (chr, ord)
@@ -18,8 +19,9 @@ primitives = [ (name, typeTransformer transform) | (name, transform) <-
 
 typeTransformer :: (LispVal -> ThrowsError LispVal) -- transformer
                 -> RawPrimitive
-typeTransformer t [x]     = t x
-typeTransformer _ badArgs = throwError $ NumArgs 1 badArgs
+typeTransformer t = RPrim 1 $ \case
+    [x]     -> t x
+    badArgs -> throwError $ NumArgs 1 badArgs
 
 charToNumber :: LispVal -> ThrowsError LispVal
 charToNumber (Char c) = return . Number . fromIntegral $ ord c

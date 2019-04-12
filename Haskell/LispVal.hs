@@ -1,7 +1,10 @@
 module LispVal 
     ( Env
-    , RawPrimitive
-    , IOPrimitive
+    , RBuiltin
+    , IBuiltin
+    , Arity
+    , RawPrimitive (..)
+    , IOPrimitive (..)
     , LispVal (..)
     , LispErr (..)
     , ThrowsError
@@ -25,8 +28,13 @@ import System.IO (Handle)
 
 -- Defined here to avoid circular dependencies
 type Env = IORef (HashMap String (IORef LispVal))
-type RawPrimitive = [LispVal] -> ThrowsError LispVal
-type IOPrimitive  = [LispVal] -> IOThrowsError LispVal
+
+-- * Function types and components
+type Arity = Int
+type RBuiltin = [LispVal] -> ThrowsError LispVal
+type IBuiltin = [LispVal] -> IOThrowsError LispVal
+data RawPrimitive = RPrim Arity RBuiltin
+data IOPrimitive  = IPrim Arity IBuiltin
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
 data LispVal = Atom String
@@ -36,14 +44,14 @@ data LispVal = Atom String
              | String String
              | Char Char
              | Bool Bool
-             | Primitive RawPrimitive String
+             | Primitive Arity RBuiltin String
+             | IOPrimitive Arity IBuiltin String
              | Func { params  :: [String]
                     , vararg  :: Maybe String
                     , body    :: [LispVal]
                     , closure :: Env 
                     , name    :: Maybe String
                     }
-             | IOPrimitive IOPrimitive String
              | Port Handle
 
 instance Show LispVal where show = showVal
@@ -79,7 +87,7 @@ liftThrows (Left err)  = throwError err
 liftThrows (Right val) = return val
 
 runIOThrows :: IOThrowsError String -> IO String
-runIOThrows action = (extractValue . trapError) <$> runExceptT action
+runIOThrows action = extractValue . trapError <$> runExceptT action
 
 showVal :: LispVal -> String
 showVal (Atom s) = s
@@ -96,12 +104,12 @@ showVal (Bool False) = "#f"
 showVal (List ls) = "(" ++ unwordsList ls ++ ")"
 showVal (DottedList ls l) = "(" ++ unwordsList ls ++ " . " ++ show l ++ ")"
 showVal (Port _) = "<Port>"
-showVal (Primitive _ name) = "<Function " ++ name ++ ">"
+showVal (Primitive _ _ name) = "<Function " ++ name ++ ">"
+showVal (IOPrimitive _ _ name) = "<Function " ++ name ++ ">"
 showVal (Func args varargs body env name) = "(" ++ fromMaybe "lambda" name
     ++ " (" ++ unwords args ++ (case varargs of
         Nothing  -> ""
         Just arg -> " . " ++ arg) ++ ") ...)"
-showVal (IOPrimitive _ name) = "<Function " ++ name ++ ">"
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname

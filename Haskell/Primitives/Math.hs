@@ -1,3 +1,4 @@
+{-# Language LambdaCase #-}
 module Primitives.Math (primitives) where
 
 import Control.Monad (mapM)
@@ -5,45 +6,46 @@ import Control.Monad.Except (throwError)
 
 import LispVal 
 import Primitives.Unwrappers (unwrapNum)
+import Primitives.Bool (predicate)
 
 addP = numericBinop (+)
-subP = Primitives.Math.subtract
+subP = numericBinop (-) 
 mulP = numericBinop (*)
 divP = numericBinop div -- divide
 modP = numericBinop mod
 quotP = numericBinop quot
 remP = numericBinop rem
 
+-- | Converts a builtin function on Integers to a RawPrimitive.
+--   The primitive can only cause type errors;
+--   Too many arguments will be folded over the operation,
+--   too few will trigger partial application.
 numericBinop :: (Integer -> Integer -> Integer)
              -> RawPrimitive
-numericBinop op           []  = throwError $ NumArgs 2 []
-numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params        = Number . foldl1 op <$> mapM unwrapNum params
+numericBinop op = RPrim 2 $ fmap (Number . foldl1 op) . mapM unwrapNum
 
-subtract :: RawPrimitive
-subtract []     = throwError $ NumArgs 1 []
-subtract [x]    = Number . negate <$> unwrapNum x
-subtract params = numericBinop (-) params
+negateP :: RawPrimitive
+negateP = RPrim 1 $ \case
+    [x]     -> Number . negate <$> unwrapNum x
+    badArgs -> throwError $ NumArgs 1 badArgs
+
+numericPredicate :: (Integer -> Bool) -> RawPrimitive
+numericPredicate = predicate unwrapNum
 
 zeroCheck :: RawPrimitive
-zeroCheck [x]     = Bool . (== 0) <$> unwrapNum x
-zeroCheck badArgs = throwError $ NumArgs 1 badArgs
+zeroCheck = numericPredicate (== 0)
 
 positiveCheck :: RawPrimitive
-positiveCheck [x]     = Bool . (> 0) <$> unwrapNum x
-positiveCheck badArgs = throwError $ NumArgs 1 badArgs
+positiveCheck = numericPredicate (> 0)
 
 negativeCheck :: RawPrimitive
-negativeCheck [x]     = Bool . (< 0) <$> unwrapNum x
-negativeCheck badArgs = throwError $ NumArgs 1 badArgs
+negativeCheck = numericPredicate (< 0)
 
 oddCheck :: RawPrimitive
-oddCheck [x]     = Bool . (0 ==) . mod 2 <$> unwrapNum x
-oddCheck badArgs = throwError $ NumArgs 1 badArgs
+oddCheck = numericPredicate $ (0 /=) . mod 2
 
 evenCheck :: RawPrimitive
-evenCheck [x]     = Bool . (0 /=) . mod 2 <$> unwrapNum x
-evenCheck badArgs = throwError $ NumArgs 1 badArgs
+evenCheck = numericPredicate $ (0 ==) . mod 2
 
 {-divide :: RawPrimitive
 divide []     = throwError $ NumArgs 1 []
@@ -58,6 +60,7 @@ primitives = [ ("+", addP)
              , ("mod", modP)
              , ("quotient", quotP)
              , ("remainder", remP)
+             , ("negate", negateP)
              , ("zero?", zeroCheck)
              , ("positive?", positiveCheck)
              , ("negative?", negativeCheck)

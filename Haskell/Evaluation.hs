@@ -62,8 +62,8 @@ apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 -- Applications of primitive functions
 -- TODO partial application
 -- add arity to primitive constructors
-apply (Primitive func _) args = liftThrows $ func args
-apply (IOPrimitive func _) args = func args
+apply (Primitive arity func _) args = liftThrows $ func args
+apply (IOPrimitive arity func _) args = func args
 
 -- Applications of user-defined functions
 apply (Func params varargs body closure _) args =

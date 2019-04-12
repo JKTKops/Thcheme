@@ -9,7 +9,10 @@ import LispVal
 import Primitives.Bool (boolBinop)
 import Primitives.Unwrappers
 
-primitives = typeSpecific ++ [("eq?", eqv), ("eqv?", eqv), ("equal?", equal)]
+primitives = typeSpecific 
+             ++ [ (name, RPrim 2 eqf) 
+                | (name, eqf) <- [("eq?", eqv), ("eqv?", eqv), ("equal?", equal)]
+                ]
 
 typeSpecific = [ primGen builtin | (PrimBuilder primGen) <- primBuilders, builtin <- builtinComparisons ]
 
@@ -48,15 +51,15 @@ charBoolBinop = boolBinop unwrapChar
 
 -- EQUIVALENCE FUNCTIONS
 -- TODO some notion of function equivalence?
-eqv :: RawPrimitive
-eqv [(Bool x), (Bool y)]                   = return . Bool $ x == y
-eqv [(Number x), (Number y)]               = return . Bool $ x == y
-eqv [(String s), (String t)]               = return . Bool $ s == t
-eqv [(Atom x), (Atom y)]                   = return . Bool $ x == y
-eqv [(DottedList xs x), (DottedList ys y)] =
+eqv :: RBuiltin
+eqv [Bool x, Bool y]                   = return . Bool $ x == y
+eqv [Number x, Number y]               = return . Bool $ x == y
+eqv [String s, String t]               = return . Bool $ s == t
+eqv [Atom x, Atom y]                   = return . Bool $ x == y
+eqv [DottedList xs x, DottedList ys y] =
                            eqv [List $ xs ++ [x], List $ ys ++ [y]]
-eqv [(List xs), (List ys)]                 = return . Bool
-    $ (length xs == length ys) && (all pairEqv $ zip xs ys) where 
+eqv [List xs, List ys]                 = return . Bool
+    $ length xs == length ys && all pairEqv (zip xs ys) where 
         pairEqv (x, y) = case eqv [x, y] of
             Left err         -> False
             Right (Bool val) -> val
@@ -68,7 +71,7 @@ coerceNum (Number n) = return n
 coerceNum (String s) = let parsed = reads s in
     if null parsed
     then throwError $ TypeMismatch "number" $ String s
-    else return . fst $ parsed !! 0
+    else return . fst $ head parsed
 coerceNum (Char c)   = return . fromIntegral $ ord c
 coerceNum notNum     = throwError $ TypeMismatch "number" notNum
 
@@ -76,7 +79,7 @@ coerceStr :: LispVal -> ThrowsError String
 coerceStr (String s) = return s
 coerceStr (Number n) = return $ show n
 coerceStr (Char c)   = return $ pure c
-coerceStr (Bool b)   = return $ let s = show b in (toLower $ head s) : tail s
+coerceStr (Bool b)   = return $ let s = show b in toLower (head s) : tail s
 coerceStr notStr     = throwError $ TypeMismatch "string" notStr
 
 coerceChar :: LispVal -> ThrowsError Char
@@ -99,19 +102,20 @@ coerceEquals x y (Coercer coercer) =
     do coercedx <- coercer x
        coercedy <- coercer y
        return $ coercedx == coercedy
-    `catchError` (const $ return False)
+    `catchError` const (return False)
 
-equal :: RawPrimitive
-equal [(DottedList xs x), (DottedList ys y)] =
-                           equal [List $ xs ++ [x], List $ ys ++ [y]]
-equal [(List xs), (List ys)]                 = return . Bool
-    $ (length xs == length ys) && (all pairEqv $ zip xs ys) where 
+equal :: RBuiltin
+equal [DottedList xs x, DottedList ys y] =
+    equal [List $ xs ++ [x], List $ ys ++ [y]]
+equal [List xs, List ys]                 = 
+    return . Bool
+    $ length xs == length ys && all pairEqv (zip xs ys) where 
         pairEqv (x, y) = case equal [x, y] of
             Left err         -> False
             Right (Bool val) -> val
 
 equal [x, y] = do
-    equalCoerced <- liftM or $ mapM (coerceEquals x y)
+    equalCoerced <- or <$> mapM (coerceEquals x y)
                     [ Coercer coerceNum
                     , Coercer coerceStr
                     , Coercer coerceChar

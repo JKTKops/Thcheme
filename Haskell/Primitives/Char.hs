@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 module Primitives.Char (primitives) where
 
 import Control.Monad.Except (throwError)
@@ -21,6 +22,7 @@ primitives = [ (name, makeCharPrim Bool f) | (name, f) <-
              ]
 
 makeCharPrim :: (a -> LispVal) -> (Char -> a) -> RawPrimitive
-makeCharPrim cons func [(Char c)] = return . cons $ func c
-makeCharPrim _ _ [badArg]         = throwError $ TypeMismatch "char" badArg
-makeCharPrim _ _ badArgs          = throwError $ NumArgs 1 badArgs
+makeCharPrim cons func = RPrim 1 $ \case
+    [Char c] -> return . cons $ func c
+    [badArg] -> throwError $ TypeMismatch "char" badArg
+    badArgs  -> throwError $ NumArgs 1 badArgs

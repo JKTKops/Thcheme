@@ -3,8 +3,7 @@ module Primitives (primitives) where
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 
-import LispVal (LispVal(Primitive, IOPrimitive), LispErr (Quit)
-               , ThrowsError, RawPrimitive, IOPrimitive)
+import LispVal 
 import qualified Primitives.Math as Math
 import qualified Primitives.List as List
 import qualified Primitives.Bool as BoolOps
@@ -34,14 +33,14 @@ rawPrimitives = Map.fromList $ Math.primitives ++
 ioPrimitives :: HashMap String IOPrimitive
 ioPrimitives = Map.fromList IO.primitives
 
-makePrimitive :: (a -> String -> LispVal) -> String -> a -> LispVal
-makePrimitive constructor name f = constructor f name
+makePrimitive :: (Arity -> a -> String -> LispVal) -> String -> Arity -> a -> LispVal
+makePrimitive constructor name arity f = constructor arity f name
 
 makeRPrimitive :: String -> RawPrimitive -> LispVal
-makeRPrimitive = makePrimitive Primitive
+makeRPrimitive name (RPrim arity func) = makePrimitive Primitive name arity func
 
 makeIPrimitive :: String -> IOPrimitive -> LispVal
-makeIPrimitive = makePrimitive IOPrimitive
+makeIPrimitive name (IPrim arity func) = makePrimitive IOPrimitive name arity func
 
-quit :: [LispVal] -> ThrowsError LispVal
-quit _ = Left Quit
+quit :: RawPrimitive
+quit = RPrim 0 $ \_ -> Left Quit
