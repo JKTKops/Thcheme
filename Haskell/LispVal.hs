@@ -1,6 +1,7 @@
 module LispVal 
     ( Env
     , RawPrimitive
+    , IOPrimitive
     , LispVal (..)
     , LispErr (..)
     , ThrowsError
@@ -42,7 +43,7 @@ data LispVal = Atom String
                     , closure :: Env 
                     , name    :: Maybe String
                     }
-             | IOFunc IOPrimitive
+             | IOPrimitive IOPrimitive String
              | Port Handle
 
 instance Show LispVal where show = showVal
@@ -94,11 +95,13 @@ showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
 showVal (List ls) = "(" ++ unwordsList ls ++ ")"
 showVal (DottedList ls l) = "(" ++ unwordsList ls ++ " . " ++ show l ++ ")"
+showVal (Port _) = "<Port>"
 showVal (Primitive _ name) = "<Function " ++ name ++ ">"
 showVal (Func args varargs body env name) = "(" ++ fromMaybe "lambda" name
     ++ " (" ++ unwords args ++ (case varargs of
         Nothing  -> ""
         Just arg -> " . " ++ arg) ++ ") ...)"
+showVal (IOPrimitive _ name) = "<Function " ++ name ++ ">"
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname

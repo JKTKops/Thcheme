@@ -50,8 +50,7 @@ sequence f g = f >=> g . return
 logChooseN :: (Monoid m) => [Int] -> [(m, a)] -> [Writer m [a]]
 logChooseN ns as = do
     num <- ns 
-    choice <- foldr (.) id (replicate num $ addChoice as) [return []]
-    return choice
+    foldr (.) id (replicate num $ addChoice as) [return []]
     where
         addChoice :: (Monoid m) => [(m, a)] -> [Writer m [a]] -> [Writer m [a]]
         addChoice as ws = do (iden, val) <- as

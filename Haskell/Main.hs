@@ -6,16 +6,16 @@ import Control.Monad.Except (liftM, runExceptT)
 
 import Parsers (readExpr)
 import Evaluation (eval)
-import LispVal (ThrowsError, IOThrowsError, LispVal, isTerminationError
+import LispVal (ThrowsError, IOThrowsError, LispVal(..), isTerminationError
                , extractValue, trapError, runIOThrows, liftThrows)
-import Environment (Env, primitiveBindings)
+import Environment (Env, bindVar, bindVars, primitiveBindings)
 
 main :: IO ()
 main = do
     args <- getArgs
     if null args
     then runRepl
-    else runOne $ head args
+    else runOne args
         
 runRepl :: IO ()
 runRepl = primitiveBindings >>= \env -> 
@@ -23,8 +23,14 @@ runRepl = primitiveBindings >>= \env ->
            (prompt ">>> " >>= runExceptT . evalString env) 
            (printResult . liftThrows)
 
-runOne :: String -> IO ()
-runOne expr = primitiveBindings >>= flip evalAndPrint expr
+runOne :: [String] -> IO ()
+runOne (filename : args) = do
+    env <- primitiveBindings
+    bindVar env "args" $ List . map String $ args
+    result <- runExceptT $ eval env (List [Atom "load", String filename])
+    case result of
+        Left err -> print err
+        Right _  -> return ()
 
 until_ :: Monad m
        => (a -> Bool) -- ^ predicate executed on the result of action

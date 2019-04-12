@@ -18,11 +18,11 @@ numericBinop :: (Integer -> Integer -> Integer)
              -> RawPrimitive
 numericBinop op           []  = throwError $ NumArgs 2 []
 numericBinop op singleVal@[_] = throwError $ NumArgs 2 singleVal
-numericBinop op params        = mapM unwrapNum params >>= return . Number . foldl1 op
+numericBinop op params        = Number . foldl1 op <$> mapM unwrapNum params
 
 subtract :: RawPrimitive
 subtract []     = throwError $ NumArgs 1 []
-subtract [x]    = unwrapNum x >>= return . Number . negate
+subtract [x]    = Number . negate <$> unwrapNum x
 subtract params = numericBinop (-) params
 
 {-divide :: RawPrimitive

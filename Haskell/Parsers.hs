@@ -1,17 +1,27 @@
-module Parsers (readExpr) where
+module Parsers (readExpr, readExprList, load) where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
+import Data.Maybe (isNothing)
 import Control.Monad (liftM, guard)
-import Control.Monad.Except (throwError)
+import Control.Monad.Except (throwError, liftIO)
 import Numeric (readInt, readOct, readHex)
 
-import LispVal (LispVal (..), LispErr (..), ThrowsError)
+import LispVal (LispVal (..), LispErr (..)
+               , IOThrowsError, ThrowsError, liftThrows)
 
-
-readExpr :: String -> ThrowsError LispVal
-readExpr input = case parse parseExpr "Lisp" input of
+readOrThrow :: Parser a -> String -> ThrowsError a
+readOrThrow parser input = case parse parser "Thcheme" input of
     Left err  -> throwError $ Parser err
     Right val -> return val
+
+readExpr :: String -> ThrowsError LispVal
+readExpr = readOrThrow parseExpr
+
+readExprList :: String -> ThrowsError [LispVal]
+readExprList = readOrThrow (endBy parseExpr spaces)
+
+load :: String -> IOThrowsError [LispVal]
+load filename = liftIO (readFile filename) >>= liftThrows . readExprList
 
 parseExpr :: Parser LispVal
 parseExpr = try parseNumber 
@@ -67,7 +77,7 @@ parseNumber = do
         "#o" -> parseOct
         "#d" -> parseDec
         "#h" -> parseHex
-    if sign == Nothing
+    if isNothing sign
     then return num
     else case num of
         (Number n) -> return . Number $ negate n
@@ -82,7 +92,7 @@ parseNumber = do
         parseBin = liftNumber . readBin
 
         readBin :: String -> Integer
-        readBin = fromRead . (readInt 2 (`elem` "01") (read . pure))
+        readBin = fromRead . readInt 2 (`elem` "01") (read . pure)
 
         parseOct :: String -> Parser LispVal
         parseOct = liftNumber . fromRead . readOct
@@ -90,7 +100,7 @@ parseNumber = do
         parseDec :: String -> Parser LispVal
         parseDec s = do
             let parses = reads s
-            guard $ length parses /= 0
+            guard . not $ null parses
             liftNumber . fst $ head parses
 
         parseHex :: String -> Parser LispVal
@@ -114,13 +124,13 @@ parseChar = do
                       return '\r')
               <|> (do try $ string "tab" 
                       return '\t')
-              <|> (try $ do c <- anyChar
-                            notFollowedBy $ alphaNum <|> symbol
-                            return c)
+              <|> try (do c <- anyChar
+                          notFollowedBy $ alphaNum <|> symbol
+                          return c)
     return $ Char char
 
 parseList :: Parser LispVal
-parseList = liftM List $ sepBy parseExpr spaces
+parseList = List <$> sepBy parseExpr spaces
 
 parseDottedList :: Parser LispVal
 parseDottedList = do

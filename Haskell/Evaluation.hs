@@ -6,9 +6,10 @@ import Data.Maybe (isNothing)
 import Data.IORef (IORef, readIORef, newIORef)
 import Control.Monad.Except (ExceptT (ExceptT), liftIO, catchError, throwError)
 import Control.Monad (liftM, mapM)
-import qualified Data.Char as C 
-    (ord, chr)
+import qualified Data.Char as C (ord, chr)
 import qualified Data.HashMap.Strict as Map
+
+import Parsers (load)
 
 import LispVal
 import Environment
@@ -47,25 +48,41 @@ eval env (List (Atom "lambda" : DottedList params varargs : body)) =
 eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
      makeFuncVarargs varargs env [] body Nothing
 
+eval env (List [Atom "load", String filename]) =
+     load filename >>= fmap last . mapM (eval env)
+
 eval env (List (function : args)) = do
      func <- eval env function
      argVals <- mapM (eval env) args
      apply func argVals
+
 eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
+
+-- Applications of primitive functions
 apply (Primitive func _) args = liftThrows $ func args
+apply (IOPrimitive func _) args = func args
+
+-- Applications of user-defined functions
+--TODO partial evaluation
 apply (Func params varargs body closure _) args =
+    -- Throw error if too many / too few args and no varargs
     if num params /= num args && isNothing varargs 
+    -- If too few args and varargs, error is a "Unbound [Get]" instead of arg mismatch
+    --TODO fix above by using case GT/EQ/LT here instead.
     then throwError $ NumArgs (num params) args
+    -- otherwise bind parameters in this closure, bind the varargs, and evaluate
     else (liftIO . bindVars closure . Map.fromList $ zip params args)
             >>= bindVarargs varargs >>= evalBody
-    where remainingArgs = drop (length params) args
-          num = toInteger . length
-          evalBody env = last <$> mapM (eval env) body
-          bindVarargs arg env = case arg of
-            Just argName -> liftIO . bindVars env $ Map.fromList [(argName, List remainingArgs)]
-            Nothing      -> return env
+
+  where remainingArgs = drop (length params) args
+        num = toInteger . length
+        -- evaluate every expression in body, return value of the last one
+        evalBody env = last <$> mapM (eval env) body
+        bindVarargs arg env = case arg of
+          Just argName -> liftIO . bindVars env $ Map.fromList [(argName, List remainingArgs)]
+          Nothing      -> return env
 apply notFunc _ = throwError . NotFunction "Not a function" $ show notFunc
 
 makeFunc :: Maybe String 
@@ -76,18 +93,6 @@ makeFunc :: Maybe String
          -> IOThrowsError LispVal
 makeFunc varargs env params body name = 
     return $ Func (map show params) varargs body env name
-    {-
-    ExceptT $ do
-        env' <- readIORef env
-        deepCopy <- mapM copy env'
-        newEnv <- newIORef deepCopy
-        return . return $ Func (map show params) varargs body newEnv name
-    where copy :: (String, IORef LispVal) -> IO (String, IORef LispVal)
-          copy (name, ref) = do
-            lv <- readIORef ref
-            copy <- newIORef lv
-            return (name, copy)
-            -}
 
 makeFuncNormal = makeFunc Nothing
 makeFuncVarargs = makeFunc . Just . show

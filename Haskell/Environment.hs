@@ -4,6 +4,7 @@ module Environment
     , getVar
     , setVar
     , defineVar
+    , bindVar
     , bindVars
     , nullEnv
     , primitiveBindings
@@ -48,6 +49,13 @@ defineVar envRef var value = do
           (const $ setVar envRef var value >> return value)
           (Map.lookup var env)
 
+bindVar :: Env -> String -> LispVal -> IO Env
+bindVar envRef var value = do
+    env <- readIORef envRef
+    valRef <- newIORef value
+    let env' = Map.insert var valRef env
+    newIORef env'
+
 bindVars :: Env -> HashMap String LispVal -> IO Env
 bindVars envRef bindings = readIORef envRef
                        >>= extendEnv bindings
@@ -64,5 +72,4 @@ nullEnv :: IO Env
 nullEnv = newIORef Map.empty
 
 primitiveBindings :: IO Env
-primitiveBindings = nullEnv >>= flip bindVars (Map.mapWithKey makePrimitive primitives)
-    where makePrimitive name func = Primitive func name
+primitiveBindings = nullEnv >>= flip bindVars primitives
