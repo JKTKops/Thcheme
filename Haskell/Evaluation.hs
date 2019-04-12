@@ -60,11 +60,12 @@ eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badFo
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 
 -- Applications of primitive functions
+-- TODO partial application
+-- add arity to primitive constructors
 apply (Primitive func _) args = liftThrows $ func args
 apply (IOPrimitive func _) args = func args
 
 -- Applications of user-defined functions
---TODO partial evaluation
 apply (Func params varargs body closure _) args =
     case num args `compare` num params of
         -- Throw error if too many args and no varargs
