@@ -25,6 +25,6 @@ boolAnd = boolBoolBinop (&&)
 boolOr  = boolBoolBinop (||)
 
 boolNot :: RawPrimitive 
-boolNot [(Bool False)] = return $ Bool True
+boolNot [Bool False]   = return $ Bool True
 boolNot [_]            = return $ Bool False
 boolNot badArgs        = throwError $ NumArgs 1 badArgs

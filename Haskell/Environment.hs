@@ -6,8 +6,6 @@ module Environment
     , defineVar
     , bindVar
     , bindVars
-    , nullEnv
-    , primitiveBindings
     ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -16,7 +14,6 @@ import Data.IORef
 import Data.Maybe (isJust)
 import Control.Monad.Except (liftM, liftIO, throwError)
 
-import Primitives (primitives)
 import LispVal (Env, LispErr (..), LispVal (..), 
                 ThrowsError, IOThrowsError, extractValue, trapError)
 
@@ -67,9 +64,3 @@ bindVars envRef bindings = readIORef envRef
     extendEnv bindings env = (`Map.union` env) <$> mapM createRef bindings
     createRef :: LispVal -> IO (IORef LispVal)
     createRef = newIORef
-
-nullEnv :: IO Env
-nullEnv = newIORef Map.empty
-
-primitiveBindings :: IO Env
-primitiveBindings = nullEnv >>= flip bindVars primitives

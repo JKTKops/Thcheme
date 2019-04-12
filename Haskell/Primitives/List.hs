@@ -3,16 +3,19 @@ module Primitives.List (primitives) where
 import Prelude hiding (sequence)
 import Control.Monad (liftM)
 import Control.Monad.Except (throwError, (>=>))
-import Control.Monad.Writer (Writer, writer, runWriter)
+import Control.Monad.Writer (Writer, writer, runWriter, tell)
 
-import LispVal ( LispVal ( List
-                         , DottedList)
+import LispVal ( LispVal (..)
                , LispErr ( TypeMismatch
                          , NumArgs)
                , RawPrimitive
                , ThrowsError)
 
-primitives = ("cons", cons) : compositions [1..4] [("a", car), ("d", cdr)]
+primitives = [ ("list", listOp)
+             , ("cons", cons)
+             , ("null?", nullOp)
+             ]
+             ++ compositions [1..4] [("a", car), ("d", cdr)]
 
 car :: RawPrimitive
 car [List (x:xs)]        = return x
@@ -57,3 +60,12 @@ logChooseN ns as = do
                              w <- ws
                              return $ do let (list, log) = runWriter w
                                          writer (val:list, iden `mappend` log)
+
+listOp :: RawPrimitive
+listOp = return . List
+
+nullOp :: RawPrimitive
+nullOp [List []] = return $ Bool True
+nullOp [List _]  = return $ Bool False
+nullOp [notList] = throwError $ TypeMismatch "list" notList
+nullOp badArgs   = throwError $ NumArgs 1 badArgs

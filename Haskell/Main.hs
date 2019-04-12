@@ -8,7 +8,8 @@ import Parsers (readExpr)
 import Evaluation (eval)
 import LispVal (ThrowsError, IOThrowsError, LispVal(..), isTerminationError
                , extractValue, trapError, runIOThrows, liftThrows)
-import Environment (Env, bindVar, bindVars, primitiveBindings)
+import Environment (Env, bindVar, bindVars)
+import Bootstrap (primitiveBindings)
 
 main :: IO ()
 main = do

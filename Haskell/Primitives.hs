@@ -12,6 +12,7 @@ import qualified Primitives.Char as CharOps
 import qualified Primitives.Comparison as Comparison
 import qualified Primitives.TypeCheck as TypeCheck
 import qualified Primitives.TypeTransformers as TypeCast
+import qualified Primitives.Functions as Function
 import qualified Primitives.IOPrimitives as IO
 
 primitives :: HashMap String LispVal
@@ -27,6 +28,7 @@ rawPrimitives = Map.fromList $ Math.primitives ++
                             Comparison.primitives ++
                             TypeCheck.primitives ++
                             TypeCast.primitives ++
+                            Function.primitives ++
                             [("quit", quit)]
 
 ioPrimitives :: HashMap String IOPrimitive

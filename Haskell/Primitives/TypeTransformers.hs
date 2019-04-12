@@ -30,10 +30,10 @@ charToString (Char c) = return $ String [c]
 charToString notChar  = throwError $ TypeMismatch "char" notChar
 
 listToString :: LispVal -> ThrowsError LispVal
-listToString (List chars) = return . String =<< mapchars chars where
+listToString (List chars) = String <$> mapchars chars where
     mapchars :: [LispVal] -> ThrowsError String
-    mapchars []              = return $ []
-    mapchars ((Char c) : cs) = return . (c :) =<< mapchars cs
+    mapchars []              = return []
+    mapchars (Char c : cs) = (c :) <$> mapchars cs
     mapchars (notChar : _)   = throwError $ TypeMismatch "char" notChar
 listToString notList      = throwError $ TypeMismatch "list" notList
 
@@ -53,5 +53,5 @@ stringToNumber :: LispVal -> ThrowsError LispVal
 stringToNumber (String s) = let parsed = reads s in
     if null parsed || snd (head parsed) /= ""
     then return $ Bool False
-    else return . Number . fst $ parsed !! 0
+    else return . Number . fst $ head parsed 
 stringToNumber notStr     = throwError $ TypeMismatch "string" notStr

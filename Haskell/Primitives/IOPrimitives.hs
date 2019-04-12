@@ -8,9 +8,10 @@ import Control.Monad.Except (throwError, liftIO)
 import LispVal (LispVal(..), LispErr(..), IOThrowsError, IOPrimitive
                , liftThrows)
 import Parsers (readExpr, load)
+import Evaluation (apply)
 
 primitives :: [(String, IOPrimitive)]
-primitives = [ ("apply", return . head)
+primitives = [ ("apply", applyProc)
              , ("open-input-file", makePort ReadMode)
              , ("open-output-file", makePort WriteMode)
              , ("close-port", closePort)
@@ -21,40 +22,39 @@ primitives = [ ("apply", return . head)
              , ("read-all", readAll)
              ]
 
--- TODO think of a way to uncurry a given Func LispVal
-{-applyProc :: [LispVal] -> IOThrowsError LispVal
+applyProc :: IOPrimitive
 applyProc [func, List args] = apply func args
-applyProc (func : args)     = apply func args-}
+applyProc (func : args)     = apply func args
 
-makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
+makePort :: IOMode -> IOPrimitive
 makePort mode [String filename] = Port <$> liftIO (openFile filename mode)
 makePort _ [badArg]             = throwError $ TypeMismatch "string" badArg
 makePort _ badArgs              = throwError $ NumArgs 1 badArgs
 
-closePort :: [LispVal] -> IOThrowsError LispVal
+closePort :: IOPrimitive
 closePort [Port port] = liftIO $ hClose port >> return (Bool True)
 closePort _           = return $ Bool False
 
-readProc :: [LispVal] -> IOThrowsError LispVal
+readProc :: IOPrimitive
 readProc []         = readProc [Port stdin]
 readProc [Port hdl] = liftIO (hGetLine hdl) >>= liftThrows . readExpr
 readProc [badArg]   = throwError $ TypeMismatch "port" badArg
 readProc badArgs    = throwError $ NumArgs 1 badArgs
 
-readLineProc :: [LispVal] -> IOThrowsError LispVal
+readLineProc :: IOPrimitive
 readLineProc []      = String <$> liftIO getLine
 readLineProc badArgs = throwError $ NumArgs 0 badArgs
 
-writeProc :: [LispVal] -> IOThrowsError LispVal
+writeProc :: IOPrimitive
 writeProc [obj]           = writeProc [obj, Port stdout]
 writeProc [obj, Port hdl] = liftIO $ hPrint hdl obj >> return (Bool True)
 writeProc [obj, badArg]   = throwError $ TypeMismatch "port" badArg
 writeProc badArgs         = throwError $ NumArgs 1 badArgs
 
-readContents :: [LispVal] -> IOThrowsError LispVal
+readContents :: IOPrimitive
 readContents [String filename] = String <$> liftIO (readFile filename)
 readContents [badArg]          = throwError $ TypeMismatch "string" badArg
 readContents badArgs           = throwError $ NumArgs 1 badArgs
 
-readAll :: [LispVal] -> IOThrowsError LispVal
+readAll :: IOPrimitive
 readAll [String filename] = List <$> load filename
