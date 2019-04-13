@@ -1,1 +1,0 @@
-ghc -O2 -o thcheme -odir bin/obj -hidir bin/hi Main.hs
