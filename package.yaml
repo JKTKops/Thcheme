@@ -50,3 +50,9 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - Thcheme
+    - tasty
+    - tasty-hunit
+    - smallcheck
+    - tasty-smallcheck
+    - QuickCheck
+    - tasty-quickcheck
