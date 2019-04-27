@@ -4,14 +4,14 @@ module Primitives.Math (primitives) where
 import Control.Monad (mapM)
 import Control.Monad.Except (throwError)
 
-import LispVal 
+import LispVal
 import Primitives.Unwrappers (unwrapNum)
 import Primitives.Bool (predicate)
 
 addP = numericBinop (+)
-subP = numericBinop (-) 
+subP = numericBinop (-)
 mulP = numericBinop (*)
-divP = numericBinop div -- divide
+divP = guardDivZero $ numericBinop div -- divide
 modP = numericBinop mod
 quotP = numericBinop quot
 remP = numericBinop rem
@@ -23,6 +23,12 @@ remP = numericBinop rem
 numericBinop :: (Integer -> Integer -> Integer)
              -> RawPrimitive
 numericBinop op = RPrim 2 $ fmap (Number . foldl1 op) . mapM unwrapNum
+
+guardDivZero :: RawPrimitive -> RawPrimitive
+guardDivZero (RPrim arity f) = RPrim arity $ \args ->
+    if any (== Number 0) (tail args)
+    then throwError $ Default "divide by zero"
+    else f args
 
 negateP :: RawPrimitive
 negateP = RPrim 1 $ \case

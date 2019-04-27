@@ -1,4 +1,4 @@
-module Environment 
+module Environment
     ( Env -- re-exported from LispVal where it does not belong
     , isBound
     , getVar
@@ -14,12 +14,12 @@ import Data.IORef
 import Data.Maybe (isJust)
 import Control.Monad.Except (liftM, liftIO, throwError)
 
-import LispVal (Env, LispErr (..), LispVal (..), 
+import LispVal (Env, LispErr (..), LispVal (..),
                 ThrowsError, IOThrowsError, extractValue, trapError)
 
 
 isBound :: Env -> String -> IO Bool
-isBound envRef var = (isJust . Map.lookup var) <$> readIORef envRef 
+isBound envRef var = (isJust . Map.lookup var) <$> readIORef envRef
 
 getVar :: Env -> String -> IOThrowsError LispVal
 getVar envRef var = do
@@ -58,7 +58,7 @@ bindVars envRef bindings = readIORef envRef
                        >>= extendEnv bindings
                        >>= newIORef
   where
-    extendEnv :: HashMap String LispVal 
+    extendEnv :: HashMap String LispVal
               -> HashMap String (IORef LispVal)
               -> IO (HashMap String (IORef LispVal))
     extendEnv bindings env = (`Map.union` env) <$> mapM createRef bindings

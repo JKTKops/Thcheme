@@ -1,12 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 module Primitives.IOPrimitives (primitives) where
 
-import System.IO (IOMode(..)
+import System.IO ( IOMode (..)
                  , openFile, hClose, hGetLine, hPrint
                  , getLine, stdin, stdout)
 import Control.Monad.Except (throwError, liftIO)
 
-import LispVal 
+import LispVal
 import Parsers (readExpr, load)
 import Evaluation (apply)
 
@@ -41,7 +41,7 @@ closePort = IPrim 1 $ \case
 
 readProc :: IOPrimitive
 readProc = IPrim 0 read
-  where 
+  where
     read :: IBuiltin
     read []         = read [Port stdin]
     read [Port hdl] = liftIO (hGetLine hdl) >>= liftThrows . readExpr

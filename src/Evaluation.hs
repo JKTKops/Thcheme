@@ -1,4 +1,3 @@
-{-# LANGUAGE ExistentialQuantification #-}
 module Evaluation (eval, apply) where
 
 import Data.Maybe (isNothing)
@@ -19,7 +18,13 @@ eval env val@(Char _)   = return val
 eval env val@(Number _) = return val
 eval env val@(Bool _)   = return val
 eval env (Atom id)      = getVar env id
+eval env nil@(List [])  = return nil
 eval env (List [Atom "quote", val]) = return val
+eval env (List [Atom "if", pred, conseq]) = do -- this and below can be combined carefully
+    result <- eval env pred
+    case result of
+        Bool False -> return $ List []
+        _          -> eval env conseq
 eval env (List [Atom "if", pred, conseq, alt]) = do
     result <- eval env pred
     case result of
@@ -47,6 +52,9 @@ eval env (List (Atom "lambda" : DottedList params varargs : body)) =
 eval env (List (Atom "lambda" : varargs@(Atom _) : body)) =
      makeFuncVarargs varargs env [] body Nothing
 
+eval env (List (Atom "begin" : stmts)) =
+    last <$> mapM (eval env) stmts
+
 eval env (List [Atom "load", String filename]) =
      load filename >>= fmap last . mapM (eval env)
 
@@ -54,6 +62,7 @@ eval env (List (function : args)) = do
      func <- case function of
         Primitive {}   -> return function
         IOPrimitive {} -> return function
+        Func {}        -> return function
         _              -> eval env function
      argVals <- mapM (eval env) args
      apply func argVals
@@ -64,7 +73,7 @@ eval env badForm = throwError $ BadSpecialForm "Unrecognized special form" badFo
 wrapPrim :: LispVal -> IO LispVal
 wrapPrim prim@(Primitive arity func _) = makeWrapper arity prim
 
-wrapPrim prim@(IOPrimitive arity _ _) = makeWrapper arity prim 
+wrapPrim prim@(IOPrimitive arity _ _) = makeWrapper arity prim
 
 makeWrapper :: Arity -> LispVal -> IO LispVal
 makeWrapper arity prim = do
@@ -77,14 +86,14 @@ apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 
 -- Applications of primitive functions
 -- TODO partial application
-apply prim@(Primitive arity func _) args = 
+apply prim@(Primitive arity func _) args =
     if length args >= arity
     then liftThrows $ func args
     else do
         wrapped <- lift $ wrapPrim prim
         apply wrapped args
 
-apply prim@(IOPrimitive arity func _) args = 
+apply prim@(IOPrimitive arity func _) args =
     if length args >= arity
     then func args
     else do
@@ -109,7 +118,7 @@ apply (Func params varargs body closure _) args =
             let (bindingParams, freeParams) = splitAt (length args) params
             closure' <- makeBindings bindingParams
             return $ Func freeParams varargs body closure' Nothing
-            
+
         makeBindings :: [String] -> IOThrowsError Env
         makeBindings vars = liftIO . bindVars closure . Map.fromList $ zip vars args
 
@@ -124,13 +133,13 @@ apply (Func params varargs body closure _) args =
 
 apply notFunc _ = throwError . NotFunction "Not a function" $ show notFunc
 
-makeFunc :: Maybe String 
-         -> Env 
-         -> [LispVal] 
-         -> [LispVal] 
-         -> Maybe String 
+makeFunc :: Maybe String
+         -> Env
+         -> [LispVal]
+         -> [LispVal]
+         -> Maybe String
          -> IOThrowsError LispVal
-makeFunc varargs env params body name = 
+makeFunc varargs env params body name =
     return $ Func (map show params) varargs body env name
 
 makeFuncNormal = makeFunc Nothing

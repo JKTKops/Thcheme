@@ -1,4 +1,4 @@
-module LispVal 
+module LispVal
     ( Env
     , RBuiltin
     , IBuiltin
@@ -26,7 +26,6 @@ import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import System.IO (Handle)
 
 
-
 -- Defined here to avoid circular dependencies
 type Env = IORef (HashMap String (IORef LispVal))
 
@@ -50,10 +49,12 @@ data LispVal = Atom String
              | Func { params  :: [String]
                     , vararg  :: Maybe String
                     , body    :: [LispVal]
-                    , closure :: Env 
+                    , closure :: Env
                     , name    :: Maybe String
                     }
              | Port Handle
+
+instance Eq LispVal where (==) = eqVal
 
 instance Show LispVal where show = showVal
 
@@ -65,12 +66,13 @@ data LispErr = NumArgs Integer [LispVal]
              | UnboundVar String String
              | Default String
              | Quit
+    deriving (Eq)
 
 instance Show LispErr where show = ("Error: " ++ ) . showErr
 
 type ThrowsError = Either LispErr
 
-trapError :: ThrowsError String -> ThrowsError String 
+trapError :: ThrowsError String -> ThrowsError String
 trapError action = catchError action (return . show)
 
 extractValue :: ThrowsError a -> a
@@ -90,16 +92,34 @@ liftThrows (Right val) = return val
 runIOThrows :: IOThrowsError String -> IO String
 runIOThrows action = extractValue . trapError <$> runExceptT action
 
+eqVal :: LispVal -> LispVal -> Bool
+eqVal (Atom s) (Atom s') = s == s'
+eqVal (Number n) (Number n') = n == n'
+eqVal (String s) (String s') = s == s'
+eqVal (Char c) (Char c') = c == c'
+eqVal (Bool b) (Bool b') = b == b'
+eqVal (List ls) (List ls') = ls == ls'
+eqVal (DottedList ls l) (DottedList ls' l') = ls == ls' && l == l'
+eqVal (Port p) (Port p') = p == p'
+eqVal (Primitive _ _ n) (Primitive _ _ n') = n == n'
+eqVal (IOPrimitive _ _ n) (IOPrimitive _ _ n') = n == n'
+eqVal (Func p v b _ n) (Func p' v' b' _ n') = and [ p == p'
+                                                  , v == v'
+                                                  , b == b'
+                                                  , n == n'
+                                                  ]
+eqVal _ _ = False
+
 showVal :: LispVal -> String
 showVal (Atom s) = s
 showVal (Number n) = show n
 showVal (String s) = show s
 showVal (Char c)   = "#\\" ++ case c of
-    ' '       -> "space"
-    '\t'      -> "tab"
-    '\n'      -> "newline"
-    '\r'      -> "carriage-return"
-    _         -> pure c
+    ' '  -> "space"
+    '\t' -> "tab"
+    '\n' -> "newline"
+    '\r' -> "carriage-return"
+    _    -> pure c
 showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
 showVal (List ls) = "(" ++ unwordsList ls ++ ")"
@@ -117,8 +137,8 @@ showErr (UnboundVar message varname)  = message ++ ": " ++ varname
 showErr (BadSpecialForm message form) = message ++ ": " ++ show form
 showErr (NotFunction message func)    = message ++ ": " ++ show func
 showErr (NumArgs expected found)      = "Expected " ++ show expected
-    ++ " arg" ++ (if expected == 1 
-        then "" 
+    ++ " arg" ++ (if expected == 1
+        then ""
         else "s")
     ++ "; found values " ++ show found
 showErr (TypeMismatch expected found) = "Invalid type: expected " ++ expected

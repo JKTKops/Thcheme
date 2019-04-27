@@ -17,12 +17,12 @@ main = do
     if null args
     then runRepl
     else runOne args
-        
+
 -- TODO use Haskeline.
 runRepl :: IO ()
-runRepl = primitiveBindings >>= \env -> 
-    until_ isTerminationError 
-           (prompt ">>> " >>= runExceptT . evalString env) 
+runRepl = primitiveBindings >>= \env ->
+    until_ isTerminationError
+           (prompt ">>> " >>= runExceptT . evalString env)
            (printResult . liftThrows)
 
 runOne :: [String] -> IO ()
@@ -47,7 +47,7 @@ until_ pred prompt action = do
 
 printResult :: IOThrowsError LispVal -> IO ()
 printResult result = ioResult >>= putStrLn
-    where ioResult = asString <$> runExceptT result 
+    where ioResult = asString <$> runExceptT result
           asString = extractValue . trapError . showSuccess
           showSuccess =  fmap show
 

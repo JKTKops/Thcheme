@@ -3,7 +3,7 @@ module Primitives (primitives) where
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 
-import LispVal 
+import           LispVal
 import qualified Primitives.Math as Math
 import qualified Primitives.List as List
 import qualified Primitives.Bool as BoolOps
@@ -15,8 +15,8 @@ import qualified Primitives.Functions as Function
 import qualified Primitives.IOPrimitives as IO
 
 primitives :: HashMap String LispVal
-primitives = Map.union 
-                (Map.mapWithKey makeRPrimitive rawPrimitives) 
+primitives = Map.union
+                (Map.mapWithKey makeRPrimitive rawPrimitives)
                 (Map.mapWithKey makeIPrimitive ioPrimitives)
 
 rawPrimitives :: HashMap String RawPrimitive
