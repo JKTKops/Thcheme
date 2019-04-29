@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Functions (primitives) where
+module RawPrimitives.Functions (primitives) where
 
 import Control.Monad.Except (throwError)
 

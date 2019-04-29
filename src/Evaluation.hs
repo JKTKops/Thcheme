@@ -80,7 +80,7 @@ makeWrapper arity prim = do
     emptyClosure <- newIORef Map.empty
     return $ Func varNames Nothing [List $ prim : map Atom varNames] emptyClosure Nothing
   where varNames :: [String]
-        varNames = take arity $ map pure ['a'..]
+        varNames = take arity . map pure $ 'z' : ['a'..]
 
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 

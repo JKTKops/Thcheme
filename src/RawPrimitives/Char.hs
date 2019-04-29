@@ -1,19 +1,19 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Char (primitives) where
+module RawPrimitives.Char (primitives) where
 
 import Control.Monad.Except (throwError)
-import qualified Data.Char as C 
+import qualified Data.Char as C
     (toLower, toUpper, isAlpha, isNumber, isSpace, isUpper, isLower)
 
 import LispVal
 
-primitives = [ (name, makeCharPrim Bool f) | (name, f) <- 
+primitives = [ (name, makeCharPrim Bool f) | (name, f) <-
                 [ ("char-alphabetic?", C.isAlpha)
                 , ("char-numeric?", C.isNumber)
                 , ("char-whitespace?", C.isSpace)
                 , ("char-upper-case?", C.isUpper)
                 , ("char-lower-case?", C.isLower)
-                ] 
+                ]
              ] ++
              [ (name, makeCharPrim Char f) | (name, f) <-
                 [ ("char-upcase", C.toUpper)

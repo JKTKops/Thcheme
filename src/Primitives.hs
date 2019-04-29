@@ -4,15 +4,15 @@ import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 
 import           LispVal
-import qualified Primitives.Math as Math
-import qualified Primitives.List as List
-import qualified Primitives.Bool as BoolOps
-import qualified Primitives.Char as CharOps
-import qualified Primitives.Comparison as Comparison
-import qualified Primitives.TypeCheck as TypeCheck
-import qualified Primitives.TypeTransformers as TypeCast
-import qualified Primitives.Functions as Function
-import qualified Primitives.IOPrimitives as IO
+import qualified RawPrimitives.Math as Math
+import qualified RawPrimitives.List as List
+import qualified RawPrimitives.Bool as BoolOps
+import qualified RawPrimitives.Char as CharOps
+import qualified RawPrimitives.Comparison as Comparison
+import qualified RawPrimitives.TypeCheck as TypeCheck
+import qualified RawPrimitives.TypeTransformers as TypeCast
+import qualified RawPrimitives.Functions as Function
+import qualified IOPrimitives.IOPrimitives as IO
 
 primitives :: HashMap String LispVal
 primitives = Map.union

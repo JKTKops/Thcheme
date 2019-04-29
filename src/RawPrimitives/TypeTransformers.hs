@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.TypeTransformers (primitives) where
-    
+module RawPrimitives.TypeTransformers (primitives) where
+
 import Data.Char (chr, ord)
 import Control.Monad.Except (throwError)
 

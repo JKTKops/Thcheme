@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.IOPrimitives (primitives) where
+module IOPrimitives.IOPrimitives (primitives) where
 
 import System.IO ( IOMode (..)
                  , openFile, hClose, hGetLine, hPrint

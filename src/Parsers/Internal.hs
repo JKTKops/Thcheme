@@ -33,9 +33,6 @@ spaces = skipMany1 space
 
 delim :: Parser ()
 delim = notFollowedBy $ alphaNum <|> symbol
-        {-(lookAhead space >> return ())
-            <|> (lookAhead (char ')') >> return())
-            <|> eof-}
 
 parseString :: Parser LispVal
 parseString = do

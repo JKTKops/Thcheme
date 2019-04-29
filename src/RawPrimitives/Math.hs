@@ -1,12 +1,12 @@
 {-# Language LambdaCase #-}
-module Primitives.Math (primitives) where
+module RawPrimitives.Math (primitives) where
 
 import Control.Monad (mapM)
 import Control.Monad.Except (throwError)
 
 import LispVal
-import Primitives.Unwrappers (unwrapNum)
-import Primitives.Bool (predicate)
+import RawPrimitives.Unwrappers (unwrapNum)
+import RawPrimitives.Bool (predicate)
 
 addP = numericBinop (+)
 subP = numericBinop (-)

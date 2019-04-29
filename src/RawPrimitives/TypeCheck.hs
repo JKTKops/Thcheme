@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.TypeCheck (primitives) where
-    
+module RawPrimitives.TypeCheck (primitives) where
+
 import Control.Monad.Except (throwError)
 
 import LispVal
@@ -24,7 +24,7 @@ isBool   = guardOneArg bool
 isList   = guardOneArg list
 isPair   = guardOneArg pair
 
-guardOneArg :: (LispVal -> LispVal) -> RawPrimitive 
+guardOneArg :: (LispVal -> LispVal) -> RawPrimitive
 guardOneArg func = RPrim 1 $ \case
     [x] -> return $ func x
     badArgs -> throwError $ NumArgs 1 badArgs

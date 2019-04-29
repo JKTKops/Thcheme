@@ -1,16 +1,16 @@
 {-# LANGUAGE ExistentialQuantification #-}
-module Primitives.Comparison (primitives) where
+module RawPrimitives.Comparison (primitives) where
 
 import Control.Monad (liftM)
 import Control.Monad.Except (throwError, catchError)
 import Data.Char (ord, chr, toLower)
 
 import LispVal
-import Primitives.Bool (boolBinop)
-import Primitives.Unwrappers
+import RawPrimitives.Bool (boolBinop)
+import RawPrimitives.Unwrappers
 
-primitives = typeSpecific 
-             ++ [ (name, RPrim 2 eqf) 
+primitives = typeSpecific
+             ++ [ (name, RPrim 2 eqf)
                 | (name, eqf) <- [("eq?", eqv), ("eqv?", eqv), ("equal?", equal)]
                 ]
 
@@ -24,7 +24,7 @@ builtinComparisons = [ ("=", (==))
                      , (">=", (>=))
                      ]
 
-data PrimBuilder = forall a. Ord a => 
+data PrimBuilder = forall a. Ord a =>
                       PrimBuilder ((String, a -> a -> Bool) -> (String, RawPrimitive))
 
 primBuilders = [PrimBuilder makeNumPrim, PrimBuilder makeStrPrim, PrimBuilder makeCharPrim]
@@ -33,7 +33,7 @@ primBuilders = [PrimBuilder makeNumPrim, PrimBuilder makeStrPrim, PrimBuilder ma
                  -> ((a -> a -> Bool) -> RawPrimitive)
                  -> (String, a -> a -> Bool)
                  -> (String, RawPrimitive)
-        makePrim name isNum primGen (opName, op) = 
+        makePrim name isNum primGen (opName, op) =
             (name ++ opName ++ (if isNum then "" else "?"), primGen op)
         makeNumPrim :: (String, Integer -> Integer -> Bool) -> (String, RawPrimitive)
         makeNumPrim = makePrim "" True numBoolBinop
@@ -59,7 +59,7 @@ eqv [Atom x, Atom y]                   = return . Bool $ x == y
 eqv [DottedList xs x, DottedList ys y] =
                            eqv [List $ xs ++ [x], List $ ys ++ [y]]
 eqv [List xs, List ys]                 = return . Bool
-    $ length xs == length ys && all pairEqv (zip xs ys) where 
+    $ length xs == length ys && all pairEqv (zip xs ys) where
         pairEqv (x, y) = case eqv [x, y] of
             Left err         -> False
             Right (Bool val) -> val
@@ -98,7 +98,7 @@ coerceBool notBool  = throwError $ TypeMismatch "boolean" notBool
 data Coercer = forall a. Eq a => Coercer (LispVal -> ThrowsError a)
 
 coerceEquals :: LispVal -> LispVal -> Coercer -> ThrowsError Bool
-coerceEquals x y (Coercer coercer) = 
+coerceEquals x y (Coercer coercer) =
     do coercedx <- coercer x
        coercedy <- coercer y
        return $ coercedx == coercedy
@@ -107,9 +107,9 @@ coerceEquals x y (Coercer coercer) =
 equal :: RBuiltin
 equal [DottedList xs x, DottedList ys y] =
     equal [List $ xs ++ [x], List $ ys ++ [y]]
-equal [List xs, List ys]                 = 
+equal [List xs, List ys]                 =
     return . Bool
-    $ length xs == length ys && all pairEqv (zip xs ys) where 
+    $ length xs == length ys && all pairEqv (zip xs ys) where
         pairEqv (x, y) = case equal [x, y] of
             Left err         -> False
             Right (Bool val) -> val

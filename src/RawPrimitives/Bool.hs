@@ -1,10 +1,10 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Bool (primitives, predicate, boolBinop) where
+module RawPrimitives.Bool (primitives, predicate, boolBinop) where
 
 import Control.Monad.Except (throwError)
 
 import LispVal
-import Primitives.Unwrappers (unwrapBool)
+import RawPrimitives.Unwrappers (unwrapBool)
 
 primitives = [ ("&&", boolAnd)
              , ("||", boolOr)

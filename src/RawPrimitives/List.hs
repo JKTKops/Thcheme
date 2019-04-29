@@ -1,18 +1,18 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.List (primitives) where
+module RawPrimitives.List (primitives) where
 
 import Prelude hiding (sequence)
 import Control.Monad (liftM)
 import Control.Monad.Except (throwError, (>=>))
 import Control.Monad.Writer (Writer, writer, runWriter, tell)
 
-import LispVal 
+import LispVal
 
 primitives = [ ("list", listOp)
              , ("cons", cons)
              , ("null?", nullOp)
              ]
-             ++ [ (name, RPrim 1 func) 
+             ++ [ (name, RPrim 1 func)
                 | (name, func) <- compositions [1..4] [("a", car), ("d", cdr)]
                 ]
 
