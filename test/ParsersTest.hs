@@ -98,6 +98,18 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
             ]
         }
     , mkE2Etest
+        { testName = "List with []"
+        , input = "[+ 1 2]"
+        , expectedContents = Just $
+            List [Atom "+", Number 1, Number 2]
+        }
+    , mkE2Etest
+        { testName = "List with {}"
+        , input = "{test-func #\\a 0}"
+        , expectedContents = Just $
+            List [Atom "test-func", Char 'a', Number 0]
+        }
+    , mkE2Etest
         { testName = "Dotted List"
         , input = "(f 5 #\\$ . (1 2 \"test\"))"
         , expectedContents = Just $

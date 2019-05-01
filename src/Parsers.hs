@@ -4,7 +4,7 @@ import Text.ParserCombinators.Parsec hiding (spaces)
 import Control.Monad.Except (throwError, liftIO)
 
 import Parsers.Internal
-import LispVal 
+import LispVal
 
 readExpr :: String -> ThrowsError LispVal
 readExpr = readOrThrow $ do

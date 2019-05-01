@@ -8,11 +8,9 @@ import Control.Monad.Except (throwError, liftIO)
 
 import LispVal
 import Parsers (readExpr, load)
-import Evaluation (apply)
 
 primitives :: [(String, IOPrimitive)]
-primitives = [ ("apply", applyProc)
-             , ("open-input-file", makePort ReadMode)
+primitives = [ ("open-input-file", makePort ReadMode)
              , ("open-output-file", makePort WriteMode)
              , ("close-port", closePort)
              , ("read", readProc)
@@ -22,11 +20,6 @@ primitives = [ ("apply", applyProc)
              , ("read-contents", readContents)
              , ("read-all", readAll)
              ]
-
-applyProc :: IOPrimitive
-applyProc = IPrim 1 $ \case
-    [func, List args] -> apply func args
-    (func : args)     -> apply func args
 
 makePort :: IOMode -> IOPrimitive
 makePort mode = IPrim 1 $ \case

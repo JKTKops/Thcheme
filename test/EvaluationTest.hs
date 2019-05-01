@@ -7,6 +7,7 @@ import Test.Tasty.QuickCheck as QC
 import Text.ParserCombinators.Parsec
 import Control.Monad.Except
 import Data.Either
+import qualified Data.HashMap.Strict as Map
 
 import LispVal
 import Parsers
@@ -60,6 +61,11 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Number 5
         }
     , EvalTB
+        { testName = "Call quit"
+        , input = "(quit)"
+        , expected = Left Quit
+        }
+    , EvalTB
         { testName = "Quote symbol"
         , input = "'x"
         , expected = Right $ Atom "x"
@@ -90,6 +96,36 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Char 'y'
         }
     , EvalTB
+        { testName = "if with multiple alts (pred true)"
+        , input = "(if #t 1 (+ 1 2) \"fail\")"
+        , expected = Right $ Number 1
+        }
+    , EvalTB
+        { testName = "if with multiple alts (pred false)"
+        , input = "(if #f 0 (define x 5) x)"
+        , expected = Right $ Number 5
+        }
+    , EvalTB
+        { testName = "0 is falsy"
+        , input = "(if 0 1 0)"
+        , expected = Right $ Number 0
+        }
+    , EvalTB
+        { testName = "() is falsy"
+        , input = "(if () 1 0)"
+        , expected = Right $ Number 0
+        }
+    , EvalTB
+        { testName = "\"\" is falsy"
+        , input = "(if \"\" 1 0)"
+        , expected = Right $ Number 0
+        }
+    , EvalTB
+        { testName = "non-falsy is truthy"
+        , input = "(if '(1) 1 0)"
+        , expected = Right $ Number 1
+        }
+    , EvalTB
         { testName = "Simple set! on bound var"
         , input = "(define x 5)\n(set! x 0)"
         , expected = Right $ Number 0
@@ -97,7 +133,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTB
         { testName = "Simple set! on unbound var"
         , input = "(set! x 0)"
-        , expected = Left $ UnboundVar "[Set] unbound symbol" "x"
+        , expected = Right $ Number 0
         }
     , EvalTB
         { testName = "Complex set!"
@@ -217,13 +253,28 @@ evalTests = testGroup "eval" $ map mkEvalTest
             , vararg  = Nothing
             , body    = [List [Atom "+", Atom "x", Atom "y"]]
             , closure = undefined
-            , name = Nothing
+            , name    = Nothing
             }
         }
     , EvalTB
         { testName = "Eval x fails in primEnv"
         , input = "x"
         , expected = Left $ UnboundVar "[Get] unbound symbol" "x"
+        }
+    , EvalTB
+        { testName = "Overapply to partial'd vararg primitive"
+        , input = "((+ 1) 2 3)"
+        , expected = Right $ Number 6
+        }
+    , EvalTB
+        { testName = "Define rejects empty-bodied functions"
+        , input = "(define (test))"
+        , expected = Left $ Default "Attempt to define function with no body"
+        }
+    , EvalTB
+        { testName = "Lambda creation rejects empty-bodied functions"
+        , input = "(lambda (x y))"
+        , expected = Left $ Default "Attempt to define function with no body"
         }
     ]
 
@@ -237,17 +288,17 @@ mkEvalTest :: EvalTB -> TestTree
 mkEvalTest tb = let exprs = lines $ input tb
                  in testCaseSteps (testName tb) $ \step -> do
     primEnv <- primitiveBindings
-    evaluations <- runExceptT . forM exprs $ \input -> do
-        liftIO $ step "Parsing input"
+    evaluations <- fmap (map fst) . forM exprs $ \input -> do
+        step "Parsing input"
         let pExpr = readExpr $ input
-        liftIO $ isRight pExpr @? "Parse failed on input: " ++ input
+        isRight pExpr @? "Parse failed on input: " ++ input
         let Right expr = pExpr
 
-        lift $ step "Evaluating input"
-        eval primEnv expr
+        step "Evaluating input"
+        evaluateExpr primEnv Map.empty expr
 
     step "Verifying evaluation"
-    let evaluation = last <$> evaluations
+    let evaluation = last evaluations
     evaluation @?= expected tb
 
 applyTests :: TestTree
@@ -289,7 +340,7 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         , expectedA = Right $ IOPrimitive 2 undefined "write-port"
         }
     , ApplyTB
-        { testNameA = "Partial apply primitive"
+        { testNameA = "Partial apply IOPrimitive"
         , funcIn = "write-port"
         , args = [Number 0]
         , expectedA = Right $ Func
@@ -325,7 +376,7 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         , expectedA = Right $ Func
             { params  = ["y"]
             , vararg  = Nothing
-            , body    = [List [Atom "y"]]
+            , body    = [Atom "y"]
             , closure = undefined
             , name    = Just "test"
             }
@@ -356,6 +407,6 @@ mkApplyTest :: ApplyTB -> TestTree
 mkApplyTest tb = testCase (testNameA tb) $ do
     let Right funcP = parse parseExpr "" $ funcIn tb
     primEnv <- primitiveBindings
-    (Right func) <- runExceptT $ eval primEnv funcP
-    res <- runExceptT $ apply func (args tb)
-    res @?= expectedA tb
+    (Right func) <- fst <$> evaluateExpr primEnv Map.empty funcP
+    res <- runTest primEnv Map.empty $ apply func (args tb)
+    fst res @?= expectedA tb

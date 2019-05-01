@@ -19,11 +19,14 @@ parseExpr = try parseNumber
          <|> parseAtom
          <|> parseString
          <|> parseQuoted
-         <|> do char '('
+         <|> do brace <- char '(' <|> char '[' <|> char '{'
                 x <- try parseDottedList <|> parseList
-                char ')'
+                char $ close brace
                 return x
-
+  where close brace = case brace of
+            '(' -> ')'
+            '[' -> ']'
+            '{' -> '}'
 
 symbol :: Parser Char
 symbol = oneOf "!@#$%^&*-_=+|:\\/?<>~"
