@@ -160,7 +160,7 @@ handleNonPrim function args = do
     argVals <- mapM eval args
     let reduced = function /= func || args /= argVals
     when reduced $ do
-        modifyTopReason (\_ -> Reduce)
+        modifyTopReason $ const Reduce
         pushExpr Call (List (function : argVals))
     v <- apply func argVals
     when reduced popExpr
@@ -191,21 +191,17 @@ apply :: LispVal -> [LispVal] -> EM LispVal
 
 -- Applications of primitive functions
 -- TODO partial application
-apply prim@(Primitive arity func _) args =
-    if arity > 0 && length args == 0
-      then return prim
-    else if length args >= arity
-      then liftEither $ func args
-    else do
+apply prim@(Primitive arity func _) args
+    | arity > 0 && null args = return prim
+    | length args >= arity = liftEither $ func args
+    | otherwise = do
         wrapped <- liftIO $ wrapPrim prim
         apply wrapped args
 
-apply prim@(IOPrimitive arity func _) args =
-    if arity > 0 && length args == 0
-      then return prim
-    else if length args >= arity
-      then liftIOThrows $ func args
-    else do
+apply prim@(IOPrimitive arity func _) args
+    | arity > 0 && null args = return prim
+    | length args >= arity = liftIOThrows $ func args
+    | otherwise = do
         wrapped <- liftIO $ wrapPrim prim
         apply wrapped args
 

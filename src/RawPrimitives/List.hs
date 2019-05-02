@@ -52,7 +52,7 @@ sequence f g = f >=> g . return
 
 logChooseN :: (Monoid m) => [Int] -> [(m, a)] -> [Writer m [a]]
 logChooseN ns as = do
-    num <- ns 
+    num <- ns
     foldr (.) id (replicate num $ addChoice as) [return []]
     where
         addChoice :: (Monoid m) => [(m, a)] -> [Writer m [a]] -> [Writer m [a]]
@@ -64,9 +64,16 @@ logChooseN ns as = do
 listOp :: RawPrimitive
 listOp = RPrim 0 $ return . List
 
+appendOp :: RawPrimitive
+appendOp = RPrim 2 $ \case
+    [List a, List b] -> return . List $ a ++ b
+    [List _, notList] -> throwError $ TypeMismatch "list" notList
+    [notList, _]      -> throwError $ TypeMismatch "list" notList
+    badArgs           -> throwError $ NumArgs 2 badArgs
+
 nullOp :: RawPrimitive
 nullOp = RPrim 1 $ \case
-     [List []] -> return $ Bool True
-     [List _]  -> return $ Bool False
-     [notList] -> throwError $ TypeMismatch "list" notList
-     badArgs   -> throwError $ NumArgs 1 badArgs
+    [List []] -> return $ Bool True
+    [List _]  -> return $ Bool False
+    [notList] -> throwError $ TypeMismatch "list" notList
+    badArgs   -> throwError $ NumArgs 1 badArgs

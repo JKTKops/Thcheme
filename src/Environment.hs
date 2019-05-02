@@ -19,7 +19,7 @@ import LispVal (Env, LispErr (..), LispVal (..),
 
 
 isBound :: Env -> String -> IO Bool
-isBound envRef var = (isJust . Map.lookup var) <$> readIORef envRef
+isBound envRef var = isJust . Map.lookup var <$> readIORef envRef
 
 getVar :: Env -> String -> IOThrowsError LispVal
 getVar envRef var = do

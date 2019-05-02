@@ -26,7 +26,7 @@ numericBinop op = RPrim 2 $ fmap (Number . foldl1 op) . mapM unwrapNum
 
 guardDivZero :: RawPrimitive -> RawPrimitive
 guardDivZero (RPrim arity f) = RPrim arity $ \args ->
-    if any (== Number 0) (tail args)
+    if Number 0 `elem` tail args
     then throwError $ Default "divide by zero"
     else f args
 
