@@ -8,9 +8,9 @@ import qualified Data.HashMap.Strict as Map
 import LispVal
 import Parsers
 import Evaluation
+import Evaluation.Types
 import Bootstrap
 
-type Opts = Map.HashMap String LispVal
 data ReplState = RS { env      :: Env
                     , replOpts :: Opts
                     }
@@ -20,7 +20,9 @@ newtype Repl a = Repl { runReplMonad :: ReplType a }
   deriving (Monad, Functor, Applicative, MonadIO, MonadState ReplState)
 
 runRepl :: IO ()
-runRepl = primitiveBindings >>= \env ->
+runRepl = do
+    env <- primitiveBindings
+    putStrLn "loaded: stdlib.thm"
     evalStateT (runReplMonad replLoop) $ RS env Map.empty
 
 replLoop :: Repl ()

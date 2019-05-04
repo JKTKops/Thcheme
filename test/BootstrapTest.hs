@@ -20,14 +20,15 @@ unitTests = testGroup "Unit tests"
     , testPrimitiveEnvSameKeys
     ]
 
--- UNIT TESTS 
+-- UNIT TESTS
 testNullEnvEmpty = testCase "Null environment is empty" $
     do env <- nullEnv >>= readIORef
        Map.null env @? "Null Environment is not empty"
 
 testPrimitiveBindingsSize = testCase "Prim. env has correct size" $
     do env <- primitiveBindings >>= readIORef
-       Map.size env @?= length primitives
+       let (Right stdlibExprs) = stdlib
+       Map.size env @?= length primitives + length stdlibExprs
 
 testPrimitiveEnvSameKeys = testCase "Prim. env has same keys as prim. list" $
     do let keys = map fst $ Map.toList primitives

@@ -110,11 +110,21 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
             List [Atom "test-func", Char 'a', Number 0]
         }
     , mkE2Etest
-        { testName = "Dotted List"
+        { testName = "Regular dotted list"
         , input = "(f 5 #\\$ . (1 2 \"test\"))"
         , expectedContents = Just $
-            DottedList [Atom "f", Number 5, Char '$']
-                (List [Number 1, Number 2, String "test"])
+            List [Atom "f", Number 5, Char '$'
+                 , Number 1, Number 2, String "test"]
+        }
+    , mkE2Etest
+        { testName = "Dotted with nil"
+        , input = "(+ 0 . ())"
+        , expectedContents = Just $ List [Atom "+", Number 0]
+        }
+    , mkE2Etest
+        { testName = "Irregular dotted list"
+        , input = "(f 0 . m)"
+        , expectedContents = Just $ DottedList [Atom "f", Number 0] (Atom "m")
         }
     , mkE2Etest
         { testName = "Degenerate dotted list"

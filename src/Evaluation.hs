@@ -1,7 +1,5 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Evaluation
-    ( EvalState(..)
-    , evaluate -- ^ evaluate a string
+    ( evaluate -- ^ evaluate a string
     , evaluateExpr -- ^ evaluate a given expression
     , runTest
     , showResult -- ^ Convert the evaluation output into a meaningful string
@@ -19,8 +17,8 @@ import qualified Data.Char as C (ord, chr)
 import qualified Data.HashMap.Strict as Map
 
 import Parsers
-
 import LispVal
+import Evaluation.Types
 import qualified Environment as Env
 
 eval :: LispVal -> EM LispVal
@@ -261,31 +259,7 @@ truthy v = not $ v == Bool False
               || v == List []
               || v == String ""
 
-
--- | The Evaluation Monad
-type EMt = ExceptT LispErr (StateT EvalState IO)
-newtype EM a = EM { runEM :: EMt a }
-  deriving ( Monad, Functor, Applicative, MonadIO
-           , MonadError LispErr, MonadState EvalState)
-
-instance MonadFail EM where
-    fail s = throwError . Default $ s ++ "\nAn error occurred, please report a bug."
-
--- | Reasons a step was performed
-data StepReason = Call | Reduce deriving (Eq, Show, Read, Enum)
--- | Type of options from the REPL
-type Opts = Map.HashMap String LispVal
-
--- | The current state of evaluation
-data EvalState = ES { stack      :: [(StepReason, LispVal)]
-                    , symEnv     :: [Env]
-                    , quoteLevel :: Int
-                    , options    :: Opts
-                    }
-
 instance Show EvalState where show = showEs
-
-data TraceType = CallOnly | FullHistory deriving (Eq, Show, Read, Enum)
 showEs :: EvalState -> String
 showEs es = "Stack trace:\n" ++ numberedLines
   where numberedLines :: String
@@ -300,16 +274,16 @@ showEs es = "Stack trace:\n" ++ numberedLines
 
         exprs = if fehOpt == CallOnly
                 then map (show . snd) . filter ((== Call) . fst) $ stack es
-                else map (\(r, v) ->
-                         let buffer = case r of
+                else map (\(s, v) ->
+                         let buffer = case s of
                                  Call -> "    "
                                  Reduce -> "  "
-                         in show r ++ ":" ++ buffer ++ show v)
+                         in show s ++ ":" ++ buffer ++ show v)
                      $ stack es
-
 
 showResult :: (Either LispErr LispVal, EvalState) -> String
 showResult res = case res of
+    (Left e@(Parser _), _) -> show e ++ "\n"
     (Left err, s) -> show err ++ "\n" ++ showEs s
     (Right v, _)  -> show v
 

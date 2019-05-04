@@ -10,6 +10,7 @@ import LispVal
 
 primitives = [ ("list", listOp)
              , ("cons", cons)
+             , ("append", appendOp)
              , ("null?", nullOp)
              ]
              ++ [ (name, RPrim 1 func)
@@ -59,17 +60,28 @@ logChooseN ns as = do
         addChoice as ws = do (iden, val) <- as
                              w <- ws
                              return $ do let (list, log) = runWriter w
-                                         writer (val:list, iden `mappend` log)
+                                         -- See note [car/cdr names]
+                                         writer (val:list, log `mappend` iden)
+
+{-
+NOTE [car/cdr names]
+`cadr` performs `cdr`, then performs `car`.
+Because of this, we take the computation result to be a list
+of car/cdr operations in the order we intend to execute them,
+but put the identifier _after_ the existing log so that they
+will appear in reverse order.
+-}
 
 listOp :: RawPrimitive
 listOp = RPrim 0 $ return . List
 
 appendOp :: RawPrimitive
-appendOp = RPrim 2 $ \case
-    [List a, List b] -> return . List $ a ++ b
-    [List _, notList] -> throwError $ TypeMismatch "list" notList
-    [notList, _]      -> throwError $ TypeMismatch "list" notList
-    badArgs           -> throwError $ NumArgs 2 badArgs
+appendOp = RPrim 1 $ fmap List . worker
+  where worker :: [LispVal] -> ThrowsError [LispVal]
+        worker []             = return []
+        worker (List [] : ls) = worker ls
+        worker (List xs : ls) = (xs ++) <$> worker ls
+        worker (notList : _)  = throwError $ TypeMismatch "list" notList
 
 nullOp :: RawPrimitive
 nullOp = RPrim 1 $ \case

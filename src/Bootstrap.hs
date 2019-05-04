@@ -2,6 +2,7 @@
 module Bootstrap (
       nullEnv
     , primitiveBindings
+    , stdlib -- for testing... might want to move to Bootstrap.Internal
     ) where
 
 import Data.IORef
@@ -22,13 +23,12 @@ primitiveBindings :: IO Env
 primitiveBindings = do
     ne <- nullEnv
     env <- bindVars ne primitives
-    let (Right exprs) = parse parseExprs "stdlib" stdlib
+    let (Right exprs) = stdlib
     mapM_ (evaluate env Map.empty) exprs
-    putStrLn "loaded: stdlib.thm"
     return env
 
-stdlib :: String
-stdlib = $(embedStringFile "src/stdlib.thm")
+stdlib :: Either ParseError [String]
+stdlib = parse parseExprs "stdlib" $(embedStringFile "src/stdlib.thm")
 
 parseExprs :: Parser [String]
 parseExprs = try lineComment >>

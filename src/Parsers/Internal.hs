@@ -134,9 +134,10 @@ parseDottedList :: Parser LispVal
 parseDottedList = do
     init <- endBy parseExpr spaces
     last <- char '.' >> spaces >> parseExpr
-    case init of
-        [] -> return last
-        _  -> return $ DottedList init last
+    case (init, last) of
+        ([], _)         -> return last
+        (init, List ls) -> return . List $ init ++ ls
+        (init, val)     -> return $ DottedList init val
 
 parseQuoted :: Parser LispVal
 parseQuoted = do
