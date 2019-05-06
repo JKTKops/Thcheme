@@ -18,8 +18,7 @@ import qualified Data.Char as C (ord, chr)
 import qualified Data.HashMap.Strict as Map
 
 import Parsers
-import LispVal
-import Evaluation.Types
+import Types
 import qualified Environment as Env
 
 eval :: LispVal -> EM LispVal
@@ -198,7 +197,6 @@ handleNonPrim :: LispVal -> [LispVal] -> EM LispVal
 handleNonPrim function args = do
     func <- case function of
         Primitive {}   -> return function
-        IOPrimitive {} -> return function
         Func {}        -> return function
         _              -> eval function
     argVals <- mapM eval args
@@ -210,44 +208,13 @@ handleNonPrim function args = do
     when reduced popExpr
     return v
 
--- This might break >2 arg behavior for numeric binops, CHECK
-wrapPrim :: LispVal -> IO LispVal
-wrapPrim prim@(Primitive arity _ _) = makeWrapper arity prim
-
-wrapPrim prim@(IOPrimitive arity _ _) = makeWrapper arity prim
-
-makeWrapper :: Arity -> LispVal -> IO LispVal
-makeWrapper arity prim = do
-    emptyClosure <- newIORef Map.empty
-    let name = case prim of
-            Primitive _ _ n   -> n
-            IOPrimitive _ _ n -> n
-    return $ Func { params  = varNames
-                  , vararg  = Nothing
-                  , body    = [List $ Atom name : map Atom varNames]
-                  , closure = emptyClosure
-                  , name    = Just name
-                  }
-  where varNames :: [String]
-        varNames = take arity . map pure $ 'z' : ['a'..]
 
 apply :: LispVal -> [LispVal] -> EM LispVal
 
 -- Applications of primitive functions
--- TODO partial application
-apply prim@(Primitive arity func _) args
-    | arity > 0 && null args = return prim
-    | length args >= arity = liftEither $ func args
-    | otherwise = do
-        wrapped <- liftIO $ wrapPrim prim
-        apply wrapped args
-
-apply prim@(IOPrimitive arity func _) args
-    | arity > 0 && null args = return prim
-    | length args >= arity = liftIOThrows $ func args
-    | otherwise = do
-        wrapped <- liftIO $ wrapPrim prim
-        apply wrapped args
+apply (Primitive arity func _) args
+   | num args >= arity = func args
+   | otherwise         = throwError $ NumArgs arity args
 
 -- Applications of user-defined functions
 apply (Func params varargs body closure name) args =
@@ -258,7 +225,7 @@ apply (Func params varargs body closure name) args =
         -- otherwise bind parameters in this closure, bind the varargs, and evaluate
               else evaluate
         EQ -> evaluate
-        LT -> partiallyApply
+        LT -> throwError $ NumArgs (num params) args
 
   where evaluate = do env <- makeBindings params
                       env' <- bindVarargs varargs env
@@ -267,16 +234,10 @@ apply (Func params varargs body closure name) args =
                       popEnv
                       return result
 
-        partiallyApply = do
-            let (bindingParams, freeParams) = splitAt (length args) params
-            closure' <- makeBindings bindingParams
-            return $ Func freeParams varargs body closure' name
-
         makeBindings :: [String] -> EM Env
         makeBindings vars = liftIO . Env.bindVars closure . Map.fromList $ zip vars args
 
         remainingArgs = drop (length params) args
-        num = toInteger . length
         -- evaluate every expression in body, return value of the last one
         evalBody = last <$> mapM eval body
         -- binds extra arguments to vararg in GT case
@@ -286,6 +247,9 @@ apply (Func params varargs body closure name) args =
           Nothing -> return env
 
 apply notFunc _ = throwError . NotFunction "Not a function" $ show notFunc
+
+num :: [a] -> Integer
+num = toInteger . length
 
 makeFunc :: Maybe String
          -> [LispVal]
@@ -305,32 +269,11 @@ truthy v = not $ v == Bool False
               || v == List []
               || v == String ""
 
-instance Show EvalState where show = showEs
-showEs :: EvalState -> String
-showEs es = "Stack trace:\n" ++ numberedLines
-  where numberedLines :: String
-        numberedLines = unlines $ zipWith (\n e -> n ++ " " ++ e) numbers exprs
-        numbers = map (\i -> show i ++ ";") [1..]
-
-        fehOpt :: TraceType
-        fehOpt =
-            case truthy <$> Map.lookup "full-evaluation-history" (options es) of
-                Just True -> FullHistory
-                _         -> CallOnly
-
-        exprs = if fehOpt == CallOnly
-                then map (show . snd) . filter ((== Call) . fst) $ stack es
-                else map (\(s, v) ->
-                         let buffer = case s of
-                                 Call -> "    "
-                                 Reduce -> "  "
-                         in show s ++ ":" ++ buffer ++ show v)
-                     $ stack es
 
 showResult :: (Either LispErr LispVal, EvalState) -> String
 showResult res = case res of
     (Left e@(Parser _), _) -> show e ++ "\n"
-    (Left err, s) -> show err ++ "\n" ++ showEs s
+    (Left err, s) -> show err ++ "\n" ++ show s
     (Right v, _)  -> show v
 
 evaluate :: Env -> Opts -> String -> IO (Either LispErr LispVal, EvalState)
@@ -424,6 +367,3 @@ unquote = do
     if ql /= 0
     then modify $ \s -> s { quoteLevel = ql - 1 }
     else throwError $ Default "Cannot unquote outside quasiquote"
-
-liftIOThrows :: IOThrowsError a -> EM a
-liftIOThrows = liftEither <=< liftIO . runExceptT

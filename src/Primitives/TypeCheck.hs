@@ -1,21 +1,21 @@
 {-# LANGUAGE LambdaCase #-}
-module RawPrimitives.TypeCheck (primitives) where
+module Primitives.TypeCheck (rawPrimitives) where
 
 import Control.Monad.Except (throwError)
 
-import LispVal
+import Types
 
-primitives = [ (name, guardOneArg func) | (name, func) <-
-                 [ ("boolean?", bool)
-                 , ("char?", char)
-                 , ("list?", list)
-                 , ("number?", number)
-                 , ("pair?", pair)
-                 , ("string?", string)
-                 , ("symbol?", symbol)
-                 , ("vector?", vector)
-                 ]
-             ]
+rawPrimitives = [ (name, guardOneArg func) | (name, func) <-
+                    [ ("boolean?", bool)
+                    , ("char?", char)
+                    , ("list?", list)
+                    , ("number?", number)
+                    , ("pair?", pair)
+                    , ("string?", string)
+                    , ("symbol?", symbol)
+                    , ("vector?", vector)
+                    ]
+                ]
 
 isSymbol = guardOneArg symbol
 isString = guardOneArg string

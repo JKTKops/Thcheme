@@ -1,17 +1,17 @@
 {-# LANGUAGE LambdaCase #-}
-module RawPrimitives.Vector (primitives) where
+module Primitives.Vector (rawPrimitives) where
 
 import Data.Array
 import Control.Monad.Except
 
-import LispVal
+import Types
 
-primitives :: [(String, RawPrimitive)]
-primitives = [ ("vector", vector)
-             , ("make-vector", makeVector)
-             , ("vector-length", vectorLength)
-             , ("vector-ref", vectorRef)
-             ]
+rawPrimitives :: [(String, RawPrimitive)]
+rawPrimitives = [ ("vector", vector)
+                , ("make-vector", makeVector)
+                , ("vector-length", vectorLength)
+                , ("vector-ref", vectorRef)
+                ]
 
 vector :: RawPrimitive
 vector = RPrim 1 $ \vals -> return . Vector $

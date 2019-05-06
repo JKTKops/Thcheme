@@ -1,8 +1,8 @@
-module RawPrimitives.Unwrappers where
+module Primitives.Unwrappers where
 
 import Control.Monad.Except (throwError)
 
-import LispVal
+import Types
 
 unwrapNum :: LispVal -> ThrowsError Integer
 unwrapNum (Number n) = return n

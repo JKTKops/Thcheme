@@ -1,24 +1,24 @@
 {-# LANGUAGE LambdaCase #-}
-module RawPrimitives.TypeTransformers (primitives) where
+module Primitives.TypeTransformers (rawPrimitives) where
 
 import Data.Char (chr, ord)
 import Data.Array
 import Control.Monad.Except (throwError)
 
-import LispVal
+import Types
 
-primitives = [ (name, typeTransformer transform) | (name, transform) <-
-                 [ ("char->number", charToNumber)
-                 , ("char->string", charToString)
-                 , ("list->string", listToString)
-                 , ("list->vector", listToVector)
-                 , ("number->string", numberToString)
-                 , ("number->char", numberToChar)
-                 , ("string->list", stringToList)
-                 , ("string->number", stringToNumber)
-                 , ("vector->list", vectorToList)
-                 ]
-             ]
+rawPrimitives = [ (name, typeTransformer transform) | (name, transform) <-
+                    [ ("char->number", charToNumber)
+                    , ("char->string", charToString)
+                    , ("list->string", listToString)
+                    , ("list->vector", listToVector)
+                    , ("number->string", numberToString)
+                    , ("number->char", numberToChar)
+                    , ("string->list", stringToList)
+                    , ("string->number", stringToNumber)
+                    , ("vector->list", vectorToList)
+                    ]
+                ]
 
 typeTransformer :: (LispVal -> ThrowsError LispVal) -- transformer
                 -> RawPrimitive

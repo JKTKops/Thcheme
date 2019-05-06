@@ -13,7 +13,7 @@ import Control.Monad.Trans (lift)
 
 import LispValTest
 
-import LispVal
+import Types
 import Bootstrap
 import Environment
 

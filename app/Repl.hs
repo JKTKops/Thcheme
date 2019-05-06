@@ -5,10 +5,9 @@ import System.IO
 import Control.Monad.State.Lazy
 import qualified Data.HashMap.Strict as Map
 
-import LispVal
+import Types
 import Parsers
 import Evaluation
-import Evaluation.Types
 import Bootstrap
 
 data ReplState = RS { env      :: Env

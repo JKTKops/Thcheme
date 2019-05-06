@@ -1,12 +1,12 @@
 {-# Language LambdaCase #-}
-module RawPrimitives.Math (primitives) where
+module Primitives.Math (rawPrimitives) where
 
 import Control.Monad (mapM)
 import Control.Monad.Except (throwError)
 
-import LispVal
-import RawPrimitives.Unwrappers (unwrapNum)
-import RawPrimitives.Bool (predicate)
+import Types
+import Primitives.Unwrappers (unwrapNum)
+import Primitives.Bool (predicate)
 
 addP = numericBinop (+)
 subP = numericBinop (-)
@@ -58,18 +58,18 @@ divide []     = throwError $ NumArgs 1 []
 divide [x]    = unwrapNum x >>= return . Number . ((Prelude./) 1)
 divide params = mapM unwrapNum params >>= return . Number . foldl1 (Prelude./)-}
 
-primitives :: [(String, RawPrimitive)]
-primitives = [ ("+", addP)
-             , ("-", subP)
-             , ("*", mulP)
-             , ("/", divP)
-             , ("mod", modP)
-             , ("quotient", quotP)
-             , ("remainder", remP)
-             , ("negate", negateP)
-             , ("zero?", zeroCheck)
-             , ("positive?", positiveCheck)
-             , ("negative?", negativeCheck)
-             , ("odd?", oddCheck)
-             , ("even?", evenCheck)
-             ]
+rawPrimitives :: [(String, RawPrimitive)]
+rawPrimitives = [ ("+", addP)
+                , ("-", subP)
+                , ("*", mulP)
+                , ("/", divP)
+                , ("mod", modP)
+                , ("quotient", quotP)
+                , ("remainder", remP)
+                , ("negate", negateP)
+                , ("zero?", zeroCheck)
+                , ("positive?", positiveCheck)
+                , ("negative?", negativeCheck)
+                , ("odd?", oddCheck)
+                , ("even?", evenCheck)
+                ]

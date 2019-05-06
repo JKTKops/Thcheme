@@ -1,20 +1,22 @@
 {-# LANGUAGE ExistentialQuantification #-}
-module RawPrimitives.Comparison (primitives) where
+module Primitives.Comparison (rawPrimitives) where
 
 import Control.Monad (liftM)
 import Control.Monad.Except (throwError, catchError)
 import Data.Char (ord, chr, toLower)
 
-import LispVal
-import RawPrimitives.Bool (boolBinop)
-import RawPrimitives.Unwrappers
+import Types
+import Primitives.Bool (boolBinop)
+import Primitives.Unwrappers
 
-primitives = typeSpecific
+rawPrimitives = typeSpecific
              ++ [ (name, RPrim 2 eqf)
                 | (name, eqf) <- [("eq?", eqv), ("eqv?", eqv), ("equal?", equal)]
                 ]
 
-typeSpecific = [ primGen builtin | (PrimBuilder primGen) <- primBuilders, builtin <- builtinComparisons ]
+typeSpecific = [ primGen builtin
+               | (PrimBuilder primGen) <- primBuilders, builtin <- builtinComparisons
+               ]
 
 builtinComparisons :: Ord a => [(String, a -> a -> Bool)]
 builtinComparisons = [ ("=", (==))

@@ -10,7 +10,7 @@ import Data.Either
 import Data.Array
 import qualified Data.HashMap.Strict as Map
 
-import LispVal
+import Types
 import Parsers
 import Parsers.Internal
 import Bootstrap
@@ -243,35 +243,19 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Number 1
         }
     , EvalTB
-        { testName = "Primitive evaluates to itself"
-        , input = "(+)"
-        , expected = Right $ Primitive undefined undefined "+"
+        { testName = "Empty primitive call fails"
+        , input = "(null?)"
+        , expected = Left $ NumArgs 1 []
         }
     , EvalTB
-        { testName = "IOPrimitive evaluates to itself"
-        , input = "(write)"
-        , expected = Right $ IOPrimitive undefined undefined "write"
-        }
-    , EvalTB
-        { testName = "Func evaluates to itself"
+        { testName = "Empty func call fails"
         , input = "((lambda (x y) (+ x y)))"
-        , expected = Right $ Func
-            { params  = ["x", "y"]
-            , vararg  = Nothing
-            , body    = [List [Atom "+", Atom "x", Atom "y"]]
-            , closure = undefined
-            , name    = Nothing
-            }
+        , expected = Left $ NumArgs 2 []
         }
     , EvalTB
         { testName = "Eval x fails in primEnv"
         , input = "x"
         , expected = Left $ UnboundVar "[Get] unbound symbol" "x"
-        }
-    , EvalTB
-        { testName = "Overapply to partial'd vararg primitive"
-        , input = "((+ 1) 2 3)"
-        , expected = Right $ Number 6
         }
     , EvalTB
         { testName = "Define rejects empty-bodied functions"
@@ -318,21 +302,15 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         }
     , ApplyTB
         { testNameA = "Empty apply primitive"
-        , funcIn = "+"
+        , funcIn = "null?"
         , args = []
-        , expectedA = Right $ Primitive 2 undefined "+"
+        , expectedA = Left $ NumArgs 1 []
         }
     , ApplyTB
-        { testNameA = "Partial apply primitive"
-        , funcIn = "+"
+        { testNameA = "Under apply primitive"
+        , funcIn = "eq?"
         , args = [Number 1]
-        , expectedA = Right $ Func
-            { params  = ["a"]
-            , vararg  = Nothing
-            , body    = [List [Atom "+", Atom "z", Atom "a"]]
-            , closure = undefined
-            , name    = Just "+"
-            }
+        , expectedA = Left $ NumArgs 2 [Number 1]
         }
     , ApplyTB
         { testNameA = "Fully apply IOPrimitive"
@@ -344,19 +322,13 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         { testNameA = "Empty apply IOPrimitive"
         , funcIn = "write-port"
         , args = []
-        , expectedA = Right $ IOPrimitive 2 undefined "write-port"
+        , expectedA = Left $ NumArgs 2 []
         }
     , ApplyTB
-        { testNameA = "Partial apply IOPrimitive"
+        { testNameA = "Under apply IOPrimitive"
         , funcIn = "write-port"
         , args = [Number 0]
-        , expectedA = Right $ Func
-            { params  = ["a"]
-            , vararg  = Nothing
-            , body    = [List [Atom "write-port", Atom "z", Atom "a"]]
-            , closure = undefined
-            , name    = Just "write-port"
-            }
+        , expectedA = Left $ NumArgs 2 [Number 0]
         }
     , ApplyTB
         { testNameA = "Fully apply func"
@@ -368,25 +340,13 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         { testNameA = "Empty apply func"
         , funcIn = "(define (add x y) (+ x y))"
         , args = []
-        , expectedA = Right $ Func
-            { params  = ["x", "y"]
-            , vararg  = Nothing
-            , body    = [List [Atom "+", Atom "x", Atom "y"]]
-            , closure = undefined
-            , name    = Just "add"
-            }
+        , expectedA = Left $ NumArgs 2 []
         }
     , ApplyTB
-        { testNameA = "Partial apply func"
+        { testNameA = "Under apply func"
         , funcIn = "(define (test x y) y)"
         , args = [String ""]
-        , expectedA = Right $ Func
-            { params  = ["y"]
-            , vararg  = Nothing
-            , body    = [Atom "y"]
-            , closure = undefined
-            , name    = Just "test"
-            }
+        , expectedA = Left $ NumArgs 2 [String ""]
         }
     , ApplyTB
         { testNameA = "Min apply vararg func"

@@ -17,7 +17,7 @@ import Control.Monad (liftM2, (<=<))
 import Control.Monad.Trans.Except (runExceptT)
 import System.IO (stdout)
 
-import LispVal
+import Types
 import Primitives
 
 instance Monad m => Serial m LispVal where

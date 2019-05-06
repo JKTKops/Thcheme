@@ -11,7 +11,7 @@ import Data.Array
 
 import Parsers
 import Parsers.Internal
-import LispVal
+import Types
 import LispValTest
 
 parsersTests :: TestTree

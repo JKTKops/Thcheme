@@ -1,12 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
-module RawPrimitives.String (primitives) where
+module Primitives.String (rawPrimitives) where
 
 import Control.Monad.Except
 
-import LispVal
+import Types
 
-primitives :: [(String, RawPrimitive)]
-primitives = [ ("string", primString)
+rawPrimitives :: [(String, RawPrimitive)]
+rawPrimitives = [ ("string", primString)
              , ("string-ref", primStringRef)
              , ("string-length", primStringLen)
              ]

@@ -1,5 +1,5 @@
 module Environment
-    ( Env -- re-exported from LispVal where it does not belong
+    ( Env -- ^ re-exported from Types
     , isBound
     , getVar
     , setVar
@@ -14,9 +14,7 @@ import Data.IORef
 import Data.Maybe (isJust)
 import Control.Monad.Except (liftM, liftIO, throwError)
 
-import LispVal (Env, LispErr (..), LispVal (..),
-                ThrowsError, IOThrowsError, extractValue, trapError)
-
+import Types
 
 isBound :: Env -> String -> IO Bool
 isBound envRef var = isJust . Map.lookup var <$> readIORef envRef

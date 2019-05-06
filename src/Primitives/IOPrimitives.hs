@@ -1,25 +1,25 @@
 {-# LANGUAGE LambdaCase #-}
-module IOPrimitives.IOPrimitives (primitives) where
+module Primitives.IOPrimitives (ioPrimitives) where
 
 import System.IO ( IOMode (..)
                  , openFile, hClose, hGetLine, hPrint
                  , getLine, stdin, stdout)
 import Control.Monad.Except (throwError, liftIO)
 
-import LispVal
+import Types
 import Parsers (readExpr, load)
 
-primitives :: [(String, IOPrimitive)]
-primitives = [ ("open-input-file", makePort ReadMode)
-             , ("open-output-file", makePort WriteMode)
-             , ("close-port", closePort)
-             , ("read", readProc)
-             , ("read-line", readLineProc)
-             , ("write", writeProc)
-             , ("write-port", writeToPort)
-             , ("read-contents", readContents)
-             , ("read-all", readAll)
-             ]
+ioPrimitives :: [(String, IOPrimitive)]
+ioPrimitives = [ ("open-input-file", makePort ReadMode)
+               , ("open-output-file", makePort WriteMode)
+               , ("close-port", closePort)
+               , ("read", readProc)
+               , ("read-line", readLineProc)
+               , ("write", writeProc)
+               , ("write-port", writeToPort)
+               , ("read-contents", readContents)
+               , ("read-all", readAll)
+               ]
 
 makePort :: IOMode -> IOPrimitive
 makePort mode = IPrim 1 $ \case
@@ -65,7 +65,7 @@ readContents = IPrim 1 $ \case
     badArgs           -> throwError $ NumArgs 1 badArgs
 
 readAll :: IOPrimitive
-readAll = IPrim 1 $ \case 
+readAll = IPrim 1 $ \case
     [String filename] -> List <$> load filename
     [badArg]          -> throwError $ TypeMismatch "string" badArg
     badArgs           -> throwError $ NumArgs 1 badArgs

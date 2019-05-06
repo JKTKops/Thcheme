@@ -1,12 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
-module RawPrimitives.Functions (primitives) where
+module Primitives.Functions (rawPrimitives) where
 
 import Control.Monad.Except (throwError)
 
-import LispVal
+import Types
 
-primitives :: [(String, RawPrimitive)]
-primitives = [ ("id", identityFunction) ]
+rawPrimitives :: [(String, RawPrimitive)]
+rawPrimitives = [ ("id", identityFunction) ]
 
 identityFunction :: RawPrimitive
 identityFunction = RPrim 1 $ \case

@@ -1,10 +1,14 @@
-module LispVal
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+module Types
     ( Env
+    , Arity
     , RBuiltin
     , IBuiltin
-    , Arity
+    , Builtin
     , RawPrimitive (..)
     , IOPrimitive (..)
+    , Primitive (..)
+    , BuiltinMacro (..)
     , LispVal (..)
     , LispErr (..)
     , ThrowsError
@@ -14,6 +18,12 @@ module LispVal
     , isTerminationError
     , liftThrows
     , runIOThrows
+    , EM (..)
+    , EvalState (..)
+    , StepReason (..)
+    , Opts
+    , TraceType
+    , liftIOThrows
     ) where
 
 import Text.ParserCombinators.Parsec (ParseError)
@@ -22,20 +32,22 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.IORef
 import Data.Array
-import Control.Monad.Except (liftM, liftIO, throwError, catchError)
-import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import Control.Monad.Except
+import Control.Monad.Fail
+import Control.Monad.State.Lazy
 import System.IO (Handle)
 
-
--- Defined here to avoid circular dependencies
 type Env = IORef (HashMap String (IORef LispVal))
 
 -- * Function types and components
-type Arity = Int
+type Arity = Integer
 type RBuiltin = [LispVal] -> ThrowsError LispVal
-type IBuiltin = [LispVal] -> IOThrowsError LispVal
 data RawPrimitive = RPrim Arity RBuiltin
-data IOPrimitive  = IPrim Arity IBuiltin
+type IBuiltin = [LispVal] -> IOThrowsError LispVal
+data IOPrimitive = IPrim Arity IBuiltin
+type Builtin = [LispVal] -> EM LispVal
+data Primitive = Prim Arity Builtin
+data BuiltinMacro = BuiltinMacro Arity Builtin
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
 data LispVal = Atom String
@@ -46,14 +58,14 @@ data LispVal = Atom String
              | String String
              | Char Char
              | Bool Bool
-             | Primitive Arity RBuiltin String
-             | IOPrimitive Arity IBuiltin String
+             | Primitive Arity Builtin String
              | Func { params  :: [String]
                     , vararg  :: Maybe String
                     , body    :: [LispVal]
                     , closure :: Env
                     , name    :: Maybe String
                     }
+             | PMacro Arity Builtin String
              | Port Handle
 
 instance Eq LispVal where (==) = eqVal
@@ -105,7 +117,6 @@ eqVal (DottedList ls l) (DottedList ls' l') = ls == ls' && l == l'
 eqVal (Vector v) (Vector v') = v == v'
 eqVal (Port p) (Port p') = p == p'
 eqVal (Primitive _ _ n) (Primitive _ _ n') = n == n'
-eqVal (IOPrimitive _ _ n) (IOPrimitive _ _ n') = n == n'
 eqVal (Func p v b _ n) (Func p' v' b' _ n') = and [ p == p'
                                                   , v == v'
                                                   , b == b'
@@ -130,7 +141,6 @@ showVal (DottedList ls l) = "(" ++ unwordsList ls ++ " . " ++ show l ++ ")"
 showVal (Vector v) = "#(" ++ unwordsList (elems v) ++ ")"
 showVal (Port _) = "<Port>"
 showVal (Primitive _ _ name) = "<Function " ++ name ++ ">"
-showVal (IOPrimitive _ _ name) = "<Function " ++ name ++ ">"
 showVal (Func args varargs body env name) = "(" ++ fromMaybe "lambda" name
     ++ " (" ++ unwords args ++ (case varargs of
         Nothing  -> ""
@@ -153,3 +163,59 @@ showErr Quit                          = "quit invoked"
 
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map show
+
+-- | The Evaluation Monad
+type EMt = ExceptT LispErr (StateT EvalState IO)
+newtype EM a = EM { runEM :: EMt a }
+  deriving ( Monad, Functor, Applicative, MonadIO
+           , MonadError LispErr, MonadState EvalState)
+
+instance MonadFail EM where
+    fail s = throwError . Default $ s ++ "\nAn error occurred, please report a bug."
+
+liftIOThrows :: IOThrowsError a -> EM a
+liftIOThrows = liftEither <=< liftIO . runExceptT
+
+-- | Reasons a step was performed
+data StepReason = Call | Reduce deriving (Eq, Show, Read, Enum)
+-- | Type of options from the REPL
+type Opts = Map.HashMap String LispVal
+
+-- | The current state of evaluation
+data EvalState = ES { stack      :: [(StepReason, LispVal)]
+                    , symEnv     :: [Env]
+                    , quoteLevel :: Int
+                    , options    :: Opts
+                    }
+
+instance Show EvalState where show = showEs
+
+data TraceType = CallOnly | FullHistory deriving (Eq, Show, Read, Enum)
+showEs :: EvalState -> String
+showEs es = "Stack trace:\n" ++ numberedLines
+  where numberedLines :: String
+        numberedLines = unlines $ zipWith (\n e -> n ++ " " ++ e) numbers exprs
+        numbers = map (\i -> show i ++ ";") [1..]
+
+        fehOpt :: TraceType
+        fehOpt =
+            case truthy <$> Map.lookup "full-evaluation-history" (options es) of
+                Just True -> FullHistory
+                _         -> CallOnly
+
+        exprs = if fehOpt == CallOnly
+                then map (show . snd) . filter ((== Call) . fst) $ stack es
+                else map (\(s, v) ->
+                         let buffer = case s of
+                                 Call -> "    "
+                                 Reduce -> "  "
+                         in show s ++ ":" ++ buffer ++ show v)
+                     $ stack es
+
+        truthy :: LispVal -> Bool
+        truthy v = not $ v == Bool False
+                      || v == Number 0
+                      || v == List []
+                      || v == String ""
+
+

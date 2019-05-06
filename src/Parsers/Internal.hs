@@ -7,7 +7,7 @@ import Control.Monad (liftM, guard)
 import Control.Monad.Except (throwError, liftIO)
 import Numeric (readInt, readOct, readHex)
 
-import LispVal
+import Types
 
 readOrThrow :: Parser a -> String -> ThrowsError a
 readOrThrow parser input = case parse parser "Thcheme" input of

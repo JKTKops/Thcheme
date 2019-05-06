@@ -1,15 +1,15 @@
 {-# LANGUAGE LambdaCase #-}
-module RawPrimitives.Bool (primitives, predicate, boolBinop) where
+module Primitives.Bool (rawPrimitives, predicate, boolBinop) where
 
 import Control.Monad.Except (throwError)
 
-import LispVal
-import RawPrimitives.Unwrappers (unwrapBool)
+import Types
+import Primitives.Unwrappers (unwrapBool)
 
-primitives = [ ("&&", boolAnd)
-             , ("||", boolOr)
-             , ("not", boolNot)
-             ]
+rawPrimitives = [ ("&&", boolAnd)
+                , ("||", boolOr)
+                , ("not", boolNot)
+                ]
 
 predicate :: (LispVal -> ThrowsError a)
           -> (a -> Bool)
@@ -18,7 +18,7 @@ predicate unwrapper p = RPrim 1 $ \case
     [val] -> Bool . p <$> unwrapper val
     badArgs -> throwError $ NumArgs 1 badArgs
 
-boolNot :: RawPrimitive 
+boolNot :: RawPrimitive
 boolNot = predicate unwrapBool not
 
 boolBinop :: (LispVal -> ThrowsError a) -- unwrapper
