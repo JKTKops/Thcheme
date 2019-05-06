@@ -7,6 +7,7 @@ import Test.Tasty.QuickCheck
 import Text.ParserCombinators.Parsec
 import Data.Maybe
 import Data.Either
+import Data.Array
 
 import Parsers
 import Parsers.Internal
@@ -24,6 +25,7 @@ unitTests = testGroup "Unit tests"
     , charParserTests
     , listParserTests
     , dotListParserTests
+    , vectorParserTests
     , endToEndTests
     ]
 
@@ -130,6 +132,17 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         { testName = "Degenerate dotted list"
         , input = "(. xs)"
         , expectedContents = Just $ Atom "xs"
+        }
+    , mkE2Etest
+        { testName = "Empty vector"
+        , input = "#()"
+        , expectedContents = Just $ Vector (listArray (0, -1) [])
+        }
+    , mkE2Etest
+        { testName = "regular vector"
+        , input = "#(\"test\" 0 atom)"
+        , expectedContents = Just $ Vector (listArray (0, 2)
+            [String "test", Number 0, Atom "atom"])
         }
     , mkE2Etest
         { testName = "Irregular spacing"
@@ -416,9 +429,9 @@ charParserTests = testGroup "Parsing Chars" $ map testCharParser
     ]
 
 listParserTests = testGroup "Parsing Lists"
-    [ testCase "\"5 #a #\\a\"" $ do 
+    [ testCase "\"5 #a #\\a\"" $ do
         let p = parse parseList "" "5 #a #\\a"
-        isRight p @? "Parse failed." 
+        isRight p @? "Parse failed."
         let val = fromList $ fromRight undefined p
         isJust val @? "Parse did not return a List."
         let correct = case fromJust val of
@@ -441,9 +454,28 @@ dotListParserTests = testGroup "Parsing Dotted Lists"
         correct @? "Contents of the dotted list are wrong: " ++ show (fromJust val)
     ]
 
+vectorParserTests = testGroup "Parsing vectors"
+    [ testCase "\"#(1 #\\x ())\"" $ do
+        let p = run parseVector "#(1 #\\x ())"
+        isRight p @? "Parse failed."
+        let val = case fromRight undefined p of
+                Vector arr -> Just arr
+                _ -> Nothing
+        isJust val @? "Parse did not return a Vector."
+        fromJust val @?= listArray (0, 2) [Number 1, Char 'x', List []]
+    , testCase "\"#()\"" $ do
+        let p = run parseVector "#()"
+        isRight p @? "Parse failed."
+        let val = case fromRight undefined p of
+                Vector arr -> Just arr
+                _ -> Nothing
+        isJust val @? "Parse did not return a Vector."
+        fromJust val @?= listArray (0, -1) []
+    ]
+
 -- PROPERTY TESTS
 prop_CorrectSymbols = testProperty "Recognize correct set of symbols" $
-    \input -> 
+    \input ->
         parseSucceeds symbol [input]
         == (input `elem` "!@#$%^&*-_=+|:\\/?<>~")
 

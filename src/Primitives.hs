@@ -4,15 +4,17 @@ import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 
 import           LispVal
-import qualified RawPrimitives.Math as Math
-import qualified RawPrimitives.List as List
-import qualified RawPrimitives.Bool as BoolOps
-import qualified RawPrimitives.Char as CharOps
-import qualified RawPrimitives.Comparison as Comparison
-import qualified RawPrimitives.TypeCheck as TypeCheck
+import qualified RawPrimitives.Bool             as BoolOps
+import qualified RawPrimitives.Char             as CharOps
+import qualified RawPrimitives.Comparison       as Comparison
+import qualified RawPrimitives.Functions        as Function
+import qualified RawPrimitives.List             as List
+import qualified RawPrimitives.Math             as Math
+import qualified RawPrimitives.String           as String
+import qualified RawPrimitives.TypeCheck        as TypeCheck
 import qualified RawPrimitives.TypeTransformers as TypeCast
-import qualified RawPrimitives.Functions as Function
-import qualified IOPrimitives.IOPrimitives as IO
+import qualified RawPrimitives.Vector           as Vector
+import qualified IOPrimitives.IOPrimitives      as IO
 
 primitives :: HashMap String LispVal
 primitives = Map.union
@@ -22,6 +24,8 @@ primitives = Map.union
 rawPrimitives :: HashMap String RawPrimitive
 rawPrimitives = Map.fromList $ Math.primitives ++
                             List.primitives ++
+                            Vector.primitives ++
+                            String.primitives ++
                             BoolOps.primitives ++
                             CharOps.primitives ++
                             Comparison.primitives ++

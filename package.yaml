@@ -1,5 +1,5 @@
 name:                Thcheme
-version:             0.1.1.10
+version:             0.1.1.12
 github:              "JKTKops/Lithp"
 license:             BSD3
 author:              "Max Kopinsky"
@@ -25,6 +25,7 @@ dependencies:
 - mtl
 - transformers
 - unordered-containers
+- array
 
 library:
   source-dirs: src

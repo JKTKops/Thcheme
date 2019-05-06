@@ -11,8 +11,9 @@ primitives = [ (name, guardOneArg func) | (name, func) <-
                  , ("list?", list)
                  , ("number?", number)
                  , ("pair?", pair)
-                 , ("string?", string) 
+                 , ("string?", string)
                  , ("symbol?", symbol)
+                 , ("vector?", vector)
                  ]
              ]
 
@@ -23,6 +24,7 @@ isNumber = guardOneArg number
 isBool   = guardOneArg bool
 isList   = guardOneArg list
 isPair   = guardOneArg pair
+isVector = guardOneArg vector
 
 guardOneArg :: (LispVal -> LispVal) -> RawPrimitive
 guardOneArg func = RPrim 1 $ \case
@@ -57,3 +59,8 @@ pair :: LispVal -> LispVal
 pair (List []) = Bool False
 pair (List _)  = Bool True
 pair (DottedList _ _) = Bool True
+pair _ = Bool False
+
+vector :: LispVal -> LispVal
+vector (Vector _) = Bool True
+vector _          = Bool False

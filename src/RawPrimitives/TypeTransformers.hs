@@ -2,6 +2,7 @@
 module RawPrimitives.TypeTransformers (primitives) where
 
 import Data.Char (chr, ord)
+import Data.Array
 import Control.Monad.Except (throwError)
 
 import LispVal
@@ -10,10 +11,12 @@ primitives = [ (name, typeTransformer transform) | (name, transform) <-
                  [ ("char->number", charToNumber)
                  , ("char->string", charToString)
                  , ("list->string", listToString)
+                 , ("list->vector", listToVector)
                  , ("number->string", numberToString)
                  , ("number->char", numberToChar)
                  , ("string->list", stringToList)
                  , ("string->number", stringToNumber)
+                 , ("vector->list", vectorToList)
                  ]
              ]
 
@@ -37,7 +40,12 @@ listToString (List chars) = String <$> mapchars chars where
     mapchars []              = return []
     mapchars (Char c : cs) = (c :) <$> mapchars cs
     mapchars (notChar : _)   = throwError $ TypeMismatch "char" notChar
-listToString notList      = throwError $ TypeMismatch "list" notList
+listToString notList = throwError $ TypeMismatch "list" notList
+
+listToVector :: LispVal -> ThrowsError LispVal
+listToVector (List vals) = return . Vector $
+                             listArray (0, fromIntegral $ length vals - 1) vals
+listToVector notList = throwError $ TypeMismatch "list" notList
 
 numberToChar :: LispVal -> ThrowsError LispVal
 numberToChar (Number n) = return . Char . chr $ fromIntegral n
@@ -55,5 +63,9 @@ stringToNumber :: LispVal -> ThrowsError LispVal
 stringToNumber (String s) = let parsed = reads s in
     if null parsed || snd (head parsed) /= ""
     then return $ Bool False
-    else return . Number . fst $ head parsed 
+    else return . Number . fst $ head parsed
 stringToNumber notStr     = throwError $ TypeMismatch "string" notStr
+
+vectorToList :: LispVal -> ThrowsError LispVal
+vectorToList (Vector arr) = return . List $ elems arr
+vectorToList notVec = throwError $ TypeMismatch "vector" notVec

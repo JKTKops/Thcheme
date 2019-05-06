@@ -8,7 +8,8 @@ module Evaluation
 
 import Data.Maybe
 import Data.Either
-import Data.IORef (IORef, readIORef, newIORef)
+import Data.IORef
+import Data.Array
 import Control.Monad
 import Control.Monad.Fail
 import Control.Monad.Except
@@ -28,12 +29,14 @@ eval v = do
     popExpr
     return res
 
+-- TODO AFTER adding macros -> refactor the below into primitive macros
 evalExpr :: LispVal -> EM LispVal
 evalExpr expr = case expr of
     val@(String _) -> return val
     val@(Char _)   -> return val
     val@(Number _) -> return val
     val@(Bool _)   -> return val
+    val@(Vector _) -> return val
     (Atom id)      -> getVar id
     nil@(List [])  -> return nil
     List (arg0@(Atom fName) : argExprs) ->
@@ -41,6 +44,8 @@ evalExpr expr = case expr of
               "quote"       -> primQuote
               "if"          -> primIf
               "set!"        -> primSet
+              "string-set!" -> primStringSet
+              "vector-set!" -> primVectorSet
               "set-option!" -> primSetOpt
               "define"      -> primDefine
               "lambda"      -> primLambda
@@ -53,6 +58,7 @@ evalExpr expr = case expr of
     List (function : args) -> handleNonPrim function args
     badForm -> throwError $ BadSpecialForm "Unrecognized special form" badForm
 
+-- TODO lift all primitives into EM and then as appropriate put these under primitives
 primQuote :: [LispVal] -> EM LispVal
 primQuote [v]     = return v
 primQuote badArgs = throwError $ NumArgs 1 badArgs
@@ -74,6 +80,46 @@ primSet [Atom var, form] = eval form >>= setVar var
 primSet [notAtom, _] = throwError $ TypeMismatch "symbol" notAtom
 primSet badArgs = throwError $ NumArgs 2 badArgs
 
+primStringSet :: [LispVal] -> EM LispVal
+primStringSet args@(Atom _ : _) = update stringSetHelper args
+primStringSet args = stringSetHelper args
+
+stringSetHelper :: [LispVal] -> EM LispVal
+stringSetHelper args = case args of
+    [String s, Number i, Char c] -> case fromIntegral i of
+        n | n `elem` [0..length s - 1] -> let (pre, (_:post)) = splitAt n s in
+               return . String $ pre ++ (c:post)
+          | otherwise -> throwError . Default $ "String index out of bounds: " ++ show n
+    [String _, Number _, notChr] -> throwError $ TypeMismatch "char" notChr
+    [String _, notNum, _] -> throwError $ TypeMismatch "number" notNum
+    [notStr, _, _] -> throwError $ TypeMismatch "string" notStr
+    badArgs -> throwError $ NumArgs 3 badArgs
+
+primVectorSet :: [LispVal] -> EM LispVal
+primVectorSet args@(Atom _ : _) = update vectorSetHelper args
+primVectorSet args = vectorSetHelper args
+
+vectorSetHelper :: [LispVal] -> EM LispVal
+vectorSetHelper args = case args of
+    [Vector arr, Number i, val]
+        | i `elem` [0.. snd (bounds arr)] ->
+              return . Vector $ arr // [(i, val)]
+        | otherwise -> throwError . Default $ "Vector index out of bounds: " ++ show i
+    [Vector _, notNum, _] -> throwError $ TypeMismatch "number" notNum
+    [notVec, _, _] -> throwError $ TypeMismatch "vector" notVec
+    badArgs -> throwError $ NumArgs 3 badArgs
+
+-- Assumes the first element of args is an Atom; finds it and updates it with given func
+update :: ([LispVal] -> EM LispVal) -> [LispVal] -> EM LispVal
+update updater (Atom var : rest) = do
+    envRef <- search var
+    when (isNothing envRef) $ throwError $ UnboundVar "[Set] unbound symbol" var
+    env <- liftIO . readIORef $ fromJust envRef
+    let ref = fromJust $ Map.lookup var env
+    val <- liftIO $ readIORef ref
+    updated <- updater (val : rest)
+    liftIO $ writeIORef ref updated
+    return updated
 
 primSetOpt :: [LispVal] -> EM LispVal
 primSetOpt [Atom optName, form] = do

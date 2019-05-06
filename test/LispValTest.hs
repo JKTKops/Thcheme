@@ -11,6 +11,7 @@ import Test.SmallCheck.Series
 
 import Data.List (isPrefixOf)
 import Data.IORef
+import Data.Array
 import qualified Data.HashMap.Strict as Map
 import Control.Monad (liftM2, (<=<))
 import Control.Monad.Trans.Except (runExceptT)
@@ -63,7 +64,7 @@ instance Arbitrary LispVal where
                          ]
 
 instance Arbitrary LispErr where
-    arbitrary = oneof [ do n <- choose (0, 3) 
+    arbitrary = oneof [ do n <- choose (0, 3)
                            liftM2 NumArgs (return $ toInteger n) (vectorOf n arbitrary)
                       , liftM2 TypeMismatch arbitrary arbitrary
                       , liftM2 BadSpecialForm arbitrary arbitrary
@@ -104,7 +105,7 @@ testShowPort = testCase "Ports show correctly" $
     show (Port stdout) @?= "<Port>"
 
 testShowPrimitives = testCase "Primitives show correctly" $
-    mapM_ 
+    mapM_
         (\(key, func) -> show func @?= "<Function " ++ key ++ ">")
         -- Test only some of the primitives list as eventually it will be quite large
         . take 50 $ Map.toList primitives
@@ -140,7 +141,7 @@ prop_TerminationErrors = QC.testProperty "Only Quit is a termination error" $
             _           -> False
 
 prop_ShowVal = QC.testProperty "Showing a LispVal produces correct string" $
-    withMaxSuccess 500 $ 
+    withMaxSuccess 500 $
         \input -> case input of
             Atom _        -> testShowAtom input
             Number _      -> testShowNumber input
@@ -149,6 +150,7 @@ prop_ShowVal = QC.testProperty "Showing a LispVal produces correct string" $
             Bool _        -> testShowBool input
             List _        -> testShowList input
             DottedList {} -> testShowDottedList input
+            Vector _      -> testShowVector input
             _             -> True
   where testShowAtom atomVal = show atomVal == let Atom s = atomVal in s
         testShowNumber nVal = show nVal == let Number n = nVal in show n
@@ -167,6 +169,8 @@ prop_ShowVal = QC.testProperty "Showing a LispVal produces correct string" $
             "(" ++ unwords (map show ls) ++ ")"
         testShowDottedList dListVal = show dListVal == let DottedList ls l = dListVal in
             "(" ++ unwords (map show ls) ++ " . " ++ show l ++ ")"
+        testShowVector vecVal = show vecVal == let Vector arr = vecVal in
+            "#(" ++ unwords (map show $ elems arr) ++ ")"
 
 prop_ShowErrPrefix = SC.testProperty "Showing LispErr is prefixed with 'Error:'" $
     changeDepth (const 3) $

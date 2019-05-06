@@ -2,6 +2,7 @@ module Parsers.Internal where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
 import Data.Maybe (isNothing)
+import Data.Array (listArray)
 import Control.Monad (liftM, guard)
 import Control.Monad.Except (throwError, liftIO)
 import Numeric (readInt, readOct, readHex)
@@ -16,6 +17,7 @@ readOrThrow parser input = case parse parser "Thcheme" input of
 parseExpr :: Parser LispVal
 parseExpr = try parseNumber
          <|> try parseChar -- #\atom is a valid name for an atom
+         <|> try parseVector
          <|> parseAtom
          <|> parseString
          <|> parseQuoted
@@ -127,8 +129,15 @@ parseChar = do
                           return c)
     return $ Char char
 
+parseVector :: Parser LispVal
+parseVector = do
+    string "#("
+    exprs <- sepBy parseExpr spaces
+    char ')'
+    return . Vector . listArray (0, fromIntegral $ length exprs - 1) $ exprs
+
 parseList :: Parser LispVal
-parseList = List <$> sepBy parseExpr (option () spaces)
+parseList = List <$> sepBy parseExpr (skipMany space)
 
 parseDottedList :: Parser LispVal
 parseDottedList = do

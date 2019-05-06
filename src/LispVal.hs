@@ -21,6 +21,7 @@ import Data.Maybe (fromMaybe)
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.IORef
+import Data.Array
 import Control.Monad.Except (liftM, liftIO, throwError, catchError)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)
 import System.IO (Handle)
@@ -40,6 +41,7 @@ data IOPrimitive  = IPrim Arity IBuiltin
 data LispVal = Atom String
              | List [LispVal]
              | DottedList [LispVal] LispVal
+             | Vector (Array Integer LispVal)
              | Number Integer
              | String String
              | Char Char
@@ -100,6 +102,7 @@ eqVal (Char c) (Char c') = c == c'
 eqVal (Bool b) (Bool b') = b == b'
 eqVal (List ls) (List ls') = ls == ls'
 eqVal (DottedList ls l) (DottedList ls' l') = ls == ls' && l == l'
+eqVal (Vector v) (Vector v') = v == v'
 eqVal (Port p) (Port p') = p == p'
 eqVal (Primitive _ _ n) (Primitive _ _ n') = n == n'
 eqVal (IOPrimitive _ _ n) (IOPrimitive _ _ n') = n == n'
@@ -124,6 +127,7 @@ showVal (Bool True) = "#t"
 showVal (Bool False) = "#f"
 showVal (List ls) = "(" ++ unwordsList ls ++ ")"
 showVal (DottedList ls l) = "(" ++ unwordsList ls ++ " . " ++ show l ++ ")"
+showVal (Vector v) = "#(" ++ unwordsList (elems v) ++ ")"
 showVal (Port _) = "<Port>"
 showVal (Primitive _ _ name) = "<Function " ++ name ++ ">"
 showVal (IOPrimitive _ _ name) = "<Function " ++ name ++ ">"

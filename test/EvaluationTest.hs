@@ -7,6 +7,7 @@ import Test.Tasty.QuickCheck as QC
 import Text.ParserCombinators.Parsec
 import Control.Monad.Except
 import Data.Either
+import Data.Array
 import qualified Data.HashMap.Strict as Map
 
 import LispVal
@@ -49,6 +50,12 @@ evalTests = testGroup "eval" $ map mkEvalTest
         { testName = "Simple bool (false)"
         , input = "#f"
         , expected = Right $ Bool False
+        }
+    , EvalTB
+        { testName = "Simple vector"
+        , input = "#(1 2 \"test\")"
+        , expected = Right $ Vector (listArray (0, 2)
+            [Number 1, Number 2, String "test"])
         }
     , EvalTB
         { testName = "Unbound symbol"
