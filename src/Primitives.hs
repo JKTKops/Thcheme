@@ -18,9 +18,12 @@ import qualified Primitives.Vector           as Vector
 import qualified Primitives.IOPrimitives     as IO
 
 primitives :: HashMap String LispVal
-primitives = Map.union
-                (Map.mapWithKey makeRPrimitive rawPrimitives)
-                (Map.mapWithKey makeIPrimitive ioPrimitives)
+primitives = foldr1 Map.union
+                [ Map.mapWithKey makeRPrimitive rawPrimitives
+                , Map.mapWithKey makeIPrimitive ioPrimitives
+                , Map.mapWithKey makeEPrimitive ePrimitives
+                , Map.mapWithKey makeMacroPrimitive macros
+                ]
 
 rawPrimitives :: HashMap String RawPrimitive
 rawPrimitives = Map.fromList $ Math.rawPrimitives ++
@@ -38,16 +41,30 @@ rawPrimitives = Map.fromList $ Math.rawPrimitives ++
 ioPrimitives :: HashMap String IOPrimitive
 ioPrimitives = Map.fromList IO.ioPrimitives
 
-makePrimitive :: (Arity -> a -> String -> LispVal) -> String -> Arity -> a -> LispVal
-makePrimitive constructor name arity f = constructor arity f name
+ePrimitives :: HashMap String Primitive
+ePrimitives = Map.fromList []
+
+macros :: HashMap String Macro
+macros = Map.fromList $ String.macros ++
+                        Vector.macros
+
+makePrimitive :: String -> Arity -> Builtin -> LispVal
+makePrimitive name arity f = Primitive arity f name
 
 makeRPrimitive :: String -> RawPrimitive -> LispVal
 makeRPrimitive name (RPrim arity func) =
-    makePrimitive Primitive name arity (liftEither . func)
+    makePrimitive name arity (liftEither . func)
 
 makeIPrimitive :: String -> IOPrimitive -> LispVal
 makeIPrimitive name (IPrim arity func) =
-    makePrimitive Primitive name arity (liftIOThrows . func)
+    makePrimitive name arity (liftIOThrows . func)
+
+makeEPrimitive :: String -> Primitive -> LispVal
+makeEPrimitive name (Prim arity func) =
+    makePrimitive name arity func
+
+makeMacroPrimitive :: String -> Macro -> LispVal
+makeMacroPrimitive name (Macro arity func) = PMacro arity func name
 
 quit :: RawPrimitive
 quit = RPrim 0 $ \_ -> Left Quit

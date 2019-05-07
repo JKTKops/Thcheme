@@ -8,7 +8,7 @@ module Types
     , RawPrimitive (..)
     , IOPrimitive (..)
     , Primitive (..)
-    , BuiltinMacro (..)
+    , Macro (..)
     , LispVal (..)
     , LispErr (..)
     , ThrowsError
@@ -47,7 +47,7 @@ type IBuiltin = [LispVal] -> IOThrowsError LispVal
 data IOPrimitive = IPrim Arity IBuiltin
 type Builtin = [LispVal] -> EM LispVal
 data Primitive = Prim Arity Builtin
-data BuiltinMacro = BuiltinMacro Arity Builtin
+data Macro = Macro Arity Builtin
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
 data LispVal = Atom String
@@ -145,6 +145,7 @@ showVal (Func args varargs body env name) = "(" ++ fromMaybe "lambda" name
     ++ " (" ++ unwords args ++ (case varargs of
         Nothing  -> ""
         Just arg -> " . " ++ arg) ++ ") ...)"
+showVal (PMacro _ _ name) = "<Macro " ++ name ++ ">"
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname
@@ -177,14 +178,13 @@ liftIOThrows :: IOThrowsError a -> EM a
 liftIOThrows = liftEither <=< liftIO . runExceptT
 
 -- | Reasons a step was performed
-data StepReason = Call | Reduce deriving (Eq, Show, Read, Enum)
+data StepReason = Call | Reduce | Expand deriving (Eq, Show, Read, Enum)
 -- | Type of options from the REPL
 type Opts = Map.HashMap String LispVal
 
 -- | The current state of evaluation
 data EvalState = ES { stack      :: [(StepReason, LispVal)]
                     , symEnv     :: [Env]
-                    , quoteLevel :: Int
                     , options    :: Opts
                     }
 
@@ -209,6 +209,7 @@ showEs es = "Stack trace:\n" ++ numberedLines
                          let buffer = case s of
                                  Call -> "    "
                                  Reduce -> "  "
+                                 Expand -> "  "
                          in show s ++ ":" ++ buffer ++ show v)
                      $ stack es
 
@@ -217,5 +218,3 @@ showEs es = "Stack trace:\n" ++ numberedLines
                       || v == Number 0
                       || v == List []
                       || v == String ""
-
-

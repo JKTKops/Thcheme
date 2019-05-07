@@ -1,10 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Vector (rawPrimitives) where
+module Primitives.Vector (rawPrimitives, macros) where
 
 import Data.Array
 import Control.Monad.Except
 
 import Types
+import Evaluation (eval)
+import EvaluationMonad (updateWith)
 
 rawPrimitives :: [(String, RawPrimitive)]
 rawPrimitives = [ ("vector", vector)
@@ -12,6 +14,10 @@ rawPrimitives = [ ("vector", vector)
                 , ("vector-length", vectorLength)
                 , ("vector-ref", vectorRef)
                 ]
+
+macros :: [(String, Macro)]
+macros = [ ("vector-set!", vectorSet)
+         ]
 
 vector :: RawPrimitive
 vector = RPrim 1 $ \vals -> return . Vector $
@@ -39,3 +45,21 @@ vectorRef = RPrim 2 $ \case
     [Vector _, notNum] -> throwError $ TypeMismatch "number" notNum
     [notVec, _] -> throwError $ TypeMismatch "vector" notVec
     badArgs -> throwError $ NumArgs 2 badArgs
+
+vectorSet :: Macro
+vectorSet = Macro 3 $ \case
+    args@(Atom _ : _) -> updateWith helper args
+    args -> helper args
+  where helper :: [LispVal] -> EM LispVal
+        helper args = do
+            let head : tail = args
+            argVals <- mapM eval tail
+            case head : argVals of
+                [Vector arr, Number i, val]
+                    | i `elem` [0.. snd (bounds arr)] ->
+                      return . Vector $ arr // [(i, val)]
+                    | otherwise ->
+                      throwError . Default $ "Vector index out of bounds: " ++ show i
+                [Vector _, notNum, _] -> throwError $ TypeMismatch "number" notNum
+                [notVec, _, _] -> throwError $ TypeMismatch "vector" notVec
+                badArgs -> throwError $ NumArgs 3 badArgs

@@ -76,7 +76,7 @@ listOp :: RawPrimitive
 listOp = RPrim 0 $ return . List
 
 appendOp :: RawPrimitive
-appendOp = RPrim 1 $ fmap List . worker
+appendOp = RPrim 0 $ fmap List . worker
   where worker :: [LispVal] -> ThrowsError [LispVal]
         worker []             = return []
         worker (List [] : ls) = worker ls

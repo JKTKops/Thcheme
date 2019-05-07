@@ -1,6 +1,7 @@
 module Evaluation
     ( evaluate -- ^ evaluate a string
     , evaluateExpr -- ^ evaluate a given expression
+    , eval -- ^ evaluate inside EM monad
     , runTest
     , showResult -- ^ Convert the evaluation output into a meaningful string
     , apply -- ^ Function application, not sure why this is here rn
@@ -19,6 +20,7 @@ import qualified Data.HashMap.Strict as Map
 
 import Parsers
 import Types
+import EvaluationMonad
 import qualified Environment as Env
 
 eval :: LispVal -> EM LispVal
@@ -43,8 +45,6 @@ evalExpr expr = case expr of
               "quote"       -> primQuote
               "if"          -> primIf
               "set!"        -> primSet
-              "string-set!" -> primStringSet
-              "vector-set!" -> primVectorSet
               "set-option!" -> primSetOpt
               "define"      -> primDefine
               "lambda"      -> primLambda
@@ -78,47 +78,6 @@ primSet :: [LispVal] -> EM LispVal
 primSet [Atom var, form] = eval form >>= setVar var
 primSet [notAtom, _] = throwError $ TypeMismatch "symbol" notAtom
 primSet badArgs = throwError $ NumArgs 2 badArgs
-
-primStringSet :: [LispVal] -> EM LispVal
-primStringSet args@(Atom _ : _) = update stringSetHelper args
-primStringSet args = stringSetHelper args
-
-stringSetHelper :: [LispVal] -> EM LispVal
-stringSetHelper args = case args of
-    [String s, Number i, Char c] -> case fromIntegral i of
-        n | n `elem` [0..length s - 1] -> let (pre, (_:post)) = splitAt n s in
-               return . String $ pre ++ (c:post)
-          | otherwise -> throwError . Default $ "String index out of bounds: " ++ show n
-    [String _, Number _, notChr] -> throwError $ TypeMismatch "char" notChr
-    [String _, notNum, _] -> throwError $ TypeMismatch "number" notNum
-    [notStr, _, _] -> throwError $ TypeMismatch "string" notStr
-    badArgs -> throwError $ NumArgs 3 badArgs
-
-primVectorSet :: [LispVal] -> EM LispVal
-primVectorSet args@(Atom _ : _) = update vectorSetHelper args
-primVectorSet args = vectorSetHelper args
-
-vectorSetHelper :: [LispVal] -> EM LispVal
-vectorSetHelper args = case args of
-    [Vector arr, Number i, val]
-        | i `elem` [0.. snd (bounds arr)] ->
-              return . Vector $ arr // [(i, val)]
-        | otherwise -> throwError . Default $ "Vector index out of bounds: " ++ show i
-    [Vector _, notNum, _] -> throwError $ TypeMismatch "number" notNum
-    [notVec, _, _] -> throwError $ TypeMismatch "vector" notVec
-    badArgs -> throwError $ NumArgs 3 badArgs
-
--- Assumes the first element of args is an Atom; finds it and updates it with given func
-update :: ([LispVal] -> EM LispVal) -> [LispVal] -> EM LispVal
-update updater (Atom var : rest) = do
-    envRef <- search var
-    when (isNothing envRef) $ throwError $ UnboundVar "[Set] unbound symbol" var
-    env <- liftIO . readIORef $ fromJust envRef
-    let ref = fromJust $ Map.lookup var env
-    val <- liftIO $ readIORef ref
-    updated <- updater (val : rest)
-    liftIO $ writeIORef ref updated
-    return updated
 
 primSetOpt :: [LispVal] -> EM LispVal
 primSetOpt [Atom optName, form] = do
@@ -198,21 +157,35 @@ handleNonPrim function args = do
     func <- case function of
         Primitive {}   -> return function
         Func {}        -> return function
+        PMacro {}      -> return function
         _              -> eval function
-    argVals <- mapM eval args
-    let reduced = function /= func || args /= argVals
-    when reduced $ do
-        modifyTopReason $ const Reduce
-        pushExpr Call (List (function : argVals))
-    v <- apply func argVals
-    when reduced popExpr
-    return v
+    case func of
+        Primitive {} -> evalCall func
+        Func {}      -> evalCall func
+        PMacro {}    -> evalMacro func
 
+  where evalCall func = do
+            argVals <- mapM eval args
+            let reduced = function /= func || args /= argVals
+            when reduced $ do
+                modifyTopReason $ const Reduce
+                pushExpr Call (List (function : argVals))
+            v <- apply func argVals
+            when reduced popExpr
+            return v
+        evalMacro func = do
+            modifyTopReason $ const Expand
+            expansion <- apply func args
+            eval expansion
 
 apply :: LispVal -> [LispVal] -> EM LispVal
 
 -- Applications of primitive functions
 apply (Primitive arity func _) args
+   | num args >= arity = func args
+   | otherwise         = throwError $ NumArgs arity args
+
+apply (PMacro arity func _) args
    | num args >= arity = func args
    | otherwise         = throwError $ NumArgs arity args
 
@@ -278,92 +251,13 @@ showResult res = case res of
 
 evaluate :: Env -> Opts -> String -> IO (Either LispErr LispVal, EvalState)
 evaluate initEnv opts input =
-    flip runStateT (ES [] [initEnv] 0 opts) . runExceptT . runEM $ do
+    flip runStateT (ES [] [initEnv] opts) . runExceptT . runEM $ do
         v <- liftEither $ readExpr input
         eval v
 
 evaluateExpr :: Env -> Opts -> LispVal -> IO (Either LispErr LispVal, EvalState)
 evaluateExpr env opts v =
-    flip runStateT (ES [] [env] 0 opts) . runExceptT . runEM $ eval v
+    flip runStateT (ES [] [env] opts) . runExceptT . runEM $ eval v
 
 runTest :: Env -> Opts -> EM LispVal -> IO (Either LispErr LispVal, EvalState)
-runTest env opts m = flip runStateT (ES [] [env] 0 opts) . runExceptT $ runEM m
-
--- | Push an expr to the call stack
-pushExpr :: StepReason -> LispVal -> EM ()
-pushExpr r val = do
-    s <- get
-    put $ s { stack = (r, val) : stack s }
-
--- | Remove the top item from the call stack
-popExpr :: EM ()
-popExpr = modify $ \s -> s { stack = tail $ stack s }
-
--- | Push an environment to the top of the sEnv stack
---   The environment becomes the topmost scope of evaluation.
-pushEnv :: Env -> EM ()
-pushEnv e = modify $ \s -> s { symEnv = e : symEnv s }
-
--- | Remove the topmost scope from the sEnv stack.
-popEnv :: EM ()
-popEnv = do
-    s <- get
-    let stack = symEnv s
-    put $ s { symEnv = tail stack }
-
-modifyStackTop :: ((StepReason, LispVal) -> (StepReason, LispVal)) -> EM ()
-modifyStackTop f = modify $ \s ->
-    let top : tail = stack s in
-    s { stack = f top : tail }
-
-modifyTopReason :: (StepReason -> StepReason) -> EM ()
-modifyTopReason f = modifyStackTop (\(r, v) -> (f r, v))
-
--- | Searches the environment stack top-down for a symbol
-getVar :: String -> EM LispVal
-getVar var = do
-    stack <- symEnv <$> get
-    l <- liftIO $ rights <$> mapM (\env -> runExceptT $ Env.getVar env var) stack
-    case l of
-        []  -> throwError $ UnboundVar "[Get] unbound symbol" var
-        v:_ -> return v
-
--- | Search the environment top-down for a symbol
---   If it's found, bind it to the given LispVal
---   Otherwise, create a new binding in the top-level
-setVar :: String -> LispVal -> EM LispVal
-setVar var val = do
-    mEnv <- search var
-    case mEnv of
-        Nothing -> defineVar var val
-        Just e  -> do
-            Right v <- liftIO . runExceptT $ Env.defineVar e var val
-            return v
-
-search :: String -> EM (Maybe Env)
-search var = do
-    stack <- symEnv <$> get
-    EM . lift $ do
-        l <- liftIO $ catMaybes <$> mapM
-             (\env -> do
-                   e <- runExceptT $ Env.getVar env var
-                   return $ if isRight e then Just env else Nothing
-             ) stack
-        return $ case l of
-            []  -> Nothing
-            e:_ -> Just e
-
-defineVar :: String -> LispVal -> EM LispVal
-defineVar var val = do
-    env <- head . symEnv <$> get
-    liftIOThrows $ Env.defineVar env var val
-
-quasiQuote :: EM ()
-quasiQuote = modify $ \s -> s { quoteLevel = quoteLevel s + 1 }
-
-unquote :: EM ()
-unquote = do
-    ql <- quoteLevel <$> get
-    if ql /= 0
-    then modify $ \s -> s { quoteLevel = ql - 1 }
-    else throwError $ Default "Cannot unquote outside quasiquote"
+runTest env opts m = flip runStateT (ES [] [env] opts) . runExceptT $ runEM m
