@@ -8,7 +8,7 @@ import           Types
 import qualified Primitives.Bool             as BoolOps
 import qualified Primitives.Char             as CharOps
 import qualified Primitives.Comparison       as Comparison
-import qualified Primitives.Functions        as Function
+import qualified Primitives.Misc             as Misc
 import qualified Primitives.List             as List
 import qualified Primitives.Math             as Math
 import qualified Primitives.String           as String
@@ -35,7 +35,7 @@ rawPrimitives = Map.fromList $ Math.rawPrimitives ++
                             Comparison.rawPrimitives ++
                             TypeCheck.rawPrimitives ++
                             TypeCast.rawPrimitives ++
-                            Function.rawPrimitives ++
+                            Misc.rawPrimitives ++
                             [("quit", quit)]
 
 ioPrimitives :: HashMap String IOPrimitive
@@ -46,7 +46,9 @@ ePrimitives = Map.fromList []
 
 macros :: HashMap String Macro
 macros = Map.fromList $ String.macros ++
-                        Vector.macros
+                        Vector.macros ++
+                        List.macros ++
+                        Misc.macros
 
 makePrimitive :: String -> Arity -> Builtin -> LispVal
 makePrimitive name arity f = Primitive arity f name

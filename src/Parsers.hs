@@ -13,7 +13,10 @@ readExpr = readOrThrow $ do
     return expr
 
 readExprList :: String -> ThrowsError [LispVal]
-readExprList = readOrThrow (endBy parseExpr spaces)
+readExprList = readOrThrow $ do
+    exprs <- endBy parseExpr spaces
+    eof
+    return exprs
 
 load :: String -> IOThrowsError [LispVal]
 load filename = liftIO (readFile filename) >>= liftThrows . readExprList

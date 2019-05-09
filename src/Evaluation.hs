@@ -42,115 +42,10 @@ evalExpr expr = case expr of
     nil@(List [])  -> return nil
     List (arg0@(Atom fName) : argExprs) ->
         let fPrim = case fName of
-              "quote"       -> primQuote
-              "if"          -> primIf
-              "set!"        -> primSet
-              "set-option!" -> primSetOpt
-              "define"      -> primDefine
-              "lambda"      -> primLambda
-              "begin"       -> primBegin
-              "eval"        -> primEval
-              "apply"       -> primApply
-              "load"        -> primLoad
               _             -> handleNonPrim arg0
         in fPrim argExprs
     List (function : args) -> handleNonPrim function args
     badForm -> throwError $ BadSpecialForm "Unrecognized special form" badForm
-
--- TODO lift all primitives into EM and then as appropriate put these under primitives
-primQuote :: [LispVal] -> EM LispVal
-primQuote [v]     = return v
-primQuote badArgs = throwError $ NumArgs 1 badArgs
-
-
-primIf :: [LispVal] -> EM LispVal
-primIf (pred : conseq : alts) = do
-    p <- eval pred
-    if truthy p
-    then eval conseq
-    else case alts of
-        [] -> return $ List []
-        xs -> last <$> mapM eval xs
-primIf badArgs = throwError $ Default $ "Expected at least 2 args; found " ++ show badArgs
-
-
-primSet :: [LispVal] -> EM LispVal
-primSet [Atom var, form] = eval form >>= setVar var
-primSet [notAtom, _] = throwError $ TypeMismatch "symbol" notAtom
-primSet badArgs = throwError $ NumArgs 2 badArgs
-
-primSetOpt :: [LispVal] -> EM LispVal
-primSetOpt [Atom optName, form] = do
-    val <- eval form
-    state <- get
-    let opts = options state
-        opts' = Map.insert optName val opts
-    put $ state { options = opts' }
-    return val
-primSetOpt [notAtom, _] = throwError $ TypeMismatch "symbol" notAtom
-primSetOpt badArgs = throwError $ NumArgs 2 badArgs
-
-
-primDefine :: [LispVal] -> EM LispVal
-primDefine [Atom var, form] = eval form >>= \val ->
-    let renamed = case val of
-            Func {} -> val { name = Just var }
-            _ -> val
-    in defineVar var renamed
-primDefine (List (Atom name : params) : body) = case body of
-    [] -> throwError emptyBodyError
-    _  -> makeFuncNormal params body (Just name) >>= defineVar name
-
-primDefine (DottedList (Atom name : params) varargs : body) = case body of
-    [] -> throwError emptyBodyError
-    _  -> makeFuncVarargs varargs params body (Just name) >>= defineVar name
-
-primDefine (List (notAtom : _) : _) = throwError $ TypeMismatch "symbol" notAtom
-primDefine (DottedList (notAtom : _) _ : _) = throwError $ TypeMismatch "symbol" notAtom
-primDefine (notAtomOrList : _) = throwError $ TypeMismatch "symbol or list" notAtomOrList
-primDefine badArgs = throwError $ NumArgs 2 badArgs
-
-
-primLambda :: [LispVal] -> EM LispVal
-primLambda (List params : body) = case body of
-    [] -> throwError emptyBodyError
-    _  -> makeFuncNormal params body Nothing
-primLambda (DottedList params varargs : body) = case body of
-    [] -> throwError emptyBodyError
-    _  -> makeFuncVarargs varargs params body Nothing
-primLambda (varargs@(Atom _) : body) = case body of
-    [] -> throwError emptyBodyError
-    _  -> makeFuncVarargs varargs [] body Nothing
-primLambda (notAtomOrList : _) = throwError $ TypeMismatch "symbol or list" notAtomOrList
-primLambda badArgs = throwError $ NumArgs 2 badArgs
-
-emptyBodyError :: LispErr
-emptyBodyError = Default "Attempt to define function with no body"
-
-
-primBegin :: [LispVal] -> EM LispVal
-primBegin []    = throwError $ Default "Expected at least 1 arg; found []"
-primBegin stmts = last <$> mapM eval stmts
-
-
-primEval :: [LispVal] -> EM LispVal
-primEval [form]  = eval form
-primEval badArgs = throwError $ NumArgs 1 badArgs
-
-primApply :: [LispVal] -> EM LispVal
-primApply [func, List args] = apply func args
-primApply (func : args) = apply func args
-primApply [] = throwError $ Default "Expected at least 1 arg; found []"
-
-primLoad :: [LispVal] -> EM LispVal
-primLoad [String filename] = do
-    file <- liftIO . runExceptT $ load filename
-    case file of
-        Left e   -> throwError e
-        Right ls -> last <$> mapM eval ls
-primLoad [notString] = throwError $ TypeMismatch "string" notString
-primLoad badArgs     = throwError $ NumArgs 1 badArgs
-
 
 handleNonPrim :: LispVal -> [LispVal] -> EM LispVal
 handleNonPrim function args = do
@@ -163,6 +58,7 @@ handleNonPrim function args = do
         Primitive {} -> evalCall func
         Func {}      -> evalCall func
         PMacro {}    -> evalMacro func
+        _            -> evalCall func
 
   where evalCall func = do
             argVals <- mapM eval args
@@ -175,8 +71,7 @@ handleNonPrim function args = do
             return v
         evalMacro func = do
             modifyTopReason $ const Expand
-            expansion <- apply func args
-            eval expansion
+            apply func args
 
 apply :: LispVal -> [LispVal] -> EM LispVal
 
@@ -219,29 +114,10 @@ apply (Func params varargs body closure name) args =
               liftIO . Env.bindVars env $ Map.fromList [(argName, List remainingArgs)]
           Nothing -> return env
 
-apply notFunc _ = throwError . NotFunction "Not a function" $ show notFunc
+apply notFunc _ = throwError $ NotFunction "Not a function" notFunc
 
 num :: [a] -> Integer
 num = toInteger . length
-
-makeFunc :: Maybe String
-         -> [LispVal]
-         -> [LispVal]
-         -> Maybe String
-         -> EM LispVal
-makeFunc varargs params body name = do
-    emptyEnv <- liftIO $ newIORef Map.empty
-    return $ Func (map show params) varargs body emptyEnv name
-
-makeFuncNormal = makeFunc Nothing
-makeFuncVarargs = makeFunc . Just . show
-
-truthy :: LispVal -> Bool
-truthy v = not $ v == Bool False
-              || v == Number 0
-              || v == List []
-              || v == String ""
-
 
 showResult :: (Either LispErr LispVal, EvalState) -> String
 showResult res = case res of

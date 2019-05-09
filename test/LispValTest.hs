@@ -106,12 +106,15 @@ testShowPort = testCase "Ports show correctly" $
 
 testShowPrimitives = testCase "Primitives show correctly" $
     mapM_
-        (\(key, func) -> show func @?= "<Function " ++ key ++ ">")
+        (\(key, func) -> let pType = case func of
+                                 Primitive {} -> "Function"
+                                 PMacro {}     -> "Macro"
+                         in show func @?= "<" ++ pType ++ " " ++ key ++ ">")
         -- Test only some of the primitives list as eventually it will be quite large
         . take 50 $ Map.toList primitives
 
 testShowFunctions = testCase "Functions show correctly" $
-    do emptyEnv <- newIORef $ Map.empty
+    do emptyEnv <- newIORef Map.empty
        show (Func [] Nothing [] emptyEnv (Just "testFunc")) @?= "(testFunc () ...)"
        show (Func ["x"] Nothing [] emptyEnv (Just "testFunc")) @?=
             "(testFunc (x) ...)"

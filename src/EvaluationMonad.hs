@@ -4,6 +4,9 @@ module EvaluationMonad
       EM (..)
     , EvalState (..)
 
+    -- * Re-exported modules
+    , module Control.Monad.Except
+    , module Control.Monad.State.Lazy
     -- * Useful evaluation actions
     , pushExpr
     , popExpr

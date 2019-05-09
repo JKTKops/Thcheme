@@ -280,8 +280,9 @@ mkEvalTest tb = let exprs = lines $ input tb
                  in testCaseSteps (testName tb) $ \step -> do
     primEnv <- primitiveBindings
     evaluations <- fmap (map fst) . forM exprs $ \input -> do
+        step $ "input: " ++ input
         step "Parsing input"
-        let pExpr = readExpr $ input
+        let pExpr = readExpr input
         isRight pExpr @? "Parse failed on input: " ++ input
         let Right expr = pExpr
 

@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.List (rawPrimitives) where
+module Primitives.List (rawPrimitives, macros) where
 
 import Prelude hiding (sequence)
 import Control.Monad (liftM)
@@ -7,6 +7,8 @@ import Control.Monad.Except (throwError, (>=>))
 import Control.Monad.Writer (Writer, writer, runWriter, tell)
 
 import Types
+import Evaluation (eval)
+import EvaluationMonad (updateWith)
 
 rawPrimitives = [ ("list", listOp)
                 , ("cons", cons)
@@ -16,6 +18,10 @@ rawPrimitives = [ ("list", listOp)
                 [ (name, RPrim 1 func)
                 | (name, func) <- compositions [1..4] [("a", car), ("d", cdr)]
                 ]
+
+macros = [ ("set-car!", setCar)
+         , ("set-cdr!", setCdr)
+         ]
 
 car :: RBuiltin
 car [List (x:xs)]        = return x
@@ -89,3 +95,39 @@ nullOp = RPrim 1 $ \case
     [List _]  -> return $ Bool False
     [notList] -> throwError $ TypeMismatch "list" notList
     badArgs   -> throwError $ NumArgs 1 badArgs
+
+setCar :: Macro
+setCar = Macro 2 $ \args -> case args of
+    (Atom _ : _) -> updateWith helper args
+    _            -> helper args
+  where helper :: [LispVal] -> EM LispVal
+        helper [List (_ : cdr), form] = do
+            form' <- eval form
+            return $ List (form' : cdr)
+        helper [DottedList (_ : cdr1) cdr2, form] = do
+            form' <- eval form
+            return $ DottedList (form' : cdr1) cdr2
+        helper [List [], _] = throwError $ TypeMismatch "pair" (List [])
+        helper [notList, _] = throwError $ TypeMismatch "pair" notList
+        helper badArgs      = throwError $ NumArgs 2 badArgs
+
+setCdr :: Macro
+setCdr = Macro 2 $ \args -> case args of
+    (Atom _ : _) -> updateWith helper args
+    _            -> helper args
+  where helper :: [LispVal] -> EM LispVal
+        helper [List (car : _), form] = do
+            form' <- eval form
+            return $ case form' of
+                List cdr -> List (car : cdr)
+                DottedList cdr1 cdr2 -> DottedList (car : cdr1) cdr2
+                _ -> DottedList [car] form'
+        helper [DottedList (car : _) _, form] = do
+            form' <- eval form
+            return $ case form' of
+                List cdr -> List (car : cdr)
+                DottedList cdr1 cdr2 -> DottedList (car : cdr1) cdr2
+                _ -> DottedList [car] form'
+        helper [List [], _] = throwError $ TypeMismatch "pair" (List [])
+        helper [notList, _] = throwError $ TypeMismatch "pair" notList
+        helper badArgs      = throwError $ NumArgs 2 badArgs

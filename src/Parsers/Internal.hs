@@ -33,6 +33,8 @@ parseExpr = try parseNumber
 symbol :: Parser Char
 symbol = oneOf "!@#$%^&*-_=+|:\\/?<>~"
 
+-- TODO the whitespace parser should also parse comments
+-- line comments start with ; and block comments are #| ... |#
 spaces :: Parser ()
 spaces = skipMany1 space
 
@@ -150,7 +152,11 @@ parseDottedList = do
 
 parseQuoted :: Parser LispVal
 parseQuoted = do
-    char '\''
+    sym <- string "'" <|> string "`" <|> try (string ",@") <|> string ","
+    let macro = case sym of
+            "'"  -> "quote"
+            "`"  -> "quasiquote"
+            ","  -> "unquote"
+            ",@" -> "unquote-splicing"
     x <- parseExpr
-    return $ List [Atom "quote", x]
-
+    return $ List [Atom macro, x]

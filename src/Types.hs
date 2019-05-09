@@ -10,6 +10,7 @@ module Types
     , Primitive (..)
     , Macro (..)
     , LispVal (..)
+    , truthy
     , LispErr (..)
     , ThrowsError
     , IOThrowsError
@@ -72,11 +73,17 @@ instance Eq LispVal where (==) = eqVal
 
 instance Show LispVal where show = showVal
 
+truthy :: LispVal -> Bool
+truthy v = not $ v == Bool False
+              || v == Number 0
+              || v == List []
+              || v == String ""
+
 data LispErr = NumArgs Integer [LispVal]
              | TypeMismatch String LispVal
              | Parser ParseError
              | BadSpecialForm String LispVal
-             | NotFunction String String
+             | NotFunction String LispVal
              | UnboundVar String String
              | Default String
              | Quit
@@ -204,7 +211,7 @@ showEs es = "Stack trace:\n" ++ numberedLines
                 _         -> CallOnly
 
         exprs = if fehOpt == CallOnly
-                then map (show . snd) . filter ((== Call) . fst) $ stack es
+                then map (show . snd) . filter ((`elem` [Call, Expand]) . fst) $ stack es
                 else map (\(s, v) ->
                          let buffer = case s of
                                  Call -> "    "
@@ -212,9 +219,3 @@ showEs es = "Stack trace:\n" ++ numberedLines
                                  Expand -> "  "
                          in show s ++ ":" ++ buffer ++ show v)
                      $ stack es
-
-        truthy :: LispVal -> Bool
-        truthy v = not $ v == Bool False
-                      || v == Number 0
-                      || v == List []
-                      || v == String ""

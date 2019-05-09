@@ -37,6 +37,9 @@ qcTests = testGroup "(QuickCheck)"
     [ prop_CorrectSymbols
     , prop_StringEscapes
     , prop_QuoteParser
+    , prop_QuasiquoteParser
+    , prop_UnquoteParser
+    , prop_UnquoteSplicingParser
     ]
 
 -- END TO END TESTS
@@ -90,6 +93,17 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         { testName = "Quoted char"
         , input = "'#\\*"
         , expectedContents = Just $ List [Atom "quote", Char '*']
+        }
+    , mkE2Etest
+        { testName = "Quasiquoted mess"
+        , input = "`(,(foo) ,@(bar) x 1)"
+        , expectedContents = Just $
+            List [Atom "quasiquote", List
+                 [ List [Atom "unquote", List [Atom "foo"]]
+                 , List [Atom "unquote-splicing", List [Atom "bar"]]
+                 , Atom "x"
+                 , Number 1
+                 ]]
         }
     , mkE2Etest
         { testName = "Nested list"
@@ -189,7 +203,7 @@ testParseExpr testBuilder =
     testCaseSteps (testName testBuilder) $ \step -> do
         step "Parsing"
         let pInput = input testBuilder
-            parse = run (do{ v <- parseExpr; eof; return v}) $ pInput
+            parse = run (do v <- parseExpr; eof; return v) pInput
 
         if isJust $ expectedContents testBuilder
         then do
@@ -457,21 +471,20 @@ dotListParserTests = testGroup "Parsing Dotted Lists"
 vectorParserTests = testGroup "Parsing vectors"
     [ testCase "\"#(1 #\\x ())\"" $ do
         let p = run parseVector "#(1 #\\x ())"
-        isRight p @? "Parse failed."
-        let val = case fromRight undefined p of
-                Vector arr -> Just arr
-                _ -> Nothing
-        isJust val @? "Parse did not return a Vector."
+        val <- verify p
         fromJust val @?= listArray (0, 2) [Number 1, Char 'x', List []]
     , testCase "\"#()\"" $ do
         let p = run parseVector "#()"
-        isRight p @? "Parse failed."
-        let val = case fromRight undefined p of
-                Vector arr -> Just arr
-                _ -> Nothing
-        isJust val @? "Parse did not return a Vector."
+        val <- verify p
         fromJust val @?= listArray (0, -1) []
     ]
+  where verify p = do
+            isRight p @? "Parse failed."
+            let val = case fromRight undefined p of
+                    Vector arr -> Just arr
+                    _ -> Nothing
+            isJust val @? "Parse did not return a Vector."
+            return val
 
 -- PROPERTY TESTS
 prop_CorrectSymbols = testProperty "Recognize correct set of symbols" $
@@ -484,11 +497,32 @@ prop_StringEscapes = testProperty "Strings parse correct escape sequences" $
         parseSucceeds parseString ("\"\\" ++ [input] ++ "\"")
         == (input `elem` "\\\"nrt")
 
-prop_QuoteParser = testProperty "parseQuoted always results in quote" $
+prop_QuoteParser = testProperty "tick always results in quote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" ('\'' : show (input :: LispVal))
         in isRight result ==> case result of
             Right (List (Atom "quote" : _)) -> True
+            _ -> False
+
+prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
+    withMaxSuccess 50 $ \input ->
+        let result = parse parseQuoted "" ('`' : show (input :: LispVal))
+        in isRight result ==> case result of
+            Right (List (Atom "quasiquote" : _)) -> True
+            _ -> False
+
+prop_UnquoteParser = testProperty "comma always results in unquote" $
+    withMaxSuccess 50 $ \input ->
+        let result = parse parseQuoted "" (',' : show (input :: LispVal))
+        in isRight result ==> case result of
+            Right (List (Atom "unquote" : _)) -> True
+            _ -> False
+
+prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-splicing" $
+    withMaxSuccess 50 $ \input ->
+        let result = parse parseQuoted "" (",@" ++ show (input :: LispVal))
+        in isRight result ==> case result of
+            Right (List (Atom "unquote-splicing" : _)) -> True
             _ -> False
 
 -- HELPER
