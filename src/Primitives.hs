@@ -42,7 +42,7 @@ ioPrimitives :: HashMap String IOPrimitive
 ioPrimitives = Map.fromList IO.ioPrimitives
 
 ePrimitives :: HashMap String Primitive
-ePrimitives = Map.fromList []
+ePrimitives = Map.fromList Misc.ePrimitives
 
 macros :: HashMap String Macro
 macros = Map.fromList $ String.macros ++

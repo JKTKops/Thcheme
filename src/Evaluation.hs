@@ -30,7 +30,6 @@ eval v = do
     popExpr
     return res
 
--- TODO AFTER adding macros -> refactor the below into primitive macros
 evalExpr :: LispVal -> EM LispVal
 evalExpr expr = case expr of
     val@(String _) -> return val
@@ -40,10 +39,6 @@ evalExpr expr = case expr of
     val@(Vector _) -> return val
     (Atom id)      -> getVar id
     nil@(List [])  -> return nil
-    List (arg0@(Atom fName) : argExprs) ->
-        let fPrim = case fName of
-              _             -> handleNonPrim arg0
-        in fPrim argExprs
     List (function : args) -> handleNonPrim function args
     badForm -> throwError $ BadSpecialForm "Unrecognized special form" badForm
 
@@ -57,7 +52,8 @@ handleNonPrim function args = do
     case func of
         Primitive {} -> evalCall func
         Func {}      -> evalCall func
-        PMacro {}    -> evalMacro func
+        PMacro {}    -> evalPMacro func
+        DottedList [Atom "macro"] macro@Func{} -> evalMacro macro
         _            -> evalCall func
 
   where evalCall func = do
@@ -65,13 +61,17 @@ handleNonPrim function args = do
             let reduced = function /= func || args /= argVals
             when reduced $ do
                 modifyTopReason $ const Reduce
-                pushExpr Call (List (function : argVals))
+                pushExpr Call (List (func : argVals))
             v <- apply func argVals
             when reduced popExpr
             return v
-        evalMacro func = do
+        evalPMacro pmacro = do
             modifyTopReason $ const Expand
-            apply func args
+            apply pmacro args
+        evalMacro macro = do
+            modifyTopReason $ const Expand
+            expansion <- apply macro args
+            eval expansion
 
 apply :: LispVal -> [LispVal] -> EM LispVal
 

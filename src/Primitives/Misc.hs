@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Misc (rawPrimitives, macros) where
+module Primitives.Misc (rawPrimitives, ePrimitives, macros) where
 
 import Data.IORef
 import qualified Data.HashMap.Lazy as Map
@@ -9,8 +9,15 @@ import Types
 import Evaluation
 import EvaluationMonad
 
+import Debug.Trace
+
 rawPrimitives :: [(String, RawPrimitive)]
 rawPrimitives = [ ("id", identityFunction) ]
+
+ePrimitives :: [(String, Primitive)]
+ePrimitives = [ ("apply", applyFunc)
+              , ("error", errorFunc)
+              ]
 
 macros :: [(String, Macro)]
 macros = [ ("quote", quote)
@@ -20,9 +27,9 @@ macros = [ ("quote", quote)
          , ("set-option!", setOpt)
          , ("define", define)
          , ("lambda", lambda)
+         , ("defmacro", defmacro)
          , ("begin", begin)
          , ("eval", evalMacro)
-         , ("apply", applyMacro)
          , ("load", loadMacro)
          ]
 
@@ -84,7 +91,9 @@ define = Macro 1 $ \case
     badArgs -> throwError $ NumArgs 2 badArgs
 
 lambda :: Macro
-lambda = Macro 1 $ \case
+lambda = Macro 1 mkLambda
+
+mkLambda args = case args of
     (List params : body) -> case body of
         [] -> throwError emptyBodyError
         _  -> makeFuncNormal params body Nothing
@@ -112,6 +121,13 @@ makeFunc varargs params body name = do
 makeFuncNormal = makeFunc Nothing
 makeFuncVarargs = makeFunc . Just . show
 
+defmacro :: Macro
+defmacro = Macro 3 $ \case
+    (Atom name : ps : body) -> do
+        lam <- mkLambda (ps : body)
+        let macro = DottedList [Atom "macro"] lam
+        defineVar name macro
+
 begin :: Macro
 begin = Macro 1 $ \case
     []    -> throwError $ Default "Expected at least 1 arg; found []"
@@ -122,8 +138,8 @@ evalMacro = Macro 1 $ \case
     [form]  -> eval form
     badArgs -> throwError $ NumArgs 1 badArgs
 
-applyMacro :: Macro
-applyMacro = Macro 1 $ \case
+applyFunc :: Primitive
+applyFunc = Prim 1 $ \case
     [func, List args] -> apply func args
     (func : args) -> apply func args
     [] -> throwError $ Default "Expected at least 1 arg; found []"
@@ -139,24 +155,63 @@ loadMacro = Macro 1 $ \case
     badArgs     -> throwError $ NumArgs 1 badArgs
 
 quasiquote :: Macro
-quasiquote = Macro 1 qq
-  where qq :: [LispVal] -> EM LispVal
-        qq [List [Atom "unquote", form]] = eval form
-        qq [List forms] = List <$> qqTerms forms
-        qq [form]  = return form
-        qq badArgs = throwError $ NumArgs 1 badArgs
+quasiquote = Macro 1 $ \case
+    [form]  -> evalStateT (qq form) 0
+    badArgs -> throwError $ NumArgs 1 badArgs
 
-        qqTerms :: [LispVal] -> EM [LispVal]
+  where qq :: LispVal -> StateT Int EM LispVal
+        qq (List [Atom "quasiquote", form]) = modify (+ 1) >> do
+            inner <- qq form
+            return $ List [Atom "quasiquote", inner]
+        qq (List [Atom "unquote", form]) = do
+            depth <- get
+            if depth == 0
+            then lift $ eval form
+            else do
+                modify (\s -> s - 1)
+                inner <- qq form
+                return $ List [Atom "unquote", inner]
+        qq (List forms)
+            | Atom "unquote" `elem` forms =
+              let (list, dot) = break (== Atom "unquote") forms
+              in DottedList <$> qqTerms list <*> qq (List dot)
+            | otherwise = List <$> qqTerms forms
+        qq (DottedList forms form) = DottedList <$> qqTerms forms <*> qq form
+        qq form  = return form
+
+        qqTerms :: [LispVal] -> StateT Int EM [LispVal]
         qqTerms [] = return []
         qqTerms (t:ts) = do
-            pushExpr Expand t
+            lift $ pushExpr Expand t
             terms <- case t of
-                List [Atom "unquote", form] -> (:[]) <$> eval form
+{-
+                List [Atom "quasiquote", form] -> do
+                    modify (+ 1)
+                    (Atom "quasiquote" :) <$> qqTerms [form]
+                List [Atom "unquote", form] -> do
+                    depth <- get
+                    if depth == 0
+                    then lift $ (:[]) <$> eval form
+                    else do
+                        modify (\s -> s - 1)
+                        inner <- qq form
+                        return [List [Atom "unquote", inner]]
+-- TODO: Try only checking for unquote-splicing here and then otherwise call qq
+-}
                 List [Atom "unquote-splicing", form] -> do
-                    val <- eval form
+                    depth <- get
+                    val <- if depth == 0
+                           then lift $ eval form
+                           else modify (\s -> s - 1) >> qq form
                     case val of
                         List vs -> return vs
                         _ -> throwError $ TypeMismatch "list" val
-                _ -> (:[]) <$> qq [t]
-            popExpr
+                _ -> (:[]) <$> qq t
+            lift popExpr
             (terms ++) <$> qqTerms ts
+
+errorFunc :: Primitive
+errorFunc = Prim 1 $ \case
+    [String s] -> throwError $ Default s
+    [notStr]   -> throwError . Default $ show notStr
+    badArgs    -> throwError $ NumArgs 1 badArgs

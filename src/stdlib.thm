@@ -1,12 +1,49 @@
 ;;; CONSTANTS
 (define nil ())
 
+;;; MACROS
+(defmacro or cases
+  (if (null? cases)
+      #f
+      `(if ,(car cases)
+          #t
+          (or ,@(cdr cases)))))
+
+(defmacro and cases
+  (if (null? cases)
+       #t
+       `(if (not ,(car cases))
+           #f
+           (and ,@(cdr cases)))))
+
+(defmacro cond cases
+  (if (null? cases) (error "cond: unexhaustive cases")
+      (define else #t)
+      `(if ,(first (first cases))
+           ,(second (first cases))
+           (cond ,@(cdr cases)))))
+
+(defmacro defun (name args . body)
+  (cond ((pair? args) `(define ,(cons name args) ,@body))
+        ((symbol? args) `(define ,name (lambda ,args ,@body)))
+        (else (error "defun: Invalid type: expected symbol or pair"))))
+
 ;;; LIST FUNCTIONS
+(define first car)
+(define second cadr)
+(define third caddr)
+
 (define (map f xs)
   (if (null? xs)
       ()
       (cons (f (car xs))
             (map f (cdr xs)))))
+
+(define (map* f . xss)
+  (if (null? (car xss))
+      ()
+      (cons (apply f (map car xss))
+            (apply map* (cons f (map cdr xss))))))
 
 (define (filter p xs)
   (if (null? xs)
@@ -14,4 +51,3 @@
       (if (p (car xs))
           (cons (car xs) (filter p (cdr xs)))
           (filter p (cdr xs)))))
-
