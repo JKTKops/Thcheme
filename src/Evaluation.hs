@@ -45,10 +45,10 @@ evalExpr expr = case expr of
 handleNonPrim :: LispVal -> [LispVal] -> EM LispVal
 handleNonPrim function args = do
     func <- case function of
-        Primitive {}   -> return function
-        Func {}        -> return function
-        PMacro {}      -> return function
-        _              -> eval function
+        Primitive {} -> return function
+        Func {}      -> return function
+        PMacro {}    -> return function
+        _            -> eval function
     case func of
         Primitive {} -> evalCall func
         Func {}      -> evalCall func

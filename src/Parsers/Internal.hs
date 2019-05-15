@@ -47,7 +47,7 @@ stringLiteral :: Parser String
 stringLiteral = Tok.stringLiteral lexer
 
 parens :: Parser a -> Parser a
-parens p = Tok.parens lexer p
+parens = Tok.parens lexer
 
 anyBraces :: Parser a -> Parser a
 anyBraces p = parens p
@@ -65,15 +65,16 @@ float = Tok.float lexer
 lexeme :: Parser a -> Parser a
 lexeme = Tok.lexeme lexer
 
+-- the absurd number of parens is because someone thought <?> should be infix 0
 parseExpr :: Parser LispVal
 parseExpr = lexeme $
-             try parseNumber
-         <|> try parseChar -- #\atom is a valid name for an atom
-         <|> try parseVector
-         <|> parseAtom
-         <|> parseString
-         <|> parseQuoted
-         <|> lexeme (anyBraces $ try parseDottedList <|> parseList)
+             (try parseNumber <?> "number")
+         <|> (try parseChar <?> "character literal") -- #\atom is a valid name for an atom
+         <|> (try parseVector <?> "vector")
+         <|> (parseAtom <?> "symbol")
+         <|> (parseString <?> "string")
+         <|> (parseQuoted <?> "quote form")
+         <|> (lexeme (anyBraces $ try parseDottedList <|> parseList) <?> "list")
 
 symbol :: Parser Char
 symbol = oneOf "!@#$%^&*-_=+|:\\/?<>~"
