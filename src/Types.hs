@@ -173,8 +173,7 @@ unwordsList :: [LispVal] -> String
 unwordsList = unwords . map show
 
 -- | The Evaluation Monad
-type EMt = ExceptT LispErr (StateT EvalState IO)
-newtype EM a = EM { runEM :: EMt a }
+newtype EM a = EM { runEM :: ExceptT LispErr (StateT EvalState IO) a }
   deriving ( Monad, Functor, Applicative, MonadIO
            , MonadError LispErr, MonadState EvalState)
 
@@ -201,12 +200,12 @@ data TraceType = CallOnly | FullHistory deriving (Eq, Show, Read, Enum)
 showEs :: EvalState -> String
 showEs es = "Stack trace:\n" ++ numberedLines
   where numberedLines :: String
-        numberedLines = unlines $ zipWith (\n e -> n ++ " " ++ e) numbers exprs
+        numberedLines = unlines $ zipWith (<+>) numbers exprs
         numbers = map (\i -> show i ++ ";") [1..]
 
         fehOpt :: TraceType
         fehOpt =
-            case truthy <$> Map.lookup "full-evaluation-history" (options es) of
+            case truthy <$> Map.lookup "full-stack-trace" (options es) of
                 Just True -> FullHistory
                 _         -> CallOnly
 
@@ -219,3 +218,6 @@ showEs es = "Stack trace:\n" ++ numberedLines
                                  Expand -> "  "
                          in show s ++ ":" ++ buffer ++ show v)
                      $ stack es
+
+(<+>) :: String -> String -> String
+s1 <+> s2 = s1 ++ " " ++ s2

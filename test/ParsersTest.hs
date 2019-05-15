@@ -35,7 +35,6 @@ propTests = testGroup "Property tests" [qcTests]
 qcTests :: TestTree
 qcTests = testGroup "(QuickCheck)"
     [ prop_CorrectSymbols
-    , prop_StringEscapes
     , prop_QuoteParser
     , prop_QuasiquoteParser
     , prop_UnquoteParser
@@ -53,6 +52,11 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         { testName = "#h, negative number"
         , input = "-#hef"
         , expectedContents = Just $ Number (-239)
+        }
+    , mkE2Etest
+        { testName = "#o, number with +"
+        , input = "+#o55"
+        , expectedContents = Just $ Number 45
         }
     , mkE2Etest
         { testName = "Char"
@@ -316,20 +320,30 @@ numberParserTests = testGroup "Parsing Numbers" $ map testNumberParser
         , input = "25"
         , expectedContents = Just 25
         }
+   , mkNumTest
+        { testName = "-2"
+        , input = "-2"
+        , expectedContents = Just (-2)
+        }
+    , mkNumTest
+        { testName = "+15"
+        , input = "+15"
+        , expectedContents = Just 15
+        }
     , mkNumTest
         { testName = "#d80915"
         , input = "#d80915"
         , expectedContents = Just 80915
         }
     , mkNumTest
-        { testName = "-2"
-        , input = "-2"
-        , expectedContents = Just (-2)
-        }
-    , mkNumTest
         { testName = "-#d100"
         , input = "-#d100"
         , expectedContents = Just (-100)
+        }
+    , mkNumTest
+        { testName = "+#d06"
+        , input = "+#d06"
+        , expectedContents = Just 6
         }
     , mkNumTest
         { testName = "#b1010"
@@ -342,6 +356,11 @@ numberParserTests = testGroup "Parsing Numbers" $ map testNumberParser
         , expectedContents = Just (-29)
         }
     , mkNumTest
+        { testName = "+#b1011"
+        , input = "+#b1011"
+        , expectedContents = Just 11
+        }
+    , mkNumTest
         { testName = "#o517"
         , input = "#o517"
         , expectedContents = Just 335
@@ -352,6 +371,11 @@ numberParserTests = testGroup "Parsing Numbers" $ map testNumberParser
         , expectedContents = Just (-20)
         }
     , mkNumTest
+        { testName = "+#o36"
+        , input = "+#o36"
+        , expectedContents = Just 30
+        }
+    , mkNumTest
         { testName = "#hf4"
         , input = "#hf4"
         , expectedContents = Just 244
@@ -360,6 +384,11 @@ numberParserTests = testGroup "Parsing Numbers" $ map testNumberParser
         { testName = "-#hcb8"
         , input = "-#hcb8"
         , expectedContents = Just (-3256)
+        }
+    , mkNumTest
+        { testName = "+#haa1"
+        , input = "+#haa1"
+        , expectedContents = Just 2721
         }
     , mkNumTest
         { testName = "15a3"
@@ -491,11 +520,6 @@ prop_CorrectSymbols = testProperty "Recognize correct set of symbols" $
     \input ->
         parseSucceeds symbol [input]
         == (input `elem` "!@#$%^&*-_=+|:\\/?<>~")
-
-prop_StringEscapes = testProperty "Strings parse correct escape sequences" $
-    \input ->
-        parseSucceeds parseString ("\"\\" ++ [input] ++ "\"")
-        == (input `elem` "\\\"nrt")
 
 prop_QuoteParser = testProperty "tick always results in quote" $
     withMaxSuccess 50 $ \input ->

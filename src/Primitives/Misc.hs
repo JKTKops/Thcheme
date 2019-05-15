@@ -184,20 +184,6 @@ quasiquote = Macro 1 $ \case
         qqTerms (t:ts) = do
             lift $ pushExpr Expand t
             terms <- case t of
-{-
-                List [Atom "quasiquote", form] -> do
-                    modify (+ 1)
-                    (Atom "quasiquote" :) <$> qqTerms [form]
-                List [Atom "unquote", form] -> do
-                    depth <- get
-                    if depth == 0
-                    then lift $ (:[]) <$> eval form
-                    else do
-                        modify (\s -> s - 1)
-                        inner <- qq form
-                        return [List [Atom "unquote", inner]]
--- TODO: Try only checking for unquote-splicing here and then otherwise call qq
--}
                 List [Atom "unquote-splicing", form] -> do
                     depth <- get
                     val <- if depth == 0

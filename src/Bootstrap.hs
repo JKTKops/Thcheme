@@ -5,16 +5,17 @@ module Bootstrap (
     , stdlib -- for testing... might want to move to Bootstrap.Internal
     ) where
 
-import Data.IORef
-import Data.String
-import Data.FileEmbed
-import qualified Data.HashMap.Strict as Map
-import Text.ParserCombinators.Parsec
+import Data.IORef (newIORef)
+import Data.FileEmbed (embedStringFile)
+import qualified Data.HashMap.Strict as Map (empty)
+
+import Types
+import Parsers (labeledReadExprList)
 
 import Primitives (primitives)
 import Environment (Env, bindVars)
 
-import Evaluation (evaluate)
+import Evaluation (evaluateExpr)
 
 nullEnv :: IO Env
 nullEnv = newIORef Map.empty
@@ -24,37 +25,8 @@ primitiveBindings = do
     ne <- nullEnv
     env <- bindVars ne primitives
     let (Right exprs) = stdlib
-    mapM_ (evaluate env Map.empty) exprs
+    mapM_ (evaluateExpr env Map.empty) exprs
     return env
 
-stdlib :: Either ParseError [String]
-stdlib = parse parseExprs "stdlib" $(embedStringFile "src/stdlib.thm")
-
-parseExprs :: Parser [String]
-parseExprs = try lineComment >>
-             endBy parseExpr (skipMany $ (:[]) <$> space
-                                     <|> lineComment
-                                     <|> try blockComment)
-
-parseExpr :: Parser String
-parseExpr = do
-    open <- oneOf "([{"
-    internal <- fmap concat . many $
-            try blockComment
-        <|> lineComment
-        <|> ((:[]) <$> noneOf "([{}])")
-        <|> parseExpr
-    close <- oneOf ")]}"
-    return $ [open] ++ internal ++ [close]
-
-blockComment :: Parser String
-blockComment = do
-    string "#|"
-    manyTill anyChar . try $ string "|#"
-    return ""
-
-lineComment :: Parser String
-lineComment = do
-    char ';'
-    manyTill anyChar $ char '\n'
-    return ""
+stdlib :: ThrowsError [LispVal]
+stdlib = labeledReadExprList "stdlib" $(embedStringFile "src/stdlib.thm")

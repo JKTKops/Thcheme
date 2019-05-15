@@ -1,7 +1,13 @@
 module Parsers.Internal where
 
+import Text.Parsec hiding (Error, try, spaces)
+import Text.Parsec.Char (octDigit, hexDigit)
+import Text.Parsec.Language (emptyDef)
 import Text.ParserCombinators.Parsec hiding (spaces)
-import Data.Maybe (isNothing)
+import qualified Text.Parsec.Expr as Ex
+import qualified Text.Parsec.Token as Tok
+
+import Data.Char (digitToInt)
 import Data.Array (listArray)
 import Control.Monad (liftM, guard)
 import Control.Monad.Except (throwError, liftIO)
@@ -9,32 +15,69 @@ import Numeric (readInt, readOct, readHex)
 
 import Types
 
-readOrThrow :: Parser a -> String -> ThrowsError a
-readOrThrow parser input = case parse parser "Thcheme" input of
+labeledReadOrThrow :: String -> Parser a -> String -> ThrowsError a
+labeledReadOrThrow label parser input = case parse parser label input of
     Left err  -> throwError $ Parser err
     Right val -> return val
 
+readOrThrow :: Parser a -> String -> ThrowsError a
+readOrThrow = labeledReadOrThrow "Thcheme"
+
+lexer :: Tok.TokenParser ()
+lexer = Tok.makeTokenParser style
+  where style = emptyDef { Tok.commentStart = "#|"
+                         , Tok.commentEnd   = "|#"
+                         , Tok.commentLine  = ";"
+                         , Tok.identStart   = letter <|> symbol
+                         , Tok.identLetter  = letter <|> digit <|> symbol
+                         , Tok.opLetter     = oneOf "'`,@"
+                         , Tok.reservedOpNames = ["'", "`", ",", ",@"]
+                         }
+
+whiteSpace :: Parser ()
+whiteSpace = Tok.whiteSpace lexer
+
+identifier :: Parser String
+identifier = Tok.identifier lexer
+
+reservedOp :: String -> Parser ()
+reservedOp = Tok.reservedOp lexer
+
+stringLiteral :: Parser String
+stringLiteral = Tok.stringLiteral lexer
+
+parens :: Parser a -> Parser a
+parens p = Tok.parens lexer p
+
+anyBraces :: Parser a -> Parser a
+anyBraces p = parens p
+          <|> Tok.braces lexer p
+          <|> Tok.brackets lexer p
+
+decimal, hexadecimal, octal :: Parser Integer
+decimal     = Tok.decimal lexer
+hexadecimal = Tok.hexadecimal lexer
+octal       = Tok.octal lexer
+
+float :: Parser Double
+float = Tok.float lexer
+
+lexeme :: Parser a -> Parser a
+lexeme = Tok.lexeme lexer
+
 parseExpr :: Parser LispVal
-parseExpr = try parseNumber
+parseExpr = lexeme $
+             try parseNumber
          <|> try parseChar -- #\atom is a valid name for an atom
          <|> try parseVector
          <|> parseAtom
          <|> parseString
          <|> parseQuoted
-         <|> do brace <- char '(' <|> char '[' <|> char '{'
-                x <- try parseDottedList <|> parseList
-                char $ close brace
-                return x
-  where close brace = case brace of
-            '(' -> ')'
-            '[' -> ']'
-            '{' -> '}'
+         <|> lexeme (anyBraces $ try parseDottedList <|> parseList)
 
 symbol :: Parser Char
 symbol = oneOf "!@#$%^&*-_=+|:\\/?<>~"
 
--- TODO the whitespace parser should also parse comments
--- line comments start with ; and block comments are #| ... |#
 spaces :: Parser ()
 spaces = skipMany1 space
 
@@ -42,46 +85,30 @@ delim :: Parser ()
 delim = notFollowedBy $ alphaNum <|> symbol
 
 parseString :: Parser LispVal
-parseString = do
-    char '"'
-    x <- many (fmap pure notEscape <|> escape <|> fmap pure space)
-    char '"'
-    return $ String . concat $ x
-  where notEscape = noneOf "\\\"\n\r\t"
-        escape = do
-            d <- char '\\'
-            c <- oneOf "\\\"nrt" <?> "escape character"
-            return . pure $ case c of
-                '\\' -> '\\'
-                '"'  -> '"'
-                'n'  -> '\n'
-                'r'  -> '\r'
-                't'  -> '\t'
+parseString = String <$> stringLiteral
 
 parseAtom :: Parser LispVal
 parseAtom = do
-    first <- letter <|> symbol
-    rest <- many (letter <|> digit <|> symbol)
-    let atom = first:rest
+    atom <- identifier
     return $ case atom of
         "#t" -> Bool True
         "#f" -> Bool False
         _    -> Atom atom
 
 parseNumber :: Parser LispVal
-parseNumber = do
-    sign <- optionMaybe $ char '-'
+parseNumber = lexeme $ do
+    sign <- optionMaybe $ char '-' <|> char '+'
     prefix <- parseRadixPrefix <|> return "#d"
-    num <- many1 (digit <|> oneOf "abcdef") >>= case prefix of
-        "#b" -> parseBin
-        "#o" -> parseOct
-        "#d" -> parseDec
-        "#h" -> parseHex
+    num <- Number <$> case prefix of
+        "#b" -> number 2 (char '0' <|> char '1')
+        "#o" -> number 8 octDigit
+        "#d" -> number 10 digit -- float case goes here :)
+        "#h" -> number 16 hexDigit
     delim
-    if isNothing sign
-    then return num
-    else let Number n = num in
-        return . Number $ negate n
+    case sign of
+        Nothing  -> return num
+        Just '+' -> return num
+        Just '-' -> let Number n = num in return . Number $ negate n
 
   where parseRadixPrefix :: Parser String
         parseRadixPrefix = do
@@ -89,34 +116,13 @@ parseNumber = do
             prefix <- oneOf "bodh"
             return [hash, prefix]
 
-        parseBin :: String -> Parser LispVal
-        parseBin = liftNumber . readBin
-
-        readBin :: String -> Maybe Integer
-        readBin = fromRead . readInt 2 (`elem` "01") (read . pure)
-
-        parseOct :: String -> Parser LispVal
-        parseOct = liftNumber . fromRead . readOct
-
-        parseDec :: String -> Parser LispVal
-        parseDec = liftNumber . fromRead . reads
-
-        parseHex :: String -> Parser LispVal
-        parseHex = liftNumber . fromRead . readHex
-
-        fromRead :: [(Integer, String)] -> Maybe Integer
-        fromRead [] = Nothing
-        fromRead xs = case filter (\(_, s) -> null s) xs of
-            (x:_) -> Just $ fst x
-            []    -> Nothing
-
-        liftNumber :: Maybe Integer -> Parser LispVal
-        liftNumber mx = case mx of
-            Just x  -> return $ Number x
-            Nothing -> unexpected "number parsing failure"
+        number base baseDigit = do
+            digits <- many1 baseDigit
+            let n = foldl (\x d -> base * x + toInteger (digitToInt d)) 0 digits
+            seq n (return n)
 
 parseChar :: Parser LispVal
-parseChar = do
+parseChar = lexeme $ do
     prefix <- string "#\\"
     char   <- do try $ string "space"
                  return ' '
@@ -129,34 +135,35 @@ parseChar = do
               <|> try (do c <- anyChar
                           delim
                           return c)
+              <?> "char literal"
     return $ Char char
 
 parseVector :: Parser LispVal
-parseVector = do
-    string "#("
-    exprs <- sepBy parseExpr spaces
-    char ')'
+parseVector = lexeme $ do
+    char '#'
+    exprs <- parens $ many parseExpr
     return . Vector . listArray (0, fromIntegral $ length exprs - 1) $ exprs
 
 parseList :: Parser LispVal
-parseList = List <$> sepBy parseExpr (skipMany space)
+parseList = List <$> many parseExpr -- sepBy parseExpr (skipMany space)
 
 parseDottedList :: Parser LispVal
 parseDottedList = do
-    init <- endBy parseExpr spaces
-    last <- char '.' >> spaces >> parseExpr
+    init <- many parseExpr
+    last <- lexeme (char '.') >> parseExpr
     case (init, last) of
         ([], _)         -> return last
         (init, List ls) -> return . List $ init ++ ls
         (init, val)     -> return $ DottedList init val
 
 parseQuoted :: Parser LispVal
-parseQuoted = do
-    sym <- string "'" <|> string "`" <|> try (string ",@") <|> string ","
-    let macro = case sym of
-            "'"  -> "quote"
-            "`"  -> "quasiquote"
-            ","  -> "unquote"
-            ",@" -> "unquote-splicing"
-    x <- parseExpr
-    return $ List [Atom macro, x]
+parseQuoted = lexeme $ foldr1 (<|>) parsers
+  where parsers = map (\sym -> do
+            reservedOp sym
+            let macro = case sym of
+                    "'"  -> "quote"
+                    "`"  -> "quasiquote"
+                    ","  -> "unquote"
+                    ",@" -> "unquote-splicing"
+            x <- parseExpr
+            return $ List [Atom macro, x]) ["'", "`", ",", ",@"]
