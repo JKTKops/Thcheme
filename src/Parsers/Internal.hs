@@ -30,8 +30,6 @@ lexer = Tok.makeTokenParser style
                          , Tok.commentLine  = ";"
                          , Tok.identStart   = letter <|> symbol
                          , Tok.identLetter  = letter <|> digit <|> symbol
-                         , Tok.opLetter     = oneOf "'`,@"
-                         , Tok.reservedOpNames = ["'", "`", ",", ",@"]
                          }
 
 whiteSpace :: Parser ()
@@ -39,9 +37,6 @@ whiteSpace = Tok.whiteSpace lexer
 
 identifier :: Parser String
 identifier = Tok.identifier lexer
-
-reservedOp :: String -> Parser ()
-reservedOp = Tok.reservedOp lexer
 
 stringLiteral :: Parser String
 stringLiteral = Tok.stringLiteral lexer
@@ -69,7 +64,8 @@ lexeme = Tok.lexeme lexer
 parseExpr :: Parser LispVal
 parseExpr = lexeme $
              (try parseNumber <?> "number")
-         <|> (try parseChar <?> "character literal") -- #\atom is a valid name for an atom
+             -- atom names can start with #\ too so we need an @try@
+         <|> (try parseChar <?> "character literal")
          <|> (try parseVector <?> "vector")
          <|> (parseAtom <?> "symbol")
          <|> (parseString <?> "string")
@@ -160,11 +156,11 @@ parseDottedList = do
 parseQuoted :: Parser LispVal
 parseQuoted = lexeme $ foldr1 (<|>) parsers
   where parsers = map (\sym -> do
-            reservedOp sym
+            try $ string sym
             let macro = case sym of
                     "'"  -> "quote"
                     "`"  -> "quasiquote"
                     ","  -> "unquote"
                     ",@" -> "unquote-splicing"
             x <- parseExpr
-            return $ List [Atom macro, x]) ["'", "`", ",", ",@"]
+            return $ List [Atom macro, x]) ["'", "`", ",@", ","]

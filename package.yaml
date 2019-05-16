@@ -1,5 +1,5 @@
 name:                Thcheme
-version:             0.1.1.14
+version:             0.1.2.1
 github:              "JKTKops/Lithp"
 license:             BSD3
 author:              "Max Kopinsky"
@@ -21,11 +21,12 @@ description:         Please see the README on GitHub at <https://github.com/JKTK
 
 dependencies:
 - base >= 4.7 && < 5
-- parsec
+- array
+- haskeline
 - mtl
+- parsec
 - transformers
 - unordered-containers
-- array
 
 library:
   source-dirs: src

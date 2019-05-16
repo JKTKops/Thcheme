@@ -58,10 +58,10 @@ handleNonPrim function args = do
 
   where evalCall func = do
             argVals <- mapM eval args
-            let reduced = function /= func || args /= argVals
+            let reduced = func `isReduced` function || args /= argVals
             when reduced $ do
                 modifyTopReason $ const Reduce
-                pushExpr Call (List (func : argVals))
+                pushExpr Call (List (function : argVals))
             v <- apply func argVals
             when reduced popExpr
             return v
@@ -72,6 +72,10 @@ handleNonPrim function args = do
             modifyTopReason $ const Expand
             expansion <- apply macro args
             eval expansion
+
+        isReduced :: LispVal -> LispVal -> Bool
+        isReduced _ (Atom _) = False
+        isReduced new old    = new /= old
 
 apply :: LispVal -> [LispVal] -> EM LispVal
 
@@ -125,10 +129,10 @@ showResult res = case res of
     (Left err, s) -> show err ++ "\n" ++ show s
     (Right v, _)  -> show v
 
-evaluate :: Env -> Opts -> String -> IO (Either LispErr LispVal, EvalState)
-evaluate initEnv opts input =
+evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr LispVal, EvalState)
+evaluate label initEnv opts input =
     flip runStateT (ES [] [initEnv] opts) . runExceptT . runEM $ do
-        v <- liftEither $ readExpr input
+        v <- liftEither $ labeledReadExpr label input
         eval v
 
 evaluateExpr :: Env -> Opts -> LispVal -> IO (Either LispErr LispVal, EvalState)

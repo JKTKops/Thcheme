@@ -99,6 +99,12 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         , expectedContents = Just $ List [Atom "quote", Char '*']
         }
     , mkE2Etest
+        { testName = "Immediately nested quote forms"
+        , input = "`,4"
+        , expectedContents = Just $ List [Atom "quasiquote", List
+                                         [Atom "unquote", Number 4]]
+        }
+    , mkE2Etest
         { testName = "Quasiquoted mess"
         , input = "`(,(foo) ,@(bar) x 1)"
         , expectedContents = Just $

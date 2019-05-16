@@ -15,7 +15,7 @@ main :: IO ()
 main = do
     args <- getArgs
     if null args
-    then runRepl
+    then repl
     else runOne args
 
 runOne :: [String] -> IO ()
