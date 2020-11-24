@@ -543,10 +543,13 @@ prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
 
 prop_UnquoteParser = testProperty "comma always results in unquote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" (',' : show (input :: LispVal))
+        let result = parse parseQuoted "" (',' : clean (show (input :: LispVal)))
         in isRight result ==> case result of
             Right (List (Atom "unquote" : _)) -> True
             _ -> False
+  -- if we don't do this, a LispString/Atom that starts with '@' will turn it into
+  -- an unquote splicing, which happened in a test at least once.
+  where clean = dropWhile (== '@')
 
 prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-splicing" $
     withMaxSuccess 50 $ \input ->

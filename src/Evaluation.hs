@@ -1,15 +1,15 @@
 module Evaluation
     ( -- | evaluate a string
-      evaluate 
+      evaluate
       -- | evaluate a given expression
-    , evaluateExpr 
+    , evaluateExpr
       -- | evaluate inside EM monad
-    , eval 
+    , eval
     , runTest
       -- | Convert the evaluation output into a meaningful string
-    , showResult 
+    , showResult
       -- | Function application, not sure why this is here rn
-    , apply 
+    , apply
     ) where
 
 import Data.Maybe
@@ -17,9 +17,7 @@ import Data.Either
 import Data.IORef
 import Data.Array
 import Control.Monad
-import Control.Monad.Fail
-import Control.Monad.Except
-import Control.Monad.State.Lazy
+import Control.Monad.Cont (runCont)
 import qualified Data.Char as C (ord, chr)
 import qualified Data.HashMap.Strict as Map
 
@@ -134,15 +132,18 @@ showResult res = case res of
     (Left err, s) -> show err ++ "\n" ++ show s
     (Right v, _)  -> show v
 
+evalEM :: Env -> Opts -> EM LispVal -> IO (Either LispErr LispVal, EvalState)
+evalEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
+                                ES [] [initEnv] opts
+
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr LispVal, EvalState)
-evaluate label initEnv opts input =
-    flip runStateT (ES [] [initEnv] opts) . runExceptT . runEM $ do
+evaluate label initEnv opts input = evalEM initEnv opts $ do
         v <- liftEither $ labeledReadExpr label input
         eval v
 
 evaluateExpr :: Env -> Opts -> LispVal -> IO (Either LispErr LispVal, EvalState)
-evaluateExpr env opts v =
-    flip runStateT (ES [] [env] opts) . runExceptT . runEM $ eval v
+evaluateExpr env opts v = evalEM env opts $ eval v
 
+-- | Provided for backwards compatibility.
 runTest :: Env -> Opts -> EM LispVal -> IO (Either LispErr LispVal, EvalState)
-runTest env opts m = flip runStateT (ES [] [env] opts) . runExceptT $ runEM m
+runTest = evalEM

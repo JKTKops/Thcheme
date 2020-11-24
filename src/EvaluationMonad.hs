@@ -105,15 +105,14 @@ updateWith updater (Atom var : rest) = do
 search :: String -> EM (Maybe Env)
 search var = do
     stack <- symEnv <$> get
-    EM . lift $ do
-        l <- liftIO $ catMaybes <$> mapM
-             (\env -> do
-                   e <- runExceptT $ Env.getVar env var
-                   return $ if isRight e then Just env else Nothing
-             ) stack
-        return $ case l of
-            []  -> Nothing
-            e:_ -> Just e
+    l <- liftIO $ catMaybes <$> mapM
+         (\env -> do
+                 e <- runExceptT $ Env.getVar env var
+                 return $ if isRight e then Just env else Nothing
+         ) stack
+    return $ case l of
+        []  -> Nothing
+        e:_ -> Just e
 
 defineVar :: String -> LispVal -> EM LispVal
 defineVar var val = do

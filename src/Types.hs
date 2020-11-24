@@ -1,4 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 module Types
     ( Env
     , Arity
@@ -33,6 +34,7 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.IORef
 import Data.Array
+import Control.Monad.Cont
 import Control.Monad.Except
 import Control.Monad.Fail
 import Control.Monad.State.Lazy
@@ -173,9 +175,50 @@ unwordsList :: [LispVal] -> String
 unwordsList = unwords . map show
 
 -- | The Evaluation Monad
-newtype EM a = EM { runEM :: ExceptT LispErr (StateT EvalState IO) a }
-  deriving ( Monad, Functor, Applicative, MonadIO
-           , MonadError LispErr, MonadState EvalState)
+
+--newtype EM a = EM { runEM :: ExceptT LispErr (StateT EvalState IO) a }
+--  deriving ( Monad, Functor, Applicative, MonadIO
+--           , MonadError LispErr, MonadState EvalState)
+
+-- ideally; EMCont = forall r. EvalState -> IO r but GHC screams at that.
+-- So instead we have to force the type that evalEM is allowed to produce.
+type EMCont = EvalState -> IO (Either LispErr LispVal, EvalState)
+newtype EM a = EM { unEM :: Cont EMCont a }
+  deriving (Functor, Applicative, Monad, MonadCont)
+
+emCont :: ((a -> EMCont) -> EMCont) -> EM a
+emCont = EM . cont
+
+emThrow :: LispErr -> EM a
+emThrow e = emCont $ \_k s -> pure (Left e, s)
+
+emCatch :: EM a -> (LispErr -> EM a) -> EM a
+emCatch (EM m) restore = emCont $ \k s -> do
+    mr <- runCont m k s
+    case mr of
+        (Left e, s0) -> runCont (unEM (restore e)) k s0
+        (Right v, s) -> pure mr
+
+emGet :: EM EvalState
+emGet = emCont $ \k s -> k s s
+
+emPut :: EvalState -> EM ()
+emPut s = emCont $ \k _s -> k () s
+
+-- it type checks but I have no idea if it's correct
+emLiftIO :: IO a -> EM a
+emLiftIO io = emCont $ \k s -> io >>= flip k s
+
+instance MonadState EvalState EM where
+    get = emGet
+    put = emPut
+
+instance MonadError LispErr EM where
+    throwError = emThrow
+    catchError = emCatch
+
+instance MonadIO EM where
+    liftIO = emLiftIO
 
 instance MonadFail EM where
     fail s = throwError . Default $ s ++ "\nAn error occurred, please report a bug."
