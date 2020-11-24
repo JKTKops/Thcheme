@@ -12,6 +12,7 @@ module EvaluationMonad
     , popExpr
     , pushEnv
     , popEnv
+    , envSnapshot
     , modifyStackTop
     , modifyTopReason
     , getVar
@@ -52,6 +53,13 @@ popEnv = do
     s <- get
     let stack = symEnv s
     put $ s { symEnv = tail stack }
+
+envSnapshot :: EM Env
+envSnapshot = do
+    symEnvStack <- gets symEnv
+    liftIO $ flatten symEnvStack >>= newIORef
+  where
+    flatten = fmap mconcat . mapM readIORef
 
 modifyStackTop :: ((StepReason, LispVal) -> (StepReason, LispVal)) -> EM ()
 modifyStackTop f = modify $ \s ->

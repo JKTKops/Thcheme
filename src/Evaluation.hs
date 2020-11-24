@@ -1,10 +1,15 @@
 module Evaluation
-    ( evaluate -- ^ evaluate a string
-    , evaluateExpr -- ^ evaluate a given expression
-    , eval -- ^ evaluate inside EM monad
+    ( -- | evaluate a string
+      evaluate 
+      -- | evaluate a given expression
+    , evaluateExpr 
+      -- | evaluate inside EM monad
+    , eval 
     , runTest
-    , showResult -- ^ Convert the evaluation output into a meaningful string
-    , apply -- ^ Function application, not sure why this is here rn
+      -- | Convert the evaluation output into a meaningful string
+    , showResult 
+      -- | Function application, not sure why this is here rn
+    , apply 
     ) where
 
 import Data.Maybe

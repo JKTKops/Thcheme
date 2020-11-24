@@ -115,8 +115,8 @@ makeFunc :: Maybe String
          -> Maybe String
          -> EM LispVal
 makeFunc varargs params body name = do
-    emptyEnv <- liftIO $ newIORef Map.empty
-    return $ Func (map show params) varargs body emptyEnv name
+    env <- envSnapshot
+    return $ Func (map show params) varargs body env name
 
 makeFuncNormal = makeFunc Nothing
 makeFuncVarargs = makeFunc . Just . show

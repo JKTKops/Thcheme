@@ -1,5 +1,5 @@
 module Environment
-    ( Env -- ^ re-exported from Types
+    ( Env -- re-exported from Types
     , isBound
     , getVar
     , setVar

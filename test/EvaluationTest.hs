@@ -233,6 +233,11 @@ evalTests = testGroup "eval" $ map mkEvalTest
             }
         }
     , EvalTB
+        { testName = "Lambda variable capture"
+        , input    = "(((lambda (x) (lambda (y) (+ x y))) 1) 2)"
+        , expected = Right $ Number 3
+        }
+    , EvalTB
         { testName = "Begin does not open new scope"
         , input = "(begin (define x 0))\nx"
         , expected = Right $ Number 0

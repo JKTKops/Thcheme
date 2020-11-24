@@ -28,6 +28,18 @@
         ((symbol? args) `(define ,name (lambda ,args ,@body)))
         (else (error "defun: Invalid type: expected symbol or pair"))))
 
+(defmacro let (lst body1 . body*) ; must have at least one body form
+  (if (null? lst) 
+      `(begin body1 ,@body*)
+      `((lambda ,(map car lst) body1 ,@body*) ,@(map cadr lst))))
+
+(defmacro let* (lst body1 . body*) ; same as above
+  (if (null? lst)
+      `(let () ,body1 ,@body*)
+      `(let ((,(first (car lst)) ,(second (car lst))))
+         (let* ,(cdr lst) ,body1 ,@body*))))
+
+
 ;;; LIST FUNCTIONS
 (define first car)
 (define second cadr)
