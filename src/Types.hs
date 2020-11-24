@@ -174,15 +174,10 @@ showErr Quit                          = "quit invoked"
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map show
 
--- | The Evaluation Monad
-
---newtype EM a = EM { runEM :: ExceptT LispErr (StateT EvalState IO) a }
---  deriving ( Monad, Functor, Applicative, MonadIO
---           , MonadError LispErr, MonadState EvalState)
-
 -- ideally; EMCont = forall r. EvalState -> IO r but GHC screams at that.
 -- So instead we have to force the type that evalEM is allowed to produce.
 type EMCont = EvalState -> IO (Either LispErr LispVal, EvalState)
+-- | The Evaluation Monad
 newtype EM a = EM { unEM :: Cont EMCont a }
   deriving (Functor, Applicative, Monad, MonadCont)
 
