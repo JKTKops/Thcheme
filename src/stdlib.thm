@@ -30,8 +30,8 @@
 
 (defmacro let (lst body1 . body*) ; must have at least one body form
   (if (null? lst) 
-      `(begin body1 ,@body*)
-      `((lambda ,(map car lst) body1 ,@body*) ,@(map cadr lst))))
+      `(begin ,body1 ,@body*)
+      `((lambda ,(map car lst) ,body1 ,@body*) ,@(map cadr lst))))
 
 (defmacro let* (lst body1 . body*) ; same as above
   (if (null? lst)

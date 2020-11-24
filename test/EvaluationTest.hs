@@ -238,6 +238,40 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Number 3
         }
     , EvalTB
+        { testName = "captured variables are independent across captures"
+        , input    = unlines [ "(define (cadd x) (lambda (y) (+ x y)))"
+                             , "(define add1 (cadd 1))"
+                             , "(define add3 (cadd 3))"
+                             , "(list (add1 5) (add3 5))"
+                             ]
+        , expected = Right $ List [Number 6, Number 8]
+        }
+    , EvalTB
+        { testName = "captured global variables mutate"
+        , input    = unlines [ "(define x 5)"
+                             , "(define (addx y) (+ x y))"
+                             , "(define z1 (addx 1))"
+                             , "(set! x 3)"
+                             , "(define z2 (addx 1))"
+                             , "(list z1 z2)"
+                             ]
+        , expected = Right $ List [Number 6, Number 4]
+        }
+    , EvalTB
+        { testName = "captured local variables mutate"
+        , input    = unlines [
+                concat [ "(define (test x)"
+                       , " (let ((go (lambda (y) x))"
+                       , "       (r nil))"
+                       , "  (set! r (cons (go nil) r))"
+                       , "  (set! x (+ x 1))"
+                       , "  (cons (go nil) r)))"
+                       ]
+                , "(test 0)"
+                ]
+        , expected = Right $ List [Number 1, Number 0]
+        }
+    , EvalTB
         { testName = "Begin does not open new scope"
         , input = "(begin (define x 0))\nx"
         , expected = Right $ Number 0
