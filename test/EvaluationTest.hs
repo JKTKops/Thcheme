@@ -238,6 +238,22 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Number 3
         }
     , EvalTB
+        { testName = "define'd lambda captures itself"
+        , input    = unlines
+                -- we can't test this with just the letrec itself because
+                -- we need to check that the lambda actually captured
+                -- itself. To do that, we need to execute the lambda _outside_
+                -- of the scope in which the closure is constructed.
+                [ "(define test (letrec ((foo (lambda () foo))) foo))"
+                , "(test)"
+                ]
+        , expected = Right $ Func []
+                                  Nothing
+                                  [Atom "foo"]
+                                  undefined
+                                  (Just "foo")
+        }
+    , EvalTB
         { testName = "captured variables are independent across captures"
         , input    = unlines [ "(define (cadd x) (lambda (y) (+ x y)))"
                              , "(define add1 (cadd 1))"
