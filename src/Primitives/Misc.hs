@@ -17,6 +17,7 @@ rawPrimitives = [ ("id", identityFunction) ]
 ePrimitives :: [(String, Primitive)]
 ePrimitives = [ ("apply", applyFunc)
               , ("error", errorFunc)
+              , ("call-with-current-continuation", callWithCurrentContinuation)
               ]
 
 macros :: [(String, Macro)]
@@ -37,6 +38,20 @@ identityFunction :: RawPrimitive
 identityFunction = RPrim 1 $ \case
     [arg]   -> return arg
     badArgs -> throwError $ NumArgs 1 badArgs
+
+callWithCurrentContinuation :: Primitive
+callWithCurrentContinuation = Prim 1 callcc
+  where
+    callcc :: [LispVal] -> EM LispVal
+    callcc [func] = callCC $ \k ->
+        -- k :: LispVal -> EM b
+        -- need to produce EM LispVal
+        apply func [reifyCont k]
+
+    reifyCont :: (LispVal -> EM LispVal) -> LispVal
+    reifyCont k = Primitive 1 b "<cont>"
+      where b [arg] = k arg
+            b badArgs = throwError $ NumArgs 1 badArgs
 
 -- compose?
 
@@ -131,7 +146,7 @@ defmacro = Macro 3 $ \case
 begin :: Macro
 begin = Macro 1 $ \case
     []    -> throwError $ Default "Expected at least 1 arg; found []"
-    stmts -> last <$> mapM eval stmts
+    stmts -> withNewScope $ last <$> mapM eval stmts
 
 evalMacro :: Macro
 evalMacro = Macro 1 $ \case
@@ -172,11 +187,16 @@ quasiquote = Macro 1 $ \case
                 inner <- qq form
                 return $ List [Atom "unquote", inner]
         qq (List forms)
-            | Atom "unquote" `elem` forms =
-              let (list, dot) = break (== Atom "unquote") forms
-              in DottedList <$> qqTerms list <*> qq (List dot)
+              -- this can happen because the parser is smart enough to rewrite
+              -- `(0 . ,lst) as List [Number 0, Atom unquote, Atom lst]
+              -- however whenever this happens, ',lst' will definitely be of size 2
+            | Atom "unquote" `elem` forms
+            , (list, dot) <- break (== Atom "unquote") forms
+            , [_,_] <- dot
+            = fmap canonicalizeList $ DottedList <$> qqTerms list <*> qq (List dot)
             | otherwise = List <$> qqTerms forms
-        qq (DottedList forms form) = DottedList <$> qqTerms forms <*> qq form
+        qq (DottedList forms form) =
+            fmap canonicalizeList $ DottedList <$> qqTerms forms <*> qq form
         qq form  = return form
 
         qqTerms :: [LispVal] -> StateT Int EM [LispVal]

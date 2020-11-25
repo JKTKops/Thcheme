@@ -11,6 +11,7 @@ module EvaluationMonad
     , pushExpr
     , popExpr
     , pushEnv
+    , withNewScope
     , popEnv
     , envSnapshot
     , modifyStackTop
@@ -46,6 +47,16 @@ popExpr = modify $ \s -> s { stack = tail $ stack s }
 --   The environment becomes the topmost scope of evaluation.
 pushEnv :: Env -> EM ()
 pushEnv e = modify $ \s -> s { symEnv = e : symEnv s }
+
+-- | Push a new empty scope to the sEnv stack.
+pushEmptyEnv :: EM ()
+pushEmptyEnv = do
+    e <- liftIO $ newIORef Map.empty
+    pushEnv e
+
+-- | Evaluate an EM action in an empty local scope.
+withNewScope :: EM a -> EM a
+withNewScope m = pushEmptyEnv *> m <* popEnv
 
 -- | Remove the topmost scope from the sEnv stack.
 popEnv :: EM ()

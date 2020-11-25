@@ -5,6 +5,8 @@ module Evaluation
     , evaluateExpr
       -- | evaluate inside EM monad
     , eval
+      -- | callCC (exported for use with EM)
+    , callCC
     , runTest
       -- | Convert the evaluation output into a meaningful string
     , showResult
@@ -17,7 +19,7 @@ import Data.Either
 import Data.IORef
 import Data.Array
 import Control.Monad
-import Control.Monad.Cont (runCont)
+import Control.Monad.Cont (runCont, callCC)
 import qualified Data.Char as C (ord, chr)
 import qualified Data.HashMap.Strict as Map
 
@@ -105,7 +107,11 @@ apply (Func params varargs body closure name) args =
   where evaluate = do env <- makeBindings params
                       env' <- bindVarargs varargs env
                       pushEnv env'
-                      result <- evalBody
+                      -- if we just use the captured scope, local defines will
+                      -- see the outer-defined IORefs and overwrite them, so
+                      -- we need to layer a fresh scope on top of the captured
+                      -- one.
+                      result <- withNewScope evalBody
                       popEnv
                       return result
 

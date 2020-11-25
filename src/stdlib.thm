@@ -1,5 +1,6 @@
 ;;; CONSTANTS
 (define nil ())
+(define call/cc call-with-current-continuation)
 
 ;;; MACROS
 (defmacro or cases

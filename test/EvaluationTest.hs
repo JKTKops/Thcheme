@@ -272,9 +272,9 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ List [Number 1, Number 0]
         }
     , EvalTB
-        { testName = "Begin does not open new scope"
+        { testName = "Begin opens a new scope"
         , input = "(begin (define x 0))\nx"
-        , expected = Right $ Number 0
+        , expected = Left $ UnboundVar "[Get] unbound symbol" "x"
         }
     , EvalTB
         { testName = "Begin evaluates to last"
@@ -305,6 +305,16 @@ evalTests = testGroup "eval" $ map mkEvalTest
         { testName = "Lambda creation rejects empty-bodied functions"
         , input = "(lambda (x y))"
         , expected = Left $ Default "Attempt to define function with no body"
+        }
+    , EvalTB
+        { testName = "dot unquote is unquote-splicing"
+        , input    = "(define lst '(1 2))\n`(0 . ,lst)"
+        , expected = Right $ List $ map Number [0..2]
+        }
+    , EvalTB
+        { testName = "unquote in weird places is untouched"
+        , input    = "`(0 unquote 1 2)"
+        , expected = Right $ List [Number 0, Atom "unquote", Number 1, Number 2]
         }
     ]
 

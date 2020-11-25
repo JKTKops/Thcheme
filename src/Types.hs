@@ -12,6 +12,7 @@ module Types
     , Macro (..)
     , LispVal (..)
     , truthy
+    , canonicalizeList
     , LispErr (..)
     , ThrowsError
     , IOThrowsError
@@ -156,6 +157,10 @@ showVal (Func args varargs body env name) = "(" ++ fromMaybe "lambda" name
         Just arg -> " . " ++ arg) ++ ") ...)"
 showVal (PMacro _ _ name) = "<Macro " ++ name ++ ">"
 
+canonicalizeList :: LispVal -> LispVal
+canonicalizeList (DottedList lst (List cdr)) = List (lst ++ cdr)
+canonicalizeList other = other
+
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname
 showErr (BadSpecialForm message form) = message ++ ": " ++ show form
@@ -174,8 +179,14 @@ showErr Quit                          = "quit invoked"
 unwordsList :: [LispVal] -> String
 unwordsList = unwords . map show
 
--- ideally; EMCont = forall r. EvalState -> IO r but GHC screams at that.
+-- ideally; EMCont = forall r. EvalState -> IO (Either LispErr r)
+-- but GHC screams at that and also I'm not sure how to recover the EvalState
+-- to implement evalEM properly so that a partial state is returned even if an
+-- error occurs.
 -- So instead we have to force the type that evalEM is allowed to produce.
+-- Note that complexity on the right-hand side of the arrow doesn't affect
+-- the amount of work performed at any point (except by the only higher-order
+-- effect, emCatch) because it is merely the eventual return of a continuation.
 type EMCont = EvalState -> IO (Either LispErr LispVal, EvalState)
 -- | The Evaluation Monad
 newtype EM a = EM { unEM :: Cont EMCont a }
@@ -187,12 +198,14 @@ emCont = EM . cont
 emThrow :: LispErr -> EM a
 emThrow e = emCont $ \_k s -> pure (Left e, s)
 
+-- | State is recovered from the point that the error was thrown, rather
+-- than from the point 'emCatch' is invoked.
 emCatch :: EM a -> (LispErr -> EM a) -> EM a
 emCatch (EM m) restore = emCont $ \k s -> do
     mr <- runCont m k s
     case mr of
-        (Left e, s0) -> runCont (unEM (restore e)) k s0
-        (Right v, s) -> pure mr
+        (Left e, s0)   -> runCont (unEM (restore e)) k s0
+        (Right _v, _s) -> pure mr
 
 emGet :: EM EvalState
 emGet = emCont $ \k s -> k s s
@@ -200,7 +213,6 @@ emGet = emCont $ \k s -> k s s
 emPut :: EvalState -> EM ()
 emPut s = emCont $ \k _s -> k () s
 
--- it type checks but I have no idea if it's correct
 emLiftIO :: IO a -> EM a
 emLiftIO io = emCont $ \k s -> io >>= flip k s
 
