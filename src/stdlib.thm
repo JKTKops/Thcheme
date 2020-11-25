@@ -40,6 +40,14 @@
       `(let ((,(first (car lst)) ,(second (car lst))))
          (let* ,(cdr lst) ,body1 ,@body*))))
 
+(defmacro letrec (lst body1 . body*)
+  (let* ((make-define (lambda (pair)
+           (if (not (pair? pair))
+             (error "letrec: binding is not a pair")
+             (cons 'define pair))))
+         (dfns (map make-define lst)))
+    `(begin ,@dfns ,body1 ,@body*)))
+
 
 ;;; LIST FUNCTIONS
 (define first car)
