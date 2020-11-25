@@ -92,8 +92,7 @@ appendOp = RPrim 0 $ fmap List . worker
 nullOp :: RawPrimitive
 nullOp = RPrim 1 $ \case
     [List []] -> return $ Bool True
-    [List _]  -> return $ Bool False
-    [notList] -> throwError $ TypeMismatch "list" notList
+    [_]       -> return $ Bool False
     badArgs   -> throwError $ NumArgs 1 badArgs
 
 setCar :: Macro

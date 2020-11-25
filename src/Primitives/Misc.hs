@@ -43,15 +43,16 @@ callWithCurrentContinuation :: Primitive
 callWithCurrentContinuation = Prim 1 callcc
   where
     callcc :: [LispVal] -> EM LispVal
-    callcc [func] = callCC $ \k ->
+    callcc [func] = callCC $ \k -> do
+        cont <- reifyCont k
         -- k :: LispVal -> EM b
         -- need to produce EM LispVal
-        apply func [reifyCont k]
+        apply func [cont]
+    callcc badArgs = throwError $ NumArgs 1 badArgs
 
-    reifyCont :: (LispVal -> EM LispVal) -> LispVal
-    reifyCont k = Primitive 1 b "<cont>"
-      where b [arg] = k arg
-            b badArgs = throwError $ NumArgs 1 badArgs
+    reifyCont :: (LispVal -> EM LispVal) -> EM LispVal
+    reifyCont k = do s <- get
+                     return $ Continuation s k
 
 -- compose?
 
@@ -89,6 +90,7 @@ setOpt = Macro 2 $ \case
 define :: Macro
 define = Macro 1 $ \case
     [Atom var, form] -> do
+        setVarForCapture var
         val <- eval form
         let renamed = case val of
                 Func {} -> val { name = Just var }
@@ -130,6 +132,7 @@ makeFunc :: Maybe String
          -> Maybe String
          -> EM LispVal
 makeFunc varargs params body name = do
+    maybe (pure ()) setVarForCapture name
     env <- envSnapshot
     return $ Func (map show params) varargs body env name
 
@@ -159,7 +162,7 @@ applyFunc = Prim 1 $ \case
     (func : args) -> apply func args
     [] -> throwError $ Default "Expected at least 1 arg; found []"
 
-loadMacro :: Macro
+loadMacro :: Macro -- why is this a macro?
 loadMacro = Macro 1 $ \case
     [String filename] -> do
         file <- liftIO . runExceptT $ load filename

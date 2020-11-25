@@ -50,16 +50,18 @@ evalExpr expr = case expr of
 handleNonPrim :: LispVal -> [LispVal] -> EM LispVal
 handleNonPrim function args = do
     func <- case function of
-        Primitive {} -> return function
-        Func {}      -> return function
-        PMacro {}    -> return function
-        _            -> eval function
+        Primitive{}    -> return function
+        Continuation{} -> return function
+        Func{}         -> return function
+        PMacro{}       -> return function
+        _              -> eval function
     case func of
-        Primitive {} -> evalCall func
-        Func {}      -> evalCall func
-        PMacro {}    -> evalPMacro func
+        Primitive {}   -> evalCall func
+        Continuation{} -> evalCall func
+        Func {}        -> evalCall func
+        PMacro {}      -> evalPMacro func
         DottedList [Atom "macro"] macro@Func{} -> evalMacro macro
-        _            -> evalCall func
+        _              -> evalCall func
 
   where evalCall func = do
             argVals <- mapM eval args
@@ -92,6 +94,10 @@ apply (Primitive arity func _) args
 apply (PMacro arity func _) args
    | num args >= arity = func args
    | otherwise         = throwError $ NumArgs arity args
+
+-- Application of continuation
+apply (Continuation state func) [arg] = put state >> func arg
+apply Continuation{} badArgs = throwError $ NumArgs 1 badArgs
 
 -- Applications of user-defined functions
 apply (Func params varargs body closure name) args =

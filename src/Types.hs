@@ -63,6 +63,7 @@ data LispVal = Atom String
              | Char Char
              | Bool Bool
              | Primitive Arity Builtin String
+             | Continuation EvalState (LispVal -> EM LispVal)
              | Func { params  :: [String]
                     , vararg  :: Maybe String
                     , body    :: [LispVal]
@@ -71,6 +72,12 @@ data LispVal = Atom String
                     }
              | PMacro Arity Builtin String
              | Port Handle
+               -- Undefined values are only created when they are stored
+               -- immediately into an environment and an error is thrown
+               -- immediately when they are looked up. Therefore, they should
+               -- never appear, well, anywhere, really. Used for 'define'
+               -- to create a location before evaluating the value.
+             | Undefined
 
 instance Eq LispVal where (==) = eqVal
 
@@ -88,6 +95,7 @@ data LispErr = NumArgs Integer [LispVal]
              | BadSpecialForm String LispVal
              | NotFunction String LispVal
              | UnboundVar String String
+             | EvaluateDuringInit String
              | Default String
              | Quit
     deriving (Eq)
@@ -127,6 +135,11 @@ eqVal (DottedList ls l) (DottedList ls' l') = ls == ls' && l == l'
 eqVal (Vector v) (Vector v') = v == v'
 eqVal (Port p) (Port p') = p == p'
 eqVal (Primitive _ _ n) (Primitive _ _ n') = n == n'
+eqVal Continuation{} _ = False -- perhaps it's possible to give continuations
+eqVal _ Continuation{} = False -- unique identifiers to make this work.
+                               -- The state would have to have an IORef holding
+                               -- the counter to preserve it between repl
+                               -- steps / continuation invocations.
 eqVal (Func p v b _ n) (Func p' v' b' _ n') = and [ p == p'
                                                   , v == v'
                                                   , b == b'
@@ -149,8 +162,10 @@ showVal (Bool False) = "#f"
 showVal (List ls) = "(" ++ unwordsList ls ++ ")"
 showVal (DottedList ls l) = "(" ++ unwordsList ls ++ " . " ++ show l ++ ")"
 showVal (Vector v) = "#(" ++ unwordsList (elems v) ++ ")"
-showVal (Port _) = "<Port>"
+showVal Port{} = "<Port>"
+showVal Undefined = "#<undef>"
 showVal (Primitive _ _ name) = "<Function " ++ name ++ ">"
+showVal Continuation{} = "<cont>"
 showVal (Func args varargs body env name) = "(" ++ fromMaybe "lambda" name
     ++ " (" ++ unwords args ++ (case varargs of
         Nothing  -> ""
@@ -163,6 +178,7 @@ canonicalizeList other = other
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname
+showErr (EvaluateDuringInit name) = name ++ " referred to itself during initialization"
 showErr (BadSpecialForm message form) = message ++ ": " ++ show form
 showErr (NotFunction message func)    = message ++ ": " ++ show func
 showErr (NumArgs expected found)      = "Expected " ++ show expected

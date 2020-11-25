@@ -20,6 +20,7 @@ module EvaluationMonad
     , setVar
     , updateWith
     , search
+    , setVarForCapture
     , defineVar
     ) where
 
@@ -41,7 +42,10 @@ pushExpr r val = do
 
 -- | Remove the top item from the call stack
 popExpr :: EM ()
-popExpr = modify $ \s -> s { stack = tail $ stack s }
+popExpr = modify $ \s -> s { stack = case stack s of
+    []     -> error "popExpr: empty stack"
+    (_:tl) -> tl
+  }
 
 -- | Push an environment to the top of the sEnv stack
 --   The environment becomes the topmost scope of evaluation.
@@ -63,7 +67,10 @@ popEnv :: EM ()
 popEnv = do
     s <- get
     let stack = symEnv s
-    put $ s { symEnv = tail stack }
+    put $ s { symEnv = case stack of
+                [] -> error "popEnv: empty env stack"
+                (_:tl) -> tl
+            }
 
 envSnapshot :: EM Env
 envSnapshot = do
@@ -87,6 +94,7 @@ getVar var = do
     l <- liftIO $ rights <$> mapM (\env -> runExceptT $ Env.getVar env var) stack
     case l of
         []  -> throwError $ UnboundVar "[Get] unbound symbol" var
+        Undefined : _ -> throwError $ EvaluateDuringInit var
         v:_ -> return v
 
 -- | Search the environment top-down for a symbol
@@ -124,6 +132,12 @@ search var = do
     return $ case l of
         []  -> Nothing
         e:_ -> Just e
+
+-- | Define a var in the top-level environment in preparation for
+-- a function being 'define'd to capture itself.
+setVarForCapture :: String -> EM ()
+setVarForCapture name = void $
+  defineVar name Undefined
 
 defineVar :: String -> LispVal -> EM LispVal
 defineVar var val = do

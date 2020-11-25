@@ -17,12 +17,15 @@
            #f
            (and ,@(cdr cases)))))
 
+;; we could maybe do better by testing (eq? 'else (first (first cases)))
+;; instead of defining else as #t
 (defmacro cond cases
   (if (null? cases) (error "cond: unexhaustive cases")
-      (define else #t)
-      `(if ,(first (first cases))
-           ,(second (first cases))
-           (cond ,@(cdr cases)))))
+      (if (eq? 'else (car (car cases)))
+          `(begin ,@(cdr (car cases)))
+          `(if ,(car (car cases))
+               (begin ,@(cdr (car cases)))
+               (cond ,@(cdr cases))))))
 
 (defmacro defun (name args . body)
   (cond ((pair? args) `(define ,(cons name args) ,@body))
