@@ -81,7 +81,8 @@ data LispVal = Atom String
 
 instance Eq LispVal where (==) = eqVal
 
-instance Show LispVal where show = showVal
+instance Show LispVal where
+    showsPrec _ v s = showVal v s
 
 truthy :: LispVal -> Bool
 truthy v = not $ v == Bool False
@@ -147,30 +148,43 @@ eqVal (Func p v b _ n) (Func p' v' b' _ n') = and [ p == p'
                                                   ]
 eqVal _ _ = False
 
-showVal :: LispVal -> String
-showVal (Atom s) = s
-showVal (Number n) = show n
-showVal (String s) = show s
-showVal (Char c)   = "#\\" ++ case c of
+showVal :: LispVal -> ShowS
+showVal (Atom s) = showString s
+showVal (Number n) = shows n
+showVal (String s) = shows s
+showVal (Char c)   = showString "#\\" . showString (case c of
     ' '  -> "space"
     '\t' -> "tab"
     '\n' -> "newline"
     '\r' -> "carriage-return"
-    _    -> pure c
-showVal (Bool True) = "#t"
-showVal (Bool False) = "#f"
-showVal (List ls) = "(" ++ unwordsList ls ++ ")"
-showVal (DottedList ls l) = "(" ++ unwordsList ls ++ " . " ++ show l ++ ")"
-showVal (Vector v) = "#(" ++ unwordsList (elems v) ++ ")"
-showVal Port{} = "<Port>"
-showVal Undefined = "#<undef>"
-showVal (Primitive _ _ name) = "<Function " ++ name ++ ">"
-showVal Continuation{} = "<cont>"
-showVal (Func args varargs body env name) = "(" ++ fromMaybe "lambda" name
+    _    -> [c])
+showVal (Bool True) = showString "#t"
+showVal (Bool False) = showString "#f"
+showVal (List ls) = showParen True $ unwordsList ls
+showVal (DottedList ls l) = showParen True $
+    unwordsList ls . showString " . " . shows l
+showVal (Vector v) = showChar '#' . showParen True (unwordsList (elems v))
+showVal Port{} = showString "<port>"
+showVal Undefined = showString "#<undef>"
+showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
+showVal Continuation{} = showString "<cont>"
+showVal (Func args varargs body env name) = 
+    showParen True $
+        displayName . showChar ' '
+      . showParen True (displayArgs . displayVarargs)
+      . showString " ..."
+        
+{-        "(" ++ fromMaybe "lambda" name
     ++ " (" ++ unwords args ++ (case varargs of
         Nothing  -> ""
-        Just arg -> " . " ++ arg) ++ ") ...)"
-showVal (PMacro _ _ name) = "<Macro " ++ name ++ ">"
+        Just arg -> " . " ++ arg) ++ ") ...)"-}
+  where
+    displayName = showString $ fromMaybe "lambda" name
+    displayArgs = showString $ unwords args
+    displayVarargs = case varargs of
+        Nothing  -> id
+        Just arg -> showString " . " . showString arg
+showVal (PMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
 
 canonicalizeList :: LispVal -> LispVal
 canonicalizeList (DottedList lst (List cdr)) = List (lst ++ cdr)
@@ -192,8 +206,15 @@ showErr (Parser parseErr)             = "Parse error at " ++ show parseErr
 showErr (Default message)             = message
 showErr Quit                          = "quit invoked"
 
-unwordsList :: [LispVal] -> String
-unwordsList = unwords . map show
+-- I just snagged this from a different project
+intercalateS :: String -> [ShowS] -> ShowS
+intercalateS sep = go
+  where go []     = id
+        go [s]    = s
+        go (s:ss) = s . showString sep . go ss
+
+unwordsList :: [LispVal] -> ShowS
+unwordsList = intercalateS " " . map shows
 
 -- ideally; EMCont = forall r. EvalState -> IO (Either LispErr r)
 -- but GHC screams at that and also I'm not sure how to recover the EvalState

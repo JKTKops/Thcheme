@@ -1,6 +1,7 @@
 ;;; CONSTANTS
 (define nil ())
 (define call/cc call-with-current-continuation)
+(define define-macro defmacro)
 
 ;;; MACROS
 (defmacro or cases
@@ -24,6 +25,14 @@
           `(if ,(car (car cases))
                (begin ,@(cdr (car cases)))
                (cond ,@(cdr cases))))))
+
+(defmacro unless (test-expr body1 . body*)
+  `(if ,test-expr () ,body1 ,@body*))
+
+(defmacro when (test-expr body1 . body*)
+  `(unless (not ,test-expr) ,body1 ,@body*))
+
+;;; BINDINGS
 
 (defmacro defun (name args . body)
   (cond ((pair? args) `(define ,(cons name args) ,@body))
@@ -49,6 +58,9 @@
          (dfns (map make-define lst)))
     `(begin ,@dfns ,body1 ,@body*)))
 
+(defmacro named-let (name lst body1 . body*) ; convenient for making loops
+  `(letrec ([,name (lambda ,(map car lst) ,body1 ,@body*)])
+     (,name ,@(map cadr lst))))
 
 ;;; LIST FUNCTIONS
 (define first car)

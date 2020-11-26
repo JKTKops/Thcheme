@@ -332,6 +332,11 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , input    = "`(0 unquote 1 2)"
         , expected = Right $ List [Number 0, Atom "unquote", Number 1, Number 2]
         }
+    , EvalTB
+        { testName = "'eval' primitive evaluates datum"
+        , input    = "(eval '(+ 2 3))"
+        , expected = Right $ Number 5
+        }
     ]
 
 data EvalTB = EvalTB

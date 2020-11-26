@@ -43,6 +43,7 @@ instance Monad m => Serial m LispErr where
                 \/ cons2 BadSpecialForm
                 \/ cons2 NotFunction
                 \/ cons2 UnboundVar
+                \/ cons1 EvaluateDuringInit
                 \/ cons1 Default
                 \/ cons0 Quit
 
@@ -70,6 +71,7 @@ instance Arbitrary LispErr where
                       , liftM2 BadSpecialForm arbitrary arbitrary
                       , liftM2 NotFunction arbitrary arbitrary
                       , liftM2 UnboundVar arbitrary arbitrary
+                      , EvaluateDuringInit <$> arbitrary
                       , Default <$> arbitrary
                       , return Quit
                       ]
@@ -102,14 +104,14 @@ scTests = testGroup "(SmallCheck)"
 
 -- UNIT TESTS
 testShowPort = testCase "Ports show correctly" $
-    show (Port stdout) @?= "<Port>"
+    show (Port stdout) @?= "<port>"
 
 testShowPrimitives = testCase "Primitives show correctly" $
     mapM_
         (\(key, func) -> let pType = case func of
-                                 Primitive {} -> "Function"
-                                 PMacro {}     -> "Macro"
-                         in show func @?= "<" ++ pType ++ " " ++ key ++ ">")
+                                 Primitive {} -> "function"
+                                 PMacro {}     -> "macro"
+                         in show func @?= "#<" ++ pType ++ " " ++ key ++ ">")
         -- Test only some of the primitives list as eventually it will be quite large
         . take 50 $ Map.toList primitives
 

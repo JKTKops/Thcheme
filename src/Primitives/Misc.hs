@@ -15,8 +15,10 @@ rawPrimitives :: [(String, RawPrimitive)]
 rawPrimitives = [ ("id", identityFunction) ]
 
 ePrimitives :: [(String, Primitive)]
-ePrimitives = [ ("apply", applyFunc)
+ePrimitives = [ ("eval", evalPrim)
+              , ("apply", applyFunc)
               , ("error", errorFunc)
+              , ("load", loadPrim)
               , ("call-with-current-continuation", callWithCurrentContinuation)
               ]
 
@@ -30,8 +32,6 @@ macros = [ ("quote", quote)
          , ("lambda", lambda)
          , ("defmacro", defmacro)
          , ("begin", begin)
-         , ("eval", evalMacro)
-         , ("load", loadMacro)
          ]
 
 identityFunction :: RawPrimitive
@@ -151,8 +151,8 @@ begin = Macro 1 $ \case
     []    -> throwError $ Default "Expected at least 1 arg; found []"
     stmts -> withNewScope $ last <$> mapM eval stmts
 
-evalMacro :: Macro
-evalMacro = Macro 1 $ \case
+evalPrim :: Primitive
+evalPrim = Prim 1 $ \case
     [form]  -> eval form
     badArgs -> throwError $ NumArgs 1 badArgs
 
@@ -162,8 +162,8 @@ applyFunc = Prim 1 $ \case
     (func : args) -> apply func args
     [] -> throwError $ Default "Expected at least 1 arg; found []"
 
-loadMacro :: Macro -- why is this a macro?
-loadMacro = Macro 1 $ \case
+loadPrim :: Primitive -- why is this a macro?
+loadPrim = Prim 1 $ \case
     [String filename] -> do
         file <- liftIO . runExceptT $ load filename
         case file of
