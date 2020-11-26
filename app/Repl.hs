@@ -4,6 +4,8 @@ module Repl where
 import System.IO
 import Control.Monad.State.Lazy
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
+import Data.Char (isSpace)
+import Data.List (isPrefixOf, sort)
 import Data.Maybe (fromMaybe)
 import qualified Data.HashMap.Strict as Map
 
@@ -13,6 +15,7 @@ import Types
 import Parsers
 import Evaluation
 import Bootstrap
+import qualified Environment as Env (keys)
 
 data ReplState = RS { env      :: Env
                     , replOpts :: Opts
@@ -25,7 +28,9 @@ repl :: IO ()
 repl = do
     env <- primitiveBindings
     putStrLn "loaded: stdlib.thm"
-    CLI.runInputT CLI.defaultSettings $ evalStateT (runRepl replLoop) $ RS env Map.empty
+    CLI.runInputT (mkSettings env) $
+      evalStateT (runRepl replLoop) $
+      RS env Map.empty
 
 replLoop :: Repl ()
 replLoop = until_
@@ -45,10 +50,12 @@ getInput = runMaybeT $ go id 0
     go :: (String -> String) -> Int -> MaybeT Repl String
     go prevLines balance = do 
         line <- MaybeT $ getInputLine prompt
-        let inp = prevLines . showString ('\n':line)
-        case balance + bracketBalance line of
-            n | n > 0     -> go inp n
-              | otherwise -> return $ inp ""
+        if balance == 0 && all isSpace line
+        then go prevLines balance
+        else do let inp = prevLines . showString ('\n':line)
+                case balance + bracketBalance line of
+                  n | n > 0     -> go inp n
+                    | otherwise -> return $ inp ""
       where prompt = case balance of
        -- balance is only 0 on the first input, otherwise we
        -- would've returned the input after the last round.
@@ -88,3 +95,19 @@ bracketBalance = go 0
       | c `elem` ['(', '{', '['] = go (n+1) rest
       | c `elem` [')', '}', ']'] = go (n-1) rest
       | otherwise = go n rest
+
+mkSearchFunc :: Env -> String -> IO [CLI.Completion]
+-- this strange syntax is to make it inline better
+mkSearchFunc env = \str -> do
+  keys <- Env.keys env
+  let candidates = filter (str `isPrefixOf`) $ sort keys
+      completions = map CLI.simpleCompletion candidates
+  return completions
+
+mkCompletionFunc :: Env -> CLI.CompletionFunc IO
+mkCompletionFunc env = envCompleter `CLI.fallbackCompletion` CLI.completeFilename
+  where envCompleter = CLI.completeWord Nothing " \t()" search
+        search = mkSearchFunc env
+
+mkSettings :: Env -> CLI.Settings IO
+mkSettings env = CLI.setComplete (mkCompletionFunc env) CLI.defaultSettings

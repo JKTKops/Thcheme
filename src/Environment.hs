@@ -6,6 +6,7 @@ module Environment
     , defineVar
     , bindVar
     , bindVars
+    , keys
     ) where
 
 import Data.HashMap.Strict (HashMap)
@@ -62,3 +63,7 @@ bindVars envRef bindings = readIORef envRef
     extendEnv bindings env = (`Map.union` env) <$> mapM createRef bindings
     createRef :: LispVal -> IO (IORef LispVal)
     createRef = newIORef
+
+keys :: Env -> IO [String]
+keys env = do m <- readIORef env
+              return $ Map.keys m
