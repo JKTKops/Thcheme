@@ -1,10 +1,13 @@
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 module Repl where
 
 import System.IO
-import Control.Monad.State.Lazy
+import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.Char (isSpace)
+import Data.Function ((&))
 import Data.List (isPrefixOf, sort)
 import Data.Maybe (fromMaybe)
 import qualified Data.HashMap.Strict as Map
@@ -21,25 +24,26 @@ data ReplState = RS { env      :: Env
                     , replOpts :: Opts
                     }
 
-newtype Repl a = Repl { runRepl :: StateT ReplState (CLI.InputT IO) a }
+newtype Repl a = Repl { runRepl :: CLI.InputT (StateT ReplState IO) a }
   deriving (Monad, Functor, Applicative, MonadIO, MonadState ReplState)
 
 repl :: IO ()
 repl = do
     env <- primitiveBindings
     putStrLn "loaded: stdlib.thm"
-    CLI.runInputT (mkSettings env) $
-      evalStateT (runRepl replLoop) $
-      RS env Map.empty
+    replLoop
+      & runRepl
+      & CLI.runInputT settings
+      & flip evalStateT (RS env Map.empty)
 
 replLoop :: Repl ()
 replLoop = until_
     (isTerminationError . fst)
     (getInput >>= replEval)
-    (Repl . lift . CLI.outputStrLn . showResult)
+    (Repl . CLI.outputStrLn . showResult)
 
 getInputLine :: String -> Repl (Maybe String)
-getInputLine = Repl . lift . CLI.getInputLine
+getInputLine = Repl . CLI.getInputLine
 
 getInput :: Repl (Maybe String)
 getInput = runMaybeT $ go id 0
@@ -64,7 +68,14 @@ getInput = runMaybeT $ go id 0
 
 replEval :: Maybe String -> Repl (Either LispErr LispVal, EvalState)
 replEval Nothing = pure (Left Quit, error "state forced after CTRL-D, report a bug")
-replEval (Just inp) = evaluateTotalInput inp
+replEval (Just inp) = Repl $
+    CLI.handleInterrupt (pure interrupted) $ 
+    CLI.withInterrupt $ 
+    runRepl (evaluateTotalInput inp)
+  where
+    interrupted = ( Right (Atom "Interrupted.")
+                  , error "state forced after interrupt, report a bug"
+                  )
 
 evaluateTotalInput :: String -> Repl (Either LispErr LispVal, EvalState)
 evaluateTotalInput input = do
@@ -96,18 +107,24 @@ bracketBalance = go 0
       | c `elem` [')', '}', ']'] = go (n-1) rest
       | otherwise = go n rest
 
-mkSearchFunc :: Env -> String -> IO [CLI.Completion]
--- this strange syntax is to make it inline better
-mkSearchFunc env = \str -> do
-  keys <- Env.keys env
+type M = StateT ReplState IO
+searchFunc :: String -> M [CLI.Completion]
+searchFunc str = do
+  env <- gets env
+  keys <- liftIO $ Env.keys env
   let candidates = filter (str `isPrefixOf`) $ sort keys
       completions = map CLI.simpleCompletion candidates
   return completions
 
-mkCompletionFunc :: Env -> CLI.CompletionFunc IO
-mkCompletionFunc env = envCompleter `CLI.fallbackCompletion` CLI.completeFilename
-  where envCompleter = CLI.completeWord Nothing " \t()" search
-        search = mkSearchFunc env
+completionFunc :: CLI.CompletionFunc M
+completionFunc = envCompleter `CLI.fallbackCompletion` CLI.completeFilename
+  where envCompleter = CLI.completeWord Nothing " \t()" searchFunc
 
-mkSettings :: Env -> CLI.Settings IO
-mkSettings env = CLI.setComplete (mkCompletionFunc env) CLI.defaultSettings
+settings :: CLI.Settings M
+settings = CLI.setComplete completionFunc CLI.defaultSettings
+
+-- Haskeline should really provide this
+instance MonadState ReplState (CLI.InputT M) where
+    get   = lift get
+    put   = lift . put
+    state = lift . state
