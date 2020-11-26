@@ -17,8 +17,6 @@
            #f
            (and ,@(cdr cases)))))
 
-;; we could maybe do better by testing (eq? 'else (first (first cases)))
-;; instead of defining else as #t
 (defmacro cond cases
   (if (null? cases) (error "cond: unexhaustive cases")
       (if (eq? 'else (car (car cases)))

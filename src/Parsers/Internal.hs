@@ -70,7 +70,7 @@ parseExpr = lexeme $
          <|> (parseAtom <?> "symbol")
          <|> (parseString <?> "string")
          <|> (parseQuoted <?> "quote form")
-         <|> (lexeme (anyBraces $ try parseDottedList <|> parseList) <?> "list")
+         <|> (lexeme (anyBraces $ parseListlike) <?> "list")
 
 symbol :: Parser Char
 symbol = oneOf "!@#$%^&*-_=+|:\\/?<>~"
@@ -141,17 +141,23 @@ parseVector = lexeme $ do
     exprs <- parens $ many parseExpr
     return . Vector . listArray (0, fromIntegral $ length exprs - 1) $ exprs
 
-parseList :: Parser LispVal
-parseList = List <$> many parseExpr -- sepBy parseExpr (skipMany space)
-
-parseDottedList :: Parser LispVal
-parseDottedList = do
+parseListlike :: Parser LispVal
+parseListlike = do
     init <- many parseExpr
-    last <- lexeme (char '.') >> parseExpr
-    case (init, last) of
-        ([], _)         -> return last
-        (init, List ls) -> return . List $ init ++ ls
-        (init, val)     -> return $ DottedList init val
+    mlast <- optionMaybe $ lexeme (char '.') >> parseExpr
+    case (init, mlast) of
+        (list, Nothing) -> return $ List list
+
+        ([], Just e)  -> return e
+        (init, Just (List ls)) -> return . List $ init ++ ls
+        (init0, Just (DottedList init1 dot)) ->
+            return $ DottedList (init0 ++ init1) dot
+        (init, Just dot) -> return $ DottedList init dot
+
+-- these are provided strictly for back-compat with the testing code.
+-- them being separately defined leads to exponential parsing time!
+parseList = parseListlike
+parseDottedList = parseListlike
 
 parseQuoted :: Parser LispVal
 parseQuoted = lexeme $ foldr1 (<|>) parsers
