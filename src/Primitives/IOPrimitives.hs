@@ -2,7 +2,7 @@
 module Primitives.IOPrimitives (ioPrimitives) where
 
 import System.IO ( IOMode (..)
-                 , openFile, hClose, hGetLine, hPrint
+                 , openFile, hClose, hGetLine, hPutStr
                  , getLine, stdin, stdout)
 import Control.Monad.Except (throwError, liftIO)
 
@@ -54,7 +54,7 @@ writeToPort = IPrim 2 write
 
 write :: IBuiltin
 write [obj]           = write [obj, Port stdout]
-write [obj, Port hdl] = liftIO $ hPrint hdl obj >> return (Bool True)
+write [obj, Port hdl] = liftIO $ hPutStr hdl (show obj) >> return (Bool True)
 write [obj, badArg]   = throwError $ TypeMismatch "port" badArg
 write badArgs         = throwError $ NumArgs 1 badArgs
 

@@ -56,6 +56,7 @@ charBoolBinop = boolBinop unwrapChar
 eqv :: RBuiltin
 eqv [Bool x, Bool y]                   = return . Bool $ x == y
 eqv [Number x, Number y]               = return . Bool $ x == y
+eqv [Char x, Char y]                   = return . Bool $ x == y
 eqv [String s, String t]               = return . Bool $ s == t
 eqv [Atom x, Atom y]                   = return . Bool $ x == y
 eqv [DottedList xs x, DottedList ys y] =
