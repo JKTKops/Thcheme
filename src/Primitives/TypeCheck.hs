@@ -14,17 +14,10 @@ rawPrimitives = [ (name, guardOneArg func) | (name, func) <-
                     , ("string?", string)
                     , ("symbol?", symbol)
                     , ("vector?", vector)
+                    , ("procedure?", procedure)
+                    , ("continuation?", continuation)
                     ]
                 ]
-
-isSymbol = guardOneArg symbol
-isString = guardOneArg string
-isChar   = guardOneArg char
-isNumber = guardOneArg number
-isBool   = guardOneArg bool
-isList   = guardOneArg list
-isPair   = guardOneArg pair
-isVector = guardOneArg vector
 
 guardOneArg :: (LispVal -> LispVal) -> RawPrimitive
 guardOneArg func = RPrim 1 $ \case
@@ -64,3 +57,13 @@ pair _ = Bool False
 vector :: LispVal -> LispVal
 vector (Vector _) = Bool True
 vector _          = Bool False
+
+procedure :: LispVal -> LispVal
+procedure Primitive{}    = Bool True
+procedure Continuation{} = Bool True
+procedure Func{}         = Bool True
+procedure _ = Bool False
+
+continuation :: LispVal -> LispVal
+continuation Continuation{} = Bool True
+continuation _ = Bool False
