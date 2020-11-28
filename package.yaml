@@ -1,6 +1,6 @@
 name:                Thcheme
-version:             0.1.2.1
-github:              "JKTKops/Lithp"
+version:             0.2.0.0
+github:              "JKTKops/Thcheme"
 license:             BSD3
 author:              "Max Kopinsky"
 maintainer:          "zerglingk9012@gmail.com"

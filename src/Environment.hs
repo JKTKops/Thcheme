@@ -13,7 +13,7 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.IORef
 import Data.Maybe (isJust)
-import Control.Monad.Except (liftM, liftIO, throwError)
+import Control.Monad.Except (liftIO, throwError)
 
 import Types
 

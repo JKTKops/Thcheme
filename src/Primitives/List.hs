@@ -2,14 +2,14 @@
 module Primitives.List (rawPrimitives, macros) where
 
 import Prelude hiding (sequence)
-import Control.Monad (liftM)
 import Control.Monad.Except (throwError, (>=>))
-import Control.Monad.Writer (Writer, writer, runWriter, tell)
+import Control.Monad.Writer (Writer, writer, runWriter)
 
 import Types
 import Evaluation (eval)
 import EvaluationMonad (updateWith)
 
+rawPrimitives :: [(String, RawPrimitive)]
 rawPrimitives = [ ("list", listOp)
                 , ("cons", cons)
                 , ("append", appendOp)
@@ -19,6 +19,7 @@ rawPrimitives = [ ("list", listOp)
                 | (name, func) <- compositions [1..4] [("a", car), ("d", cdr)]
                 ]
 
+macros :: [(String, Macro)]
 macros = [ ("set-car!", setCar)
          , ("set-cdr!", setCdr)
          ]
@@ -51,7 +52,7 @@ compositions nums = map writerToPrim . logChooseN nums
                            in ("c" ++ log ++ "r", foldr1 sequence prims)
 
 -- The fully general type signature is
--- sequence :: (Monad m, Applicative f) => (a -> m b) -> (f b -> m c) -> a -> mc
+-- sequence :: (Monad m, Applicative f) => (a -> m b) -> (f b -> m c) -> a -> m c
 sequence :: RBuiltin -- ^ First primitive to execute
          -> RBuiltin -- ^ Use the result of first primitive as argument to this primitive
          -> RBuiltin
@@ -60,7 +61,7 @@ sequence f g = f >=> g . return
 logChooseN :: (Monoid m) => [Int] -> [(m, a)] -> [Writer m [a]]
 logChooseN ns as = do
     num <- ns
-    foldr (.) id (replicate num $ addChoice as) [return []]
+    foldr ($) [return []] (replicate num $ addChoice as)
     where
         addChoice :: (Monoid m) => [(m, a)] -> [Writer m [a]] -> [Writer m [a]]
         addChoice as ws = do (iden, val) <- as

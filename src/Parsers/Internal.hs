@@ -4,14 +4,11 @@ import Text.Parsec hiding (Error, try, spaces)
 import Text.Parsec.Char (octDigit, hexDigit)
 import Text.Parsec.Language (emptyDef)
 import Text.ParserCombinators.Parsec hiding (spaces)
-import qualified Text.Parsec.Expr as Ex
 import qualified Text.Parsec.Token as Tok
 
 import Data.Char (digitToInt)
 import Data.Array (listArray)
-import Control.Monad (liftM, guard)
-import Control.Monad.Except (throwError, liftIO)
-import Numeric (readInt, readOct, readHex)
+import Control.Monad.Except (throwError)
 
 import Types
 
@@ -70,7 +67,7 @@ parseExpr = lexeme $
          <|> (parseAtom <?> "symbol")
          <|> (parseString <?> "string")
          <|> (parseQuoted <?> "quote form")
-         <|> (lexeme (anyBraces $ parseListlike) <?> "list")
+         <|> (lexeme (anyBraces parseListlike) <?> "list")
 
 symbol :: Parser Char
 symbol = oneOf "!@#$%^&*-_=+|:\\/?<>~"

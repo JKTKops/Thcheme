@@ -7,8 +7,7 @@ module Parsers
     ) where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
-import qualified Text.Parsec.Token as Tok
-import Control.Monad.Except (throwError, liftIO)
+import Control.Monad.Except (liftIO)
 
 import Parsers.Internal
 import Types

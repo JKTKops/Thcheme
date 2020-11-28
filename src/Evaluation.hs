@@ -15,12 +15,8 @@ module Evaluation
     ) where
 
 import Data.Maybe
-import Data.Either
-import Data.IORef
-import Data.Array
 import Control.Monad
 import Control.Monad.Cont (runCont, callCC)
-import qualified Data.Char as C (ord, chr)
 import qualified Data.HashMap.Strict as Map
 
 import Parsers
@@ -100,7 +96,7 @@ apply (Continuation state func) [arg] = put state >> func arg
 apply Continuation{} badArgs = throwError $ NumArgs 1 badArgs
 
 -- Applications of user-defined functions
-apply (Func params varargs body closure name) args =
+apply (Func params varargs body closure _name) args =
     case num args `compare` num params of
         -- Throw error if too many args and no varargs
         GT -> if isNothing varargs

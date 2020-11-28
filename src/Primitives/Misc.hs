@@ -1,15 +1,12 @@
 {-# LANGUAGE LambdaCase #-}
 module Primitives.Misc (rawPrimitives, ePrimitives, macros) where
 
-import Data.IORef
 import qualified Data.HashMap.Lazy as Map
 
 import Parsers (load)
 import Types
 import Evaluation
 import EvaluationMonad
-
-import Debug.Trace
 
 rawPrimitives :: [(String, RawPrimitive)]
 rawPrimitives = [ ("id", identityFunction) ]
@@ -110,6 +107,7 @@ define = Macro 1 $ \case
 lambda :: Macro
 lambda = Macro 1 mkLambda
 
+mkLambda :: [LispVal] -> EM LispVal
 mkLambda args = case args of
     (List params : body) -> case body of
         [] -> throwError emptyBodyError
@@ -136,7 +134,9 @@ makeFunc varargs params body name = do
     env <- envSnapshot
     return $ Func (map show params) varargs body env name
 
+makeFuncNormal :: [LispVal] -> [LispVal] -> Maybe String -> EM LispVal
 makeFuncNormal = makeFunc Nothing
+makeFuncVarargs :: LispVal -> [LispVal] -> [LispVal] -> Maybe String -> EM LispVal
 makeFuncVarargs = makeFunc . Just . show
 
 defmacro :: Macro
@@ -162,7 +162,7 @@ applyFunc = Prim 1 $ \case
     (func : args) -> apply func args
     [] -> throwError $ Default "Expected at least 1 arg; found []"
 
-loadPrim :: Primitive -- why is this a macro?
+loadPrim :: Primitive
 loadPrim = Prim 1 $ \case
     [String filename] -> do
         file <- liftIO . runExceptT $ load filename
