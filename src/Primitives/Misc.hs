@@ -1,23 +1,24 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Misc (rawPrimitives, ePrimitives, macros) where
+module Primitives.Misc (primitives, macros) where
+
+-- TODO split into Control and Syntax
 
 import qualified Data.HashMap.Lazy as Map
 
 import Parsers (load)
-import Types
+import LispVal
 import Evaluation
 import EvaluationMonad
 
-rawPrimitives :: [(String, RawPrimitive)]
-rawPrimitives = [ ("id", identityFunction) ]
-
-ePrimitives :: [(String, Primitive)]
-ePrimitives = [ ("eval", evalPrim)
-              , ("apply", applyFunc)
-              , ("error", errorFunc)
-              , ("load", loadPrim)
-              , ("call-with-current-continuation", callWithCurrentContinuation)
-              ]
+primitives :: [Primitive]
+primitives = [ identityFunction
+             , evalPrim
+             , applyFunc
+             , errorFunc
+             , quit
+             , loadPrim
+             , callWithCurrentContinuation
+             ]
 
 macros :: [(String, Macro)]
 macros = [ ("quote", quote)
@@ -31,13 +32,13 @@ macros = [ ("quote", quote)
          , ("begin", begin)
          ]
 
-identityFunction :: RawPrimitive
-identityFunction = RPrim 1 $ \case
+identityFunction :: Primitive
+identityFunction = Prim "id" 1 $ \case
     [arg]   -> return arg
     badArgs -> throwError $ NumArgs 1 badArgs
 
 callWithCurrentContinuation :: Primitive
-callWithCurrentContinuation = Prim 1 callcc
+callWithCurrentContinuation = Prim "call-with-current-continuation" 1 callcc
   where
     callcc :: [LispVal] -> EM LispVal
     callcc [func] = callCC $ \k -> do
@@ -152,18 +153,18 @@ begin = Macro 1 $ \case
     stmts -> withNewScope $ last <$> mapM eval stmts
 
 evalPrim :: Primitive
-evalPrim = Prim 1 $ \case
+evalPrim = Prim "eval" 1 $ \case
     [form]  -> eval form
     badArgs -> throwError $ NumArgs 1 badArgs
 
 applyFunc :: Primitive
-applyFunc = Prim 1 $ \case
+applyFunc = Prim "apply" 1 $ \case
     [func, List args] -> apply func args
     (func : args) -> apply func args
     [] -> throwError $ Default "Expected at least 1 arg; found []"
 
 loadPrim :: Primitive
-loadPrim = Prim 1 $ \case
+loadPrim = Prim "load" 1 $ \case
     [String filename] -> do
         file <- liftIO . runExceptT $ load filename
         case file of
@@ -219,8 +220,11 @@ quasiquote = Macro 1 $ \case
             lift popExpr
             (terms ++) <$> qqTerms ts
 
+quit :: Primitive
+quit = Prim "quit" 0 $ \_ -> throwError Quit
+
 errorFunc :: Primitive
-errorFunc = Prim 1 $ \case
+errorFunc = Prim "error" 1 $ \case
     [String s] -> throwError $ Default s
     [notStr]   -> throwError . Default $ show notStr
     badArgs    -> throwError $ NumArgs 1 badArgs

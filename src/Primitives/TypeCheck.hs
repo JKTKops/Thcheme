@@ -1,26 +1,28 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.TypeCheck (rawPrimitives) where
+module Primitives.TypeCheck (primitives) where
 
 import Control.Monad.Except (throwError)
 
 import Types
 
-rawPrimitives = [ (name, guardOneArg func) | (name, func) <-
-                    [ ("boolean?", bool)
-                    , ("char?", char)
-                    , ("list?", list)
-                    , ("number?", number)
-                    , ("pair?", pair)
-                    , ("string?", string)
-                    , ("symbol?", symbol)
-                    , ("vector?", vector)
-                    , ("procedure?", procedure)
-                    , ("continuation?", continuation)
-                    ]
-                ]
+primitives :: [Primitive]
+primitives = [ typePred name func 
+             | (name, func) <-
+               [ ("boolean", bool)
+               , ("char", char)
+               , ("list", list)
+               , ("number", number)
+               , ("pair", pair)
+               , ("string", string)
+               , ("symbol", symbol)
+               , ("vector", vector)
+               , ("procedure", procedure)
+               , ("continuation", continuation)
+               ]
+             ]
 
-guardOneArg :: (LispVal -> LispVal) -> RawPrimitive
-guardOneArg func = RPrim 1 $ \case
+typePred :: String -> (LispVal -> LispVal) -> Primitive
+typePred tyname func = Prim (tyname ++ "?") 1 $ \case
     [x] -> return $ func x
     badArgs -> throwError $ NumArgs 1 badArgs
 

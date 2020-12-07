@@ -1,5 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+
+{-# LANGUAGE RankNTypes #-}
 module Types
     ( Env
     , Arity
@@ -12,14 +14,13 @@ module Types
     , Macro (..)
     , LispVal (..)
     , truthy
-    , canonicalizeList
     , LispErr (..)
     , ThrowsError
     , IOThrowsError
     , trapError
     , extractValue
     , isTerminationError
-    , liftThrows
+    , liftEither
     , runIOThrows
     , EM (..)
     , EvalState (..)
@@ -50,8 +51,9 @@ data RawPrimitive = RPrim Arity RBuiltin
 type IBuiltin = [LispVal] -> IOThrowsError LispVal
 data IOPrimitive = IPrim Arity IBuiltin
 type Builtin = [LispVal] -> EM LispVal
-data Primitive = Prim Arity Builtin
+data Primitive = Prim String Arity Builtin
 data Macro = Macro Arity Builtin
+
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
 data LispVal = Atom String
@@ -79,16 +81,21 @@ data LispVal = Atom String
                -- to create a location before evaluating the value.
              | Undefined
 
-instance Eq LispVal where (==) = eqVal
-
-instance Show LispVal where
-    showsPrec _ v s = showVal v s
-
+-- this is not R7RS compliant... TODO?
+-- Defined here because it's used in `showEs` 12/6/2020.
+-- If stack changes in the future (perhaps to be properly tail-recursive)
+-- and this can be moved to LispVal.hs, do so.
+-- | Is this 'LispVal' truthy?
 truthy :: LispVal -> Bool
 truthy v = not $ v == Bool False
               || v == Number 0
               || v == List []
               || v == String ""
+
+instance Eq LispVal where (==) = eqVal
+
+instance Show LispVal where
+    showsPrec _ v s = showVal v s
 
 data LispErr = NumArgs Integer [LispVal]
              | TypeMismatch String LispVal
@@ -116,11 +123,6 @@ isTerminationError (Left Quit) = True
 isTerminationError _           = False
 
 type IOThrowsError = ExceptT LispErr IO
-
-liftThrows :: ThrowsError a -> IOThrowsError a
-           -- (MonadError m a) => Either e a -> m a
-liftThrows (Left err)  = throwError err
-liftThrows (Right val) = return val
 
 runIOThrows :: IOThrowsError String -> IO String
 runIOThrows action = extractValue . trapError <$> runExceptT action
@@ -173,11 +175,6 @@ showVal (Func args varargs body env name) =
         displayName . showChar ' '
       . showParen True (displayArgs . displayVarargs)
       . showString " ..."
-        
-{-        "(" ++ fromMaybe "lambda" name
-    ++ " (" ++ unwords args ++ (case varargs of
-        Nothing  -> ""
-        Just arg -> " . " ++ arg) ++ ") ...)"-}
   where
     displayName = showString $ fromMaybe "lambda" name
     displayArgs = showString $ unwords args
@@ -185,10 +182,6 @@ showVal (Func args varargs body env name) =
         Nothing  -> id
         Just arg -> showString " . " . showString arg
 showVal (PMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
-
-canonicalizeList :: LispVal -> LispVal
-canonicalizeList (DottedList lst (List cdr)) = List (lst ++ cdr)
-canonicalizeList other = other
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname

@@ -7,6 +7,8 @@ import Types
 import Evaluation
 import EvaluationMonad
 
+-- TODO: use Data.CaseInsensitive to add the -foldcase functions
+
 rawPrimitives :: [(String, RawPrimitive)]
 rawPrimitives = [ ("string", primString)
                 , ("string-ref", primStringRef)

@@ -7,7 +7,7 @@ module Parsers
     ) where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
-import Control.Monad.Except (liftIO)
+import Control.Monad.Except (MonadError, MonadIO, liftIO)
 
 import Parsers.Internal
 import Types
@@ -19,6 +19,7 @@ labeledReadExpr label = labeledReadOrThrow label $ do
     eof
     return expr
 
+readExpr :: String -> ThrowsError LispVal
 readExpr = labeledReadExpr "Thcheme"
 
 labeledReadExprList :: String -> String -> ThrowsError [LispVal]
@@ -30,5 +31,5 @@ labeledReadExprList label = labeledReadOrThrow label $ do
 
 readExprList = labeledReadExprList "Thcheme"
 
-load :: String -> IOThrowsError [LispVal]
-load filename = liftIO (readFile filename) >>= liftThrows . readExprList
+load :: (MonadIO m, MonadError LispErr m) => String -> m [LispVal]
+load filename = liftIO (readFile filename) >>= liftEither . readExprList

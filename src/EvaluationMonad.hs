@@ -3,6 +3,7 @@ module EvaluationMonad
     -- * re-exported from Types
       EM (..)
     , EvalState (..)
+    , StepReason (..)
 
     -- * Re-exported modules
     , module Control.Monad.Except

@@ -153,6 +153,7 @@ parseListlike = do
 
 -- these are provided strictly for back-compat with the testing code.
 -- them being separately defined leads to exponential parsing time!
+parseList, parseDottedList :: Parser LispVal
 parseList = parseListlike
 parseDottedList = parseListlike
 

@@ -28,5 +28,9 @@ primitiveBindings = do
     mapM_ (evaluateExpr env Map.empty) exprs
     return env
 
+-- we absolutely need to set up a data dir for "installing" packages
+-- and do away with this embed file. It puts a _haskell string literal_
+-- containing the entire contents of the file into the executable!
+
 stdlib :: ThrowsError [LispVal]
 stdlib = labeledReadExprList "stdlib" $(embedStringFile "src/stdlib.thm")

@@ -1,20 +1,21 @@
 {-# LANGUAGE ExistentialQuantification #-}
-module Primitives.Comparison (rawPrimitives) where
+module Primitives.Comparison (primitives) where
 
 import Control.Monad.Except (throwError, catchError)
 import Data.Char (ord, chr, toLower)
 
-import Types
+import Types -- when the equivalence functions are updated to work properly,
+             -- only import LispVal!
 import Primitives.Bool (boolBinop)
 import Primitives.Unwrappers
 
-rawPrimitives :: [(String, RawPrimitive)]
-rawPrimitives = typeSpecific
-             ++ [ (name, RPrim 2 eqf)
-                | (name, eqf) <- [("eq?", eqv), ("eqv?", eqv), ("equal?", equal)]
-                ]
+primitives :: [Primitive]
+primitives = typeSpecific
+          ++ [ Prim name 2 $ liftEither . eqf
+             | (name, eqf) <- [("eq?", eqv), ("eqv?", eqv), ("equal?", equal)]
+             ]
 
-typeSpecific :: [(String, RawPrimitive)]
+typeSpecific :: [Primitive]
 typeSpecific = [ primGen builtin
                | (PrimBuilder primGen) <- primBuilders, builtin <- builtinComparisons
                ]
@@ -27,34 +28,50 @@ builtinComparisons = [ ("=", (==))
                      , (">=", (>=))
                      ]
 
+-- | A wrapper over a function that converts a (Haskell) builtin comparison
+-- function into a Primitive function. We use this to convert the Haskell
+-- builtins into appropriate comparison functions for all Scheme types.
 data PrimBuilder = forall a. Ord a =>
-                      PrimBuilder ((String, a -> a -> Bool) -> (String, RawPrimitive))
+                      PrimBuilder ((String, a -> a -> Bool) -> Primitive)
 
-primBuilders = [PrimBuilder makeNumPrim, PrimBuilder makeStrPrim, PrimBuilder makeCharPrim]
+primBuilders :: [PrimBuilder]
+primBuilders = [ PrimBuilder makeNumPrim
+               , PrimBuilder makeStrPrim
+               , PrimBuilder makeCharPrim
+               ]
   where makePrim :: String -- type name
                  -> Bool   -- appends '?' if False, nothing if True
-                 -> ((a -> a -> Bool) -> RawPrimitive)
+                 -> (String -> (a -> a -> Bool) -> Primitive)
                  -> (String, a -> a -> Bool)
-                 -> (String, RawPrimitive)
-        makePrim name isNum primGen (opName, op) =
-            (name ++ opName ++ (if isNum then "" else "?"), primGen op)
-        makeNumPrim :: (String, Integer -> Integer -> Bool) -> (String, RawPrimitive)
+                 -> Primitive
+        makePrim tyname isNum primGen (opName, op) = primGen primName op
+          where primName = tyname ++ opName ++ suffix
+                suffix | isNum = "?"
+                       | otherwise = ""
+
         makeNumPrim = makePrim "" True numBoolBinop
         makeStrPrim = makePrim "string" False strBoolBinop
         makeCharPrim = makePrim "char" False charBoolBinop
 
--- boolBinop :: (LispVal -> a) -> (a -> a -> Bool) -> RawPrimitive
+-- boolBinop :: String -> (LispVal -> EM a) -> (a -> a -> Bool) -> Primitive
 
-numBoolBinop :: (Integer -> Integer -> Bool) -> RawPrimitive
-numBoolBinop = boolBinop unwrapNum
-strBoolBinop :: (String -> String -> Bool) -> RawPrimitive
-strBoolBinop = boolBinop unwrapStr
-charBoolBinop :: (Char -> Char -> Bool) -> RawPrimitive
-charBoolBinop = boolBinop unwrapChar
+-- TODO: none of these satisfy r7rs, which says the predicate should be
+-- satisfied pairwise along a whole list of elements; we should not use
+-- 'boolBinop'.
+numBoolBinop :: String -> (Integer -> Integer -> Bool) -> Primitive
+numBoolBinop name = boolBinop name unwrapNum
+strBoolBinop :: String -> (String -> String -> Bool) -> Primitive
+strBoolBinop name = boolBinop name unwrapStr
+charBoolBinop :: String -> (Char -> Char -> Bool) -> Primitive
+charBoolBinop name = boolBinop name unwrapChar
 
 -- EQUIVALENCE FUNCTIONS
 -- TODO some notion of function equivalence?
-eqv :: RBuiltin
+
+-- I don't think this function satisfies r7rs currently. Left as TODO
+-- because it's highly affected by shoving IORefs into LispVal.
+-- Adjust as appropriate later. EM will be required.
+eqv :: [LispVal] -> ThrowsError LispVal
 eqv [Bool x, Bool y]                   = return . Bool $ x == y
 eqv [Number x, Number y]               = return . Bool $ x == y
 eqv [Char x, Char y]                   = return . Bool $ x == y
@@ -65,10 +82,17 @@ eqv [DottedList xs x, DottedList ys y] =
 eqv [List xs, List ys]                 = return . Bool
     $ length xs == length ys && all pairEqv (zip xs ys) where
         pairEqv (x, y) = case eqv [x, y] of
-            Left err         -> False
+            Left _err        -> False
             Right (Bool val) -> val
 eqv [_, _]                                 = return $ Bool False
 eqv badArgs                                = throwError $ NumArgs 2 badArgs
+
+
+-- TODO: instead of defining coercers, we should just import TypeTransformers
+-- and implement the standard properly.
+-- furthermore, we aren't defining case-insensitive string/char comparisons.
+-- Once we have char-foldcase and string-foldcase we should just call those
+-- similar to how we'd call a type transformer.
 
 coerceNum :: LispVal -> ThrowsError Integer
 coerceNum (Number n) = return n
@@ -108,14 +132,15 @@ coerceEquals x y (Coercer coercer) =
        return $ coercedx == coercedy
     `catchError` const (return False)
 
-equal :: RBuiltin
+-- see the comment on eqv
+equal :: [LispVal] -> ThrowsError LispVal
 equal [DottedList xs x, DottedList ys y] =
     equal [List $ xs ++ [x], List $ ys ++ [y]]
 equal [List xs, List ys]                 =
     return . Bool
     $ length xs == length ys && all pairEqv (zip xs ys) where
         pairEqv (x, y) = case equal [x, y] of
-            Left err         -> False
+            Left _err        -> False
             Right (Bool val) -> val
 
 equal [x, y] = do

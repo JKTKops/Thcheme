@@ -1,71 +1,75 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.IOPrimitives (ioPrimitives) where
+module Primitives.IOPrimitives (primitives) where
 
 import System.IO ( IOMode (..)
                  , openFile, hClose, hGetLine, hPutStr
                  , getLine, stdin, stdout)
-import Control.Monad.Except (throwError, liftIO)
+import Control.Monad.Except (throwError, liftEither, liftIO)
 
-import Types
+import LispVal
 import Parsers (readExpr, load)
 
-ioPrimitives :: [(String, IOPrimitive)]
-ioPrimitives = [ ("open-input-file", makePort ReadMode)
-               , ("open-output-file", makePort WriteMode)
-               , ("close-port", closePort)
-               , ("read", readProc)
-               , ("read-line", readLineProc)
-               , ("write", writeProc)
-               , ("write-port", writeToPort)
-               , ("read-contents", readContents)
-               , ("read-all", readAll)
-               ]
+primitives :: [Primitive]
+primitives = [ openInputFile
+             , openOutputFile
+             , closePort
+             , readProc
+             , readLineProc
+             , writeProc
+             , writeToPort
+             , readContents
+             , readAll
+             ]
 
-makePort :: IOMode -> IOPrimitive
-makePort mode = IPrim 1 $ \case
+makePort :: String -> IOMode -> Primitive
+makePort name mode = Prim name 1 $ \case
     [String filename] -> Port <$> liftIO (openFile filename mode)
     [badArg]          -> throwError $ TypeMismatch "string" badArg
     badArgs           -> throwError $ NumArgs 1 badArgs
 
-closePort :: IOPrimitive
-closePort = IPrim 1 $ \case
+openInputFile, openOutputFile :: Primitive
+openInputFile  = makePort "open-input-file" ReadMode
+openOutputFile = makePort "open-output-file" WriteMode
+
+closePort :: Primitive
+closePort = Prim "close-port" 1 $ \case
     [Port port] -> liftIO $ hClose port >> return (Bool True)
     _           -> return $ Bool False
 
-readProc :: IOPrimitive
-readProc = IPrim 0 read
+readProc :: Primitive
+readProc = Prim "read" 0 read
   where
-    read :: IBuiltin
+    read :: Builtin
     read []         = read [Port stdin]
-    read [Port hdl] = liftIO (hGetLine hdl) >>= liftThrows . readExpr
+    read [Port hdl] = liftIO (hGetLine hdl) >>= liftEither . readExpr
     read [badArg]   = throwError $ TypeMismatch "port" badArg
     read badArgs    = throwError $ NumArgs 1 badArgs
 
-readLineProc :: IOPrimitive
-readLineProc = IPrim 0 $ \case
+readLineProc :: Primitive
+readLineProc = Prim "read-line" 0 $ \case
     []      -> String <$> liftIO getLine
     badArgs -> throwError $ NumArgs 0 badArgs
 
-writeProc :: IOPrimitive
-writeProc = IPrim 1 write
+writeProc :: Primitive
+writeProc = Prim "write" 1 write
 
-writeToPort :: IOPrimitive
-writeToPort = IPrim 2 write
+writeToPort :: Primitive
+writeToPort = Prim "write-port" 2 write
 
-write :: IBuiltin
+write :: Builtin
 write [obj]           = write [obj, Port stdout]
 write [obj, Port hdl] = liftIO $ hPutStr hdl (show obj) >> return (Bool True)
 write [obj, badArg]   = throwError $ TypeMismatch "port" badArg
 write badArgs         = throwError $ NumArgs 1 badArgs
 
-readContents :: IOPrimitive
-readContents = IPrim 1 $ \case
+readContents :: Primitive
+readContents = Prim "read-contents" 1 $ \case
     [String filename] -> String <$> liftIO (readFile filename)
     [badArg]          -> throwError $ TypeMismatch "string" badArg
     badArgs           -> throwError $ NumArgs 1 badArgs
 
-readAll :: IOPrimitive
-readAll = IPrim 1 $ \case
+readAll :: Primitive
+readAll = Prim "read-all" 1 $ \case
     [String filename] -> List <$> load filename
     [badArg]          -> throwError $ TypeMismatch "string" badArg
     badArgs           -> throwError $ NumArgs 1 badArgs
