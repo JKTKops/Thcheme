@@ -9,6 +9,7 @@ import Parsers (load)
 import LispVal
 import Evaluation
 import EvaluationMonad
+import Control.Monad.Reader -- for qq
 
 primitives :: [Primitive]
 primitives = [ identityFunction
@@ -66,7 +67,7 @@ ifMacro = Macro 2 $ \case
         if truthy p
         then eval conseq
         else case alts of
-            [] -> return $ List []
+            [] -> return $ IList []
             xs -> last <$> mapM eval xs
     badArgs -> throwError $ Default $ "Expected at least 2 args; found " ++ show badArgs
 
@@ -94,14 +95,14 @@ define = Macro 1 $ \case
                 Func {} -> val { name = Just var }
                 _ -> val
         defineVar var renamed
-    (List (Atom name : params) : body) -> case body of
+    (IList (Atom name : params) : body) -> case body of
         [] -> throwError emptyBodyError
         _  -> makeFuncNormal params body (Just name) >>= defineVar name
-    (DottedList (Atom name : params) varargs : body) -> case body of
+    (IDottedList (Atom name : params) varargs : body) -> case body of
         [] -> throwError emptyBodyError
         _  -> makeFuncVarargs varargs params body (Just name) >>= defineVar name
-    (List (notAtom : _) :_) -> throwError $ TypeMismatch "symbol" notAtom
-    (DottedList (notAtom : _) _ : _) -> throwError $ TypeMismatch "symbol" notAtom
+    (IList (notAtom : _) :_) -> throwError $ TypeMismatch "symbol" notAtom
+    (IDottedList (notAtom : _) _ : _) -> throwError $ TypeMismatch "symbol" notAtom
     (notAtomOrList : _) -> throwError $ TypeMismatch "symbol or list" notAtomOrList
     badArgs -> throwError $ NumArgs 2 badArgs
 
@@ -110,10 +111,10 @@ lambda = Macro 1 mkLambda
 
 mkLambda :: [LispVal] -> EM LispVal
 mkLambda args = case args of
-    (List params : body) -> case body of
+    (IList params : body) -> case body of
         [] -> throwError emptyBodyError
         _  -> makeFuncNormal params body Nothing
-    (DottedList params varargs : body) -> case body of
+    (IDottedList params varargs : body) -> case body of
         [] -> throwError emptyBodyError
         _  -> makeFuncVarargs varargs params body Nothing
     (varargs@(Atom _) : body) -> case body of
@@ -144,7 +145,7 @@ defmacro :: Macro
 defmacro = Macro 3 $ \case
     (Atom name : ps : body) -> do
         lam <- mkLambda (ps : body)
-        let macro = DottedList [Atom "macro"] lam
+        let macro = IDottedList [Atom "macro"] lam
         defineVar name macro
 
 begin :: Macro
@@ -157,9 +158,10 @@ evalPrim = Prim "eval" 1 $ \case
     [form]  -> eval form
     badArgs -> throwError $ NumArgs 1 badArgs
 
+-- TODO: [r7rs] (also it's just borked rn because of Pair)
 applyFunc :: Primitive
 applyFunc = Prim "apply" 1 $ \case
-    [func, List args] -> apply func args
+    [func, IList args] -> apply func args
     (func : args) -> apply func args
     [] -> throwError $ Default "Expected at least 1 arg; found []"
 
@@ -175,47 +177,44 @@ loadPrim = Prim "load" 1 $ \case
 
 quasiquote :: Macro
 quasiquote = Macro 1 $ \case
-    [form]  -> evalStateT (qq form) 0
+    [form]  -> runReaderT (qq form) 0
     badArgs -> throwError $ NumArgs 1 badArgs
 
-  where qq :: LispVal -> StateT Int EM LispVal
-        qq (List [Atom "quasiquote", form]) = modify (+ 1) >> do
+  where qq :: LispVal -> ReaderT Int EM LispVal
+        qq (IList [Atom "quasiquote", form]) = local (+ 1) $ do
             inner <- qq form
-            return $ List [Atom "quasiquote", inner]
-        qq (List [Atom "unquote", form]) = do
-            depth <- get
+            return $ IList [Atom "quasiquote", inner]
+        qq (IList [Atom "unquote", form]) = do
+            depth <- ask
             if depth == 0
             then lift $ eval form
-            else do
-                modify (\s -> s - 1)
+            else local (subtract 1) $ do
                 inner <- qq form
-                return $ List [Atom "unquote", inner]
-        qq (List forms)
+                return $ IList [Atom "unquote", inner]
+        qq (IList forms)
               -- this can happen because the parser is smart enough to rewrite
-              -- `(0 . ,lst) as List [Number 0, Atom unquote, Atom lst]
+              -- `(0 . ,lst) as IList [Number 0, Atom unquote, Atom lst]
               -- however whenever this happens, ',lst' will definitely be of size 2
             | Atom "unquote" `elem` forms
             , (list, dot) <- break (== Atom "unquote") forms
             , [_,_] <- dot
-            = fmap canonicalizeList $ DottedList <$> qqTerms list <*> qq (List dot)
-            | otherwise = List <$> qqTerms forms
-        qq (DottedList forms form) =
-            fmap canonicalizeList $ DottedList <$> qqTerms forms <*> qq form
+            = fmap canonicalizeList $ IDottedList <$> qqTerms list <*> qq (IList dot)
+            | otherwise = IList <$> qqTerms forms
+        qq (IDottedList forms form) =
+            fmap canonicalizeList $ IDottedList <$> qqTerms forms <*> qq form
         qq form  = return form
 
-        qqTerms :: [LispVal] -> StateT Int EM [LispVal]
+        qqTerms :: [LispVal] -> ReaderT Int EM [LispVal]
         qqTerms [] = return []
         qqTerms (t:ts) = do
             lift $ pushExpr Expand t
             terms <- case t of
-                List [Atom "unquote-splicing", form] -> do
-                    depth <- get
+                IList [Atom "unquote-splicing", form] -> do
+                    depth <- ask
                     val <- if depth == 0
                            then lift $ eval form
-                           else modify (\s -> s - 1) >> qq form
-                    case val of
-                        List vs -> return vs
-                        _ -> throwError $ TypeMismatch "list" val
+                           else local (subtract 1) $ qq form
+                    lift $ getListOrError val
                 _ -> (:[]) <$> qq t
             lift popExpr
             (terms ++) <$> qqTerms ts
