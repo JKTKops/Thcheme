@@ -32,6 +32,7 @@ primitives = foldr1 Map.union
       , BoolOps.primitives
       , CharOps.primitives
       , Comparison.primitives
+      , List.primitives
       , TypeCheck.primitives
       , TypeCast.primitives
       , Misc.primitives
@@ -44,14 +45,13 @@ primitives = foldr1 Map.union
       ]
 
 rawPrimitives :: HashMap String RawPrimitive
-rawPrimitives = Map.fromList $ List.rawPrimitives ++
+rawPrimitives = Map.fromList $
                             Vector.rawPrimitives ++
                             String.rawPrimitives
 
 macros :: HashMap String Macro
 macros = Map.fromList $ String.macros ++
                         Vector.macros ++
-                        List.macros ++
                         Misc.macros
 
 makePrimitive :: String -> Arity -> Builtin -> LispVal

@@ -50,6 +50,17 @@ readLineProc = Prim "read-line" 0 $ \case
     []      -> String <$> liftIO getLine
     badArgs -> throwError $ NumArgs 0 badArgs
 
+{- TODO: [r7rs]
+we need to both define 'display' and fix write, as well as adding
+'write-simple'.
+
+Furthermore, we don't define or use 'current-input-port' or any of the
+port operations like 'with-output-string' or whatever it's called.
+We can/should split these operations into Port.hs and Display.hs or something
+to that effect. Expect 'write' to become rather involved due to the requirement
+that it use datum labels to show recursive structure.
+-}
+
 writeProc :: Primitive
 writeProc = Prim "write" 1 write
 
@@ -70,6 +81,6 @@ readContents = Prim "read-contents" 1 $ \case
 
 readAll :: Primitive
 readAll = Prim "read-all" 1 $ \case
-    [String filename] -> List <$> load filename
+    [String filename] -> load filename >>= makeMutableList
     [badArg]          -> throwError $ TypeMismatch "string" badArg
     badArgs           -> throwError $ NumArgs 1 badArgs

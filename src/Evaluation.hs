@@ -20,7 +20,7 @@ import Control.Monad.Cont (runCont, callCC)
 import qualified Data.HashMap.Strict as Map
 
 import Parsers
-import Types
+import LispVal
 import EvaluationMonad
 import qualified Environment as Env
 
@@ -39,8 +39,9 @@ evalExpr expr = case expr of
     val@(Bool _)   -> return val
     val@(Vector _) -> return val
     (Atom id)      -> getVar id
-    nil@(List [])  -> return nil
-    List (function : args) -> handleNonPrim function args
+    Nil            -> return Nil
+    IList (function : args) -> handleNonPrim function args
+    p@Pair{} -> freezeList p >>= evalExpr
     badForm -> throwError $ BadSpecialForm "Unrecognized special form" badForm
 
 handleNonPrim :: LispVal -> [LispVal] -> EM LispVal
@@ -56,7 +57,10 @@ handleNonPrim function args = do
         Continuation{} -> evalCall func
         Func {}        -> evalCall func
         PMacro {}      -> evalPMacro func
-        DottedList [Atom "macro"] macro@Func{} -> evalMacro macro
+        -- TODO: this doesn't play well with the introduction of mutable
+        -- lists, so it really is time to make a proper distinction between
+        -- functions and low-level macros.
+        IDottedList [Atom "macro"] macro@Func{} -> evalMacro macro
         _              -> evalCall func
 
   where evalCall func = do
@@ -64,7 +68,7 @@ handleNonPrim function args = do
             let reduced = func `isReduced` function || args /= argVals
             when reduced $ do
                 modifyTopReason $ const Reduce
-                pushExpr Call (List (function : argVals))
+                pushExpr Call (IList (function : argVals))
             v <- apply func argVals
             when reduced popExpr
             return v
@@ -125,8 +129,9 @@ apply (Func params varargs body closure _name) args =
         evalBody = last <$> mapM eval body
         -- binds extra arguments to vararg in GT case
         bindVarargs arg env = case arg of
-          Just argName ->
-              liftIO . Env.bindVars env $ Map.fromList [(argName, List remainingArgs)]
+          Just argName -> do
+              remainingArgsMutable <- makeMutableList remainingArgs
+              liftIO . Env.bindVars env $ Map.fromList [(argName, remainingArgsMutable)]
           Nothing -> return env
 
 apply notFunc _ = throwError $ NotFunction "Not a function" notFunc

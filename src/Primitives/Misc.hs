@@ -11,6 +11,8 @@ import Evaluation
 import EvaluationMonad
 import Control.Monad.Reader -- for qq
 
+-- TODO NEXT: this module is broken right now because of Pairs
+
 primitives :: [Primitive]
 primitives = [ identityFunction
              , evalPrim

@@ -4,33 +4,38 @@ module EvaluationMonad
       EM (..)
     , EvalState (..)
     , StepReason (..)
+    , Env
+    , Opts
 
     -- * Re-exported modules
+    , module Control.Monad.Cont
     , module Control.Monad.Except
     , module Control.Monad.State.Lazy
-    -- * Useful evaluation actions
-    , pushExpr
-    , popExpr
-    , pushEnv
-    , withNewScope
-    , popEnv
-    , envSnapshot
-    , modifyStackTop
-    , modifyTopReason
-    , getVar
-    , setVar
-    , updateWith
-    , search
-    , setVarForCapture
-    , defineVar
+    , (Fish.>=>), (Fish.<=<)
+
+      -- * Adjusting the evaluation environment
+    , pushEnv, withNewScope, popEnv, envSnapshot
+
+      -- * Adjusting the debug stack
+    , pushExpr, popExpr, modifyStackTop, modifyTopReason
+
+      -- * Use the evaluation environment
+    , getVar, setVar, updateWith, search
+    , setVarForCapture, defineVar
+
+      -- * Manipulating IORefs
+    , newRef, readRef, writeRef, modifyRef
     ) where
 
 import Data.IORef
 import Data.Maybe
 import Data.Either
 import qualified Data.HashMap.Strict as Map
-import Control.Monad.Except
-import Control.Monad.State.Lazy
+import Control.Monad (when, void)
+import qualified Control.Monad as Fish ((>=>), (<=<))
+import Control.Monad.Cont (MonadCont (..))
+import Control.Monad.Except (MonadError (..), liftEither, runExceptT)
+import Control.Monad.State.Lazy (MonadIO (..), MonadState (..), modify, gets)
 
 import Types
 import qualified Environment as Env
@@ -144,3 +149,19 @@ defineVar :: String -> LispVal -> EM LispVal
 defineVar var val = do
     env <- head . symEnv <$> get
     liftIOThrows $ Env.defineVar env var val
+
+newRef :: a -> EM (IORef a)
+newRef = liftIO . newIORef
+{-# INLINE newRef #-}
+
+readRef :: IORef a -> EM a
+readRef = liftIO . readIORef
+{-# INLINE readRef #-}
+
+writeRef :: IORef a -> a -> EM ()
+writeRef ref x = liftIO $ writeIORef ref x
+{-# INLINE writeRef #-}
+
+modifyRef :: IORef a -> (a -> a) -> EM ()
+modifyRef ref f = liftIO $ modifyIORef ref f
+{-# INLINE modifyRef #-}

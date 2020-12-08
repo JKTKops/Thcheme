@@ -38,17 +38,18 @@ charToString (Char c) = return $ String [c]
 charToString notChar  = throwError $ TypeMismatch "char" notChar
 
 listToString :: LispVal -> EM LispVal
-listToString (List chars) = String <$> mapchars chars where
-    mapchars :: [LispVal] -> EM String
+listToString v = do
+    lst <- getListOrError v
+    String <$> mapchars lst
+  where
     mapchars []              = return []
     mapchars (Char c : cs) = (c :) <$> mapchars cs
     mapchars (notChar : _)   = throwError $ TypeMismatch "char" notChar
-listToString notList = throwError $ TypeMismatch "list" notList
 
 listToVector :: LispVal -> EM LispVal
-listToVector (List vals) = return . Vector $
-                             listArray (0, fromIntegral $ length vals - 1) vals
-listToVector notList = throwError $ TypeMismatch "list" notList
+listToVector v = do
+    vals <- getListOrError v
+    return . Vector $ listArray (0, fromIntegral $ length vals - 1) vals
 
 numberToChar :: LispVal -> EM LispVal
 numberToChar (Number n) = return . Char . chr $ fromIntegral n
@@ -58,8 +59,12 @@ numberToString :: LispVal -> EM LispVal
 numberToString (Number n) = return . String $ show n
 numberToString notNum     = throwError $ TypeMismatch "number" notNum
 
+-- TODO: the 'start' and 'end' arguments should probably be added here,
+-- otherwise we'd allocate a too-large mutable list and trim it. There are
+-- obvious problems with that; the procedure should be efficient for a
+-- large string if '(- end start)' is small.
 stringToList :: LispVal -> EM LispVal
-stringToList (String s) = return . List $ map Char s
+stringToList (String s) = makeMutableList $ map Char s
 stringToList notStr     = throwError $ TypeMismatch "string" notStr
 
 stringToNumber :: LispVal -> EM LispVal
@@ -70,5 +75,5 @@ stringToNumber (String s) = let parsed = reads s in
 stringToNumber notStr     = throwError $ TypeMismatch "string" notStr
 
 vectorToList :: LispVal -> EM LispVal
-vectorToList (Vector arr) = return . List $ elems arr
+vectorToList (Vector arr) = makeMutableList $ elems arr
 vectorToList notVec = throwError $ TypeMismatch "vector" notVec

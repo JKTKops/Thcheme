@@ -39,8 +39,10 @@ boolBinop name unwrapper op = Prim name 2 $ \case
         return $ Bool $ left' `op` right'
     badArgs       -> throwError $ NumArgs 2 badArgs
 
+-- TODO: [r7rs]
 -- neither of these functions are defined (surprinsgly?) in the r7rs report.
 -- Instead, r7rs relies on the macros "and" and "or".
+-- Probably the right thing to do is remove them.
 boolAnd, boolOr :: Primitive
 boolAnd = boolBinop "&&" unwrapBool (&&)
 boolOr  = boolBinop "||" unwrapBool (||)

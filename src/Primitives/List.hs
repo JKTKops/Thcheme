@@ -1,133 +1,100 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.List (rawPrimitives, macros) where
+module Primitives.List (primitives) where
 
-import Prelude hiding (sequence)
-import Control.Monad.Except (throwError, (>=>))
-import Control.Monad.Writer (Writer, writer, runWriter)
+import Control.Monad (replicateM)
+import Data.Foldable (foldrM)
+import Data.Functor (($>))
 
-import Types
-import Evaluation (eval)
-import EvaluationMonad (updateWith)
+import LispVal
+import EvaluationMonad
 
-rawPrimitives :: [(String, RawPrimitive)]
-rawPrimitives = [ ("list", listOp)
-                , ("cons", cons)
-                , ("append", appendOp)
-                , ("null?", nullOp)
-                ] ++
-                [ (name, RPrim 1 func)
-                | (name, func) <- compositions [1..4] [("a", car), ("d", cdr)]
-                ]
+primitives :: [Primitive]
+primitives =
+  [ isListPrim
+  , consPrim
+  , listPrim
+  , appendPrim
+  , nullPrim
+  , setCarPrim
+  , setCdrPrim
+  ]
+  ++ cxrCompositions [1..4]
 
-macros :: [(String, Macro)]
-macros = [ ("set-car!", setCar)
-         , ("set-cdr!", setCdr)
-         ]
+isListPrim :: Primitive
+isListPrim = Prim "list?" 1 $ \case
+  [x] -> Bool <$> isList x
+  bad -> throwError $ NumArgs 1 bad
 
-car :: RBuiltin
-car [List (x:xs)]        = return x
-car [DottedList(x:xs) _] = return x
-car [badArg]             = throwError $ TypeMismatch "pair" badArg
-car badArgs              = throwError $ NumArgs 1 badArgs
+consPrim :: Primitive
+consPrim = Prim "cons" 2 $ \case
+    [x, y]  -> cons x y
+    badArgs -> throwError $ NumArgs 2 badArgs
 
-cdr :: RBuiltin
-cdr [List (x:xs)]         = return $ List xs
-cdr [DottedList [_] x]    = return x
-cdr [DottedList (_:xs) x] = return $ DottedList xs x
-cdr [badArg]              = throwError $ TypeMismatch "pair" badArg
-cdr badArgs               = throwError $ NumArgs 1 badArgs
+carBuiltin :: Builtin
+carBuiltin [IList (x:_)]         = return x
+carBuiltin [IDottedList (x:_) _] = return x
+carBuiltin [Pair c _d]            = readRef c
+carBuiltin [badArg] = throwError $ TypeMismatch "pair" badArg
+carBuiltin badArgs  = throwError $ NumArgs 1 badArgs
 
-cons :: RawPrimitive
-cons = RPrim 2 $ \case
-    [x, List []]            -> return $ List [x]
-    [x, List xs]            -> return . List $ x:xs
-    [x, DottedList xs last] -> return $ DottedList (x:xs) last
-    [x, y]                  -> return $ DottedList [x] y
-    badArgs                 -> throwError $ NumArgs 2 badArgs
+cdrBuiltin :: Builtin
+cdrBuiltin [IList (_:xs)]         = return $ IList xs
+cdrBuiltin [IDottedList [_] x]    = return x
+cdrBuiltin [IDottedList (_:xs) x] = return $ IDottedList xs x
+cdrBuiltin [Pair _c d]            = readRef d
+cdrBuiltin [badArg] = throwError $ TypeMismatch "pair" badArg
+cdrBuiltin badArgs  = throwError $ NumArgs 1 badArgs
 
-compositions :: [Int] -> [(String, RBuiltin)] -> [(String, RBuiltin)]
-compositions nums = map writerToPrim . logChooseN nums
-    where writerToPrim :: Writer String [RBuiltin] -> (String, RBuiltin)
-          writerToPrim w = let (prims, log) = runWriter w
-                           in ("c" ++ log ++ "r", foldr1 sequence prims)
+cxrCompositions :: [Int] -> [Primitive]
+cxrCompositions ns = do
+    len         <- ns
+    combination <- replicateM len carAndCdr
+    let (n, b) = foldr1 combine combination
+    return $ Prim ("c" ++ n ++ "r") 1 b
+  where
+    carAndCdr = [("a", carBuiltin), ("d", cdrBuiltin)]
+    -- 'cadr' does cdr, then car, so we use left fish instead of right
+    combine (c1, m1) (c2, m2) = (c1 ++ c2, m1 . single <=< m2)
+    single x = [x]
 
--- The fully general type signature is
--- sequence :: (Monad m, Applicative f) => (a -> m b) -> (f b -> m c) -> a -> m c
-sequence :: RBuiltin -- ^ First primitive to execute
-         -> RBuiltin -- ^ Use the result of first primitive as argument to this primitive
-         -> RBuiltin
-sequence f g = f >=> g . return
+listPrim :: Primitive
+listPrim = Prim "list" 0 makeMutableList
 
-logChooseN :: (Monoid m) => [Int] -> [(m, a)] -> [Writer m [a]]
-logChooseN ns as = do
-    num <- ns
-    foldr ($) [return []] (replicate num $ addChoice as)
-    where
-        addChoice :: (Monoid m) => [(m, a)] -> [Writer m [a]] -> [Writer m [a]]
-        addChoice as ws = do (iden, val) <- as
-                             w <- ws
-                             return $ do let (list, log) = runWriter w
-                                         -- See note [car/cdr names]
-                                         writer (val:list, log `mappend` iden)
+appendPrim :: Primitive
+appendPrim = Prim "append" 1 aux
+  where 
+    -- aux will never be called with 0 arguments since arity is 1+
+    aux [x] = return x
+    aux xs = do
+        (lists, last) <- walk xs
+        foldrM cons last $ concat lists
+    
+    walk :: [LispVal] -> EM ([[LispVal]], LispVal)
+    walk [x] = return ([], x)
+    walk (x:xs) = do
+        requireList x
+        ~(lists, last) <- walk xs
+        IList fx <- freezeList x
+        return (fx:lists, last)
 
-{-
-NOTE [car/cdr names]
-`cadr` performs `cdr`, then performs `car`.
-Because of this, we take the computation result to be a list
-of car/cdr operations in the order we intend to execute them,
-but put the identifier _after_ the existing log so that they
-will appear in reverse order.
--}
+nullPrim :: Primitive
+nullPrim = Prim "null?" 1 $ \case
+  [Nil] -> return $ Bool True
+  [_]   -> return $ Bool False
+  badArgs -> throwError $ NumArgs 1 badArgs
 
-listOp :: RawPrimitive
-listOp = RPrim 0 $ return . List
+setCarPrim :: Primitive
+setCarPrim = Prim "set-car!" 2 $ \case
+  [Pair c _d, v] -> writeRef c v $> v
+  [badPair, _]
+    | isImmutablePair badPair -> throwError $ SetImmutable "pair"
+    | otherwise -> throwError $ TypeMismatch "pair" badPair
+  badArgs -> throwError $ NumArgs 2 badArgs
 
-appendOp :: RawPrimitive
-appendOp = RPrim 0 $ fmap List . worker
-  where worker :: [LispVal] -> ThrowsError [LispVal]
-        worker []             = return []
-        worker (List [] : ls) = worker ls
-        worker (List xs : ls) = (xs ++) <$> worker ls
-        worker (notList : _)  = throwError $ TypeMismatch "list" notList
-
-nullOp :: RawPrimitive
-nullOp = RPrim 1 $ \case
-    [List []] -> return $ Bool True
-    [_]       -> return $ Bool False
-    badArgs   -> throwError $ NumArgs 1 badArgs
-
-setCar :: Macro
-setCar = Macro 2 $ \args -> case args of
-    (Atom _ : _) -> updateWith helper args
-    _            -> helper args
-  where helper :: [LispVal] -> EM LispVal
-        helper [List (_ : cdr), form] = do
-            form' <- eval form
-            return $ List (form' : cdr)
-        helper [DottedList (_ : cdr1) cdr2, form] = do
-            form' <- eval form
-            return $ DottedList (form' : cdr1) cdr2
-        helper [List [], _] = throwError $ TypeMismatch "pair" (List [])
-        helper [notList, _] = throwError $ TypeMismatch "pair" notList
-        helper badArgs      = throwError $ NumArgs 2 badArgs
-
-setCdr :: Macro
-setCdr = Macro 2 $ \args -> case args of
-    (Atom _ : _) -> updateWith helper args
-    _            -> helper args
-  where helper :: [LispVal] -> EM LispVal
-        helper [List (car : _), form] = do
-            form' <- eval form
-            return $ case form' of
-                List cdr -> List (car : cdr)
-                DottedList cdr1 cdr2 -> DottedList (car : cdr1) cdr2
-                _ -> DottedList [car] form'
-        helper [DottedList (car : _) _, form] = do
-            form' <- eval form
-            return $ case form' of
-                List cdr -> List (car : cdr)
-                DottedList cdr1 cdr2 -> DottedList (car : cdr1) cdr2
-                _ -> DottedList [car] form'
-        helper [List [], _] = throwError $ TypeMismatch "pair" (List [])
-        helper [notList, _] = throwError $ TypeMismatch "pair" notList
-        helper badArgs      = throwError $ NumArgs 2 badArgs
+setCdrPrim :: Primitive
+setCdrPrim = Prim "set-cdr!" 2 $ \case
+  [Pair _c d, v] -> writeRef d v $> v
+  [badPair, _]
+    | isImmutablePair badPair -> throwError $ SetImmutable "pair"
+    | otherwise -> throwError $ TypeMismatch "pair" badPair
+  badArgs -> throwError $ NumArgs 2 badArgs

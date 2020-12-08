@@ -1,7 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
-
-{-# LANGUAGE RankNTypes #-}
 module Types
     ( Env
     , Arity
@@ -56,9 +54,18 @@ data Macro = Macro Arity Builtin
 
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
+-- | Scheme values.
+--
+-- Some Scheme values can be either mutable or immutable. These are strings,
+-- lists, and vectors. The immutable variant begins with I, where applicable.
+-- The mutable variant of both IList and IDottedList is Pair.
+--
+-- Invariant: immutable lists are finite.
 data LispVal = Atom String
-             | List [LispVal]
-             | DottedList [LispVal] LispVal
+             -- | Nil is represented by @IList []@
+             | IList [LispVal]
+             | IDottedList [LispVal] LispVal
+             | Pair (IORef LispVal) (IORef LispVal)
              | Vector (Array Integer LispVal)
              | Number Integer
              | String String
@@ -74,14 +81,14 @@ data LispVal = Atom String
                     }
              | PMacro Arity Builtin String
              | Port Handle
-               -- Undefined values are only created when they are stored
+               -- | Undefined values are only created when they are stored
                -- immediately into an environment and an error is thrown
                -- immediately when they are looked up. Therefore, they should
                -- never appear, well, anywhere, really. Used for 'define'
                -- to create a location before evaluating the value.
              | Undefined
 
--- this is not R7RS compliant... TODO?
+-- TODO: [r7rs]
 -- Defined here because it's used in `showEs` 12/6/2020.
 -- If stack changes in the future (perhaps to be properly tail-recursive)
 -- and this can be moved to LispVal.hs, do so.
@@ -89,7 +96,7 @@ data LispVal = Atom String
 truthy :: LispVal -> Bool
 truthy v = not $ v == Bool False
               || v == Number 0
-              || v == List []
+              || v == IList []
               || v == String ""
 
 instance Eq LispVal where (==) = eqVal
@@ -103,7 +110,9 @@ data LispErr = NumArgs Integer [LispVal]
              | BadSpecialForm String LispVal
              | NotFunction String LispVal
              | UnboundVar String String
-             | EvaluateDuringInit String
+             | EvaluateDuringInit String 
+             | SetImmutable String -- type name
+             | CircularList
              | Default String
              | Quit
     deriving (Eq)
@@ -133,8 +142,8 @@ eqVal (Number n) (Number n') = n == n'
 eqVal (String s) (String s') = s == s'
 eqVal (Char c) (Char c') = c == c'
 eqVal (Bool b) (Bool b') = b == b'
-eqVal (List ls) (List ls') = ls == ls'
-eqVal (DottedList ls l) (DottedList ls' l') = ls == ls' && l == l'
+eqVal (IList ls) (IList ls') = ls == ls'
+eqVal (IDottedList ls l) (IDottedList ls' l') = ls == ls' && l == l'
 eqVal (Vector v) (Vector v') = v == v'
 eqVal (Port p) (Port p') = p == p'
 eqVal (Primitive _ _ n) (Primitive _ _ n') = n == n'
@@ -162,8 +171,8 @@ showVal (Char c)   = showString "#\\" . showString (case c of
     _    -> [c])
 showVal (Bool True) = showString "#t"
 showVal (Bool False) = showString "#f"
-showVal (List ls) = showParen True $ unwordsList ls
-showVal (DottedList ls l) = showParen True $
+showVal (IList ls) = showParen True $ unwordsList ls
+showVal (IDottedList ls l) = showParen True $
     unwordsList ls . showString " . " . shows l
 showVal (Vector v) = showChar '#' . showParen True (unwordsList (elems v))
 showVal Port{} = showString "<port>"
@@ -186,16 +195,18 @@ showVal (PMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname
 showErr (EvaluateDuringInit name) = name ++ " referred to itself during initialization"
+showErr (SetImmutable tyname) = "can't set immutable " ++ tyname
 showErr (BadSpecialForm message form) = message ++ ": " ++ show form
 showErr (NotFunction message func)    = message ++ ": " ++ show func
-showErr (NumArgs expected found)      = "Expected " ++ show expected
+showErr (NumArgs expected found)      = "expected " ++ show expected
     ++ " arg" ++ (if expected == 1
         then ""
         else "s")
     ++ "; found values " ++ show found
-showErr (TypeMismatch expected found) = "Invalid type: expected " ++ expected
+showErr (TypeMismatch expected found) = "invalid type: expected " ++ expected
     ++ ", found " ++ show found
-showErr (Parser parseErr)             = "Parse error at " ++ show parseErr
+showErr CircularList                  = "circular list"
+showErr (Parser parseErr)             = "parse error at " ++ show parseErr
 showErr (Default message)             = message
 showErr Quit                          = "quit invoked"
 
@@ -215,8 +226,8 @@ unwordsList = intercalateS " " . map shows
 -- error occurs.
 -- So instead we have to force the type that evalEM is allowed to produce.
 -- Note that complexity on the right-hand side of the arrow doesn't affect
--- the amount of work performed at any point (except by the only higher-order
--- effect, emCatch) because it is merely the eventual return of a continuation.
+-- the amount of work performed at any point because it is merely the eventual
+-- return of a continuation.
 type EMCont = EvalState -> IO (Either LispErr LispVal, EvalState)
 -- | The Evaluation Monad
 newtype EM a = EM { unEM :: Cont EMCont a }

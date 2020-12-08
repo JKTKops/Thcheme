@@ -68,6 +68,7 @@ charBoolBinop name = boolBinop name unwrapChar
 -- EQUIVALENCE FUNCTIONS
 -- TODO some notion of function equivalence?
 
+-- TODO NEXT
 -- I don't think this function satisfies r7rs currently. Left as TODO
 -- because it's highly affected by shoving IORefs into LispVal.
 -- Adjust as appropriate later. EM will be required.
@@ -77,16 +78,15 @@ eqv [Number x, Number y]               = return . Bool $ x == y
 eqv [Char x, Char y]                   = return . Bool $ x == y
 eqv [String s, String t]               = return . Bool $ s == t
 eqv [Atom x, Atom y]                   = return . Bool $ x == y
-eqv [DottedList xs x, DottedList ys y] =
-                           eqv [List $ xs ++ [x], List $ ys ++ [y]]
-eqv [List xs, List ys]                 = return . Bool
+eqv [IDottedList xs x, IDottedList ys y] =
+                           eqv [IList $ xs ++ [x], IList $ ys ++ [y]]
+eqv [IList xs, IList ys]                 = return . Bool
     $ length xs == length ys && all pairEqv (zip xs ys) where
         pairEqv (x, y) = case eqv [x, y] of
             Left _err        -> False
             Right (Bool val) -> val
 eqv [_, _]                                 = return $ Bool False
 eqv badArgs                                = throwError $ NumArgs 2 badArgs
-
 
 -- TODO: instead of defining coercers, we should just import TypeTransformers
 -- and implement the standard properly.
@@ -134,9 +134,9 @@ coerceEquals x y (Coercer coercer) =
 
 -- see the comment on eqv
 equal :: [LispVal] -> ThrowsError LispVal
-equal [DottedList xs x, DottedList ys y] =
-    equal [List $ xs ++ [x], List $ ys ++ [y]]
-equal [List xs, List ys]                 =
+equal [IDottedList xs x, IDottedList ys y] =
+    equal [IList $ xs ++ [x], IList $ ys ++ [y]]
+equal [IList xs, IList ys]                 =
     return . Bool
     $ length xs == length ys && all pairEqv (zip xs ys) where
         pairEqv (x, y) = case equal [x, y] of

@@ -3,14 +3,13 @@ module Primitives.TypeCheck (primitives) where
 
 import Control.Monad.Except (throwError)
 
-import Types
+import LispVal
 
 primitives :: [Primitive]
 primitives = [ typePred name func 
              | (name, func) <-
                [ ("boolean", bool)
                , ("char", char)
-               , ("list", list)
                , ("number", number)
                , ("pair", pair)
                , ("string", string)
@@ -23,8 +22,8 @@ primitives = [ typePred name func
 
 typePred :: String -> (LispVal -> LispVal) -> Primitive
 typePred tyname func = Prim (tyname ++ "?") 1 $ \case
-    [x] -> return $ func x
-    badArgs -> throwError $ NumArgs 1 badArgs
+  [x] -> return $ func x
+  badArgs -> throwError $ NumArgs 1 badArgs
 
 symbol :: LispVal -> LispVal
 symbol (Atom _) = Bool True
@@ -46,14 +45,11 @@ bool :: LispVal -> LispVal
 bool (Bool _) = Bool True
 bool _        = Bool False
 
-list :: LispVal -> LispVal
-list (List _) = Bool True
-list _        = Bool False
-
 pair :: LispVal -> LispVal
-pair (List []) = Bool False
-pair (List _)  = Bool True
-pair (DottedList _ _) = Bool True
+pair (IList []) = Bool False
+pair (IList _)  = Bool True
+pair IDottedList{} = Bool True
+pair Pair{} = Bool True
 pair _ = Bool False
 
 vector :: LispVal -> LispVal

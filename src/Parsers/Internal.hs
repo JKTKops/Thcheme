@@ -143,13 +143,13 @@ parseListlike = do
     init <- many parseExpr
     mlast <- optionMaybe $ lexeme (char '.') >> parseExpr
     case (init, mlast) of
-        (list, Nothing) -> return $ List list
+        (list, Nothing) -> return $ IList list
 
         ([], Just e)  -> return e
-        (init, Just (List ls)) -> return . List $ init ++ ls
-        (init0, Just (DottedList init1 dot)) ->
-            return $ DottedList (init0 ++ init1) dot
-        (init, Just dot) -> return $ DottedList init dot
+        (init, Just (IList ls)) -> return . IList $ init ++ ls
+        (init0, Just (IDottedList init1 dot)) ->
+            return $ IDottedList (init0 ++ init1) dot
+        (init, Just dot) -> return $ IDottedList init dot
 
 -- these are provided strictly for back-compat with the testing code.
 -- them being separately defined leads to exponential parsing time!
@@ -167,4 +167,4 @@ parseQuoted = lexeme $ foldr1 (<|>) parsers
                     ","  -> "unquote"
                     ",@" -> "unquote-splicing"
             x <- parseExpr
-            return $ List [Atom macro, x]) ["'", "`", ",@", ","]
+            return $ IList [Atom macro, x]) ["'", "`", ",@", ","]
