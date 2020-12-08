@@ -68,7 +68,7 @@ charBoolBinop name = boolBinop name unwrapChar
 -- EQUIVALENCE FUNCTIONS
 -- TODO some notion of function equivalence?
 
--- TODO NEXT
+-- TODO [r7rs]
 -- I don't think this function satisfies r7rs currently. Left as TODO
 -- because it's highly affected by shoving IORefs into LispVal.
 -- Adjust as appropriate later. EM will be required.

@@ -288,9 +288,9 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ List [Number 1, Number 0]
         }
     , EvalTB
-        { testName = "Begin opens a new scope"
+        { testName = "Begin does not open a new scope"
         , input = "(begin (define x 0))\nx"
-        , expected = Left $ UnboundVar "[Get] unbound symbol" "x"
+        , expected = Left $ Number 0
         }
     , EvalTB
         { testName = "Begin evaluates to last"
