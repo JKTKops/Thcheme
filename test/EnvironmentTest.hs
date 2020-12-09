@@ -126,7 +126,7 @@ testBindVar = testGroup "bindVar"
         oldSize <- do
             map <- readIORef env
             return $ Map.size map
-        env <- bindVar env "list" $ List [Number 1, Number 2]
+        env <- bindVar env "list" $ IList [Number 1, Number 2]
 
         step "Check env size"
         map <- readIORef env
@@ -136,5 +136,5 @@ testBindVar = testGroup "bindVar"
         check <- runExceptT $ getVar env "list"
         isRight check @? "Failed to get list after bind"
         let Right v = check
-        v @?= List [Number 1, Number 2]
+        v @?= IList [Number 1, Number 2]
     ]

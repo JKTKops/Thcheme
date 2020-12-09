@@ -91,69 +91,69 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
     , mkE2Etest
         { testName = "Quoted atom"
         , input = "'$name"
-        , expectedContents = Just $ List [Atom "quote", Atom "$name"]
+        , expectedContents = Just $ IList [Atom "quote", Atom "$name"]
         }
     , mkE2Etest
         { testName = "Quoted char"
         , input = "'#\\*"
-        , expectedContents = Just $ List [Atom "quote", Char '*']
+        , expectedContents = Just $ IList [Atom "quote", Char '*']
         }
     , mkE2Etest
         { testName = "Immediately nested quote forms"
         , input = "`,4"
-        , expectedContents = Just $ List [Atom "quasiquote", List
-                                         [Atom "unquote", Number 4]]
+        , expectedContents = Just $ IList [Atom "quasiquote", IList
+                                          [Atom "unquote", Number 4]]
         }
     , mkE2Etest
         { testName = "Quasiquoted mess"
         , input = "`(,(foo) ,@(bar) x 1)"
         , expectedContents = Just $
-            List [Atom "quasiquote", List
-                 [ List [Atom "unquote", List [Atom "foo"]]
-                 , List [Atom "unquote-splicing", List [Atom "bar"]]
-                 , Atom "x"
-                 , Number 1
-                 ]]
+            IList [Atom "quasiquote", IList
+                  [ IList [Atom "unquote", IList [Atom "foo"]]
+                  , IList [Atom "unquote-splicing", IList [Atom "bar"]]
+                  , Atom "x"
+                  , Number 1
+                  ]]
         }
     , mkE2Etest
-        { testName = "Nested list"
+        { testName = "Nested List"
         , input = "(f \"x\" #\\5 (+ 3))"
         , expectedContents = Just $
-            List [Atom "f", String "x", Char '5', List
-                [Atom "+", Number 3]
+            IList [Atom "f", String "x", Char '5', IList
+                  [Atom "+", Number 3]
             ]
         }
     , mkE2Etest
         { testName = "List with []"
         , input = "[+ 1 2]"
         , expectedContents = Just $
-            List [Atom "+", Number 1, Number 2]
+            IList [Atom "+", Number 1, Number 2]
         }
     , mkE2Etest
         { testName = "List with {}"
         , input = "{test-func #\\a 0}"
         , expectedContents = Just $
-            List [Atom "test-func", Char 'a', Number 0]
+            IList [Atom "test-func", Char 'a', Number 0]
         }
     , mkE2Etest
-        { testName = "Regular dotted list"
+        { testName = "Regular dotted List"
         , input = "(f 5 #\\$ . (1 2 \"test\"))"
         , expectedContents = Just $
-            List [Atom "f", Number 5, Char '$'
-                 , Number 1, Number 2, String "test"]
+            IList [Atom "f", Number 5, Char '$'
+                  , Number 1, Number 2, String "test"]
         }
     , mkE2Etest
         { testName = "Dotted with nil"
         , input = "(+ 0 . ())"
-        , expectedContents = Just $ List [Atom "+", Number 0]
+        , expectedContents = Just $ IList [Atom "+", Number 0]
         }
     , mkE2Etest
-        { testName = "Irregular dotted list"
+        { testName = "Irregular dotted List"
         , input = "(f 0 . m)"
-        , expectedContents = Just $ DottedList [Atom "f", Number 0] (Atom "m")
+        , expectedContents = Just $ IDottedList [Atom "f", Number 0] (Atom "m")
         }
     , mkE2Etest
-        { testName = "Degenerate dotted list"
+        { testName = "Degenerate dotted List"
         , input = "(. xs)"
         , expectedContents = Just $ Atom "xs"
         }
@@ -172,10 +172,10 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         { testName = "Irregular spacing"
         , input = "(f 5 #\\$(1 2 #h45) #b10(test))"
         , expectedContents = Just $
-            List
-                [Atom "f", Number 5, Char '$', List
+            IList
+                [Atom "f", Number 5, Char '$', IList
                     [Number 1, Number 2, Number 69]
-                , Number 2, List
+                , Number 2, IList
                     [Atom "test"]
                 ]
         }
@@ -482,7 +482,7 @@ listParserTests = testGroup "Parsing Lists"
         let p = parse parseList "" "5 #a #\\a"
         isRight p @? "Parse failed."
         let val = fromList $ fromRight undefined p
-        isJust val @? "Parse did not return a List."
+        isJust val @? "Parse did not return a list."
         let correct = case fromJust val of
                 [Number 5, Atom "#a", Char 'a'] -> True
                 _ -> False
@@ -494,7 +494,7 @@ dotListParserTests = testGroup "Parsing Dotted Lists"
         let p = parse parseDottedList "" "5 #a . #\\a"
         isRight p @? "Parse failed."
         let val = case fromRight undefined p of
-                DottedList ls l -> Just (ls, l)
+                IDottedList ls l -> Just (ls, l)
                 _ -> Nothing
         isJust val @? "Parse did not return a Dotted List."
         let correct = case fromJust val of
@@ -507,7 +507,7 @@ vectorParserTests = testGroup "Parsing vectors"
     [ testCase "\"#(1 #\\x ())\"" $ do
         let p = run parseVector "#(1 #\\x ())"
         val <- verify p
-        fromJust val @?= listArray (0, 2) [Number 1, Char 'x', List []]
+        fromJust val @?= listArray (0, 2) [Number 1, Char 'x', IList []]
     , testCase "\"#()\"" $ do
         let p = run parseVector "#()"
         val <- verify p
@@ -531,21 +531,21 @@ prop_QuoteParser = testProperty "tick always results in quote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" ('\'' : show (input :: LispVal))
         in isRight result ==> case result of
-            Right (List (Atom "quote" : _)) -> True
+            Right (IList (Atom "quote" : _)) -> True
             _ -> False
 
 prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" ('`' : show (input :: LispVal))
         in isRight result ==> case result of
-            Right (List (Atom "quasiquote" : _)) -> True
+            Right (IList (Atom "quasiquote" : _)) -> True
             _ -> False
 
 prop_UnquoteParser = testProperty "comma always results in unquote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" (',' : clean (show (input :: LispVal)))
         in isRight result ==> case result of
-            Right (List (Atom "unquote" : _)) -> True
+            Right (IList (Atom "unquote" : _)) -> True
             _ -> False
   -- if we don't do this, a LispString/Atom that starts with '@' will turn it into
   -- an unquote splicing, which happened in a test at least once.
@@ -555,7 +555,7 @@ prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-spli
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" (",@" ++ show (input :: LispVal))
         in isRight result ==> case result of
-            Right (List (Atom "unquote-splicing" : _)) -> True
+            Right (IList (Atom "unquote-splicing" : _)) -> True
             _ -> False
 
 -- HELPER
@@ -646,5 +646,5 @@ fromChar (Char c) = Just c
 fromChar _        = Nothing
 
 fromList :: LispVal -> Maybe [LispVal]
-fromList (List ls) = Just ls
-fromList _            = Nothing
+fromList (IList ls) = Just ls
+fromList _          = Nothing

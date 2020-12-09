@@ -21,8 +21,8 @@ main = do
 runOne :: [String] -> IO ()
 runOne (filename : args) = do
     primEnv <- primitiveBindings
-    env' <- bindVar primEnv "args" $ List . map String $ args
-    result <- evaluateExpr env' Map.empty (List [Atom "load", String filename])
+    env' <- bindVar primEnv "args" $ IList . map String $ args
+    result <- evaluateExpr env' Map.empty (IList [Atom "load", String filename])
     case result of
         (Left err, s) -> print err >> print s
         _             -> return ()

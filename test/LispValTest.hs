@@ -22,8 +22,8 @@ import Primitives
 
 instance Monad m => Serial m LispVal where
     series = cons1 Atom
-                \/ cons1 List
-                \/ cons2 DottedList
+                \/ cons1 IList
+                \/ cons2 IDottedList
                 \/ cons1 Number
                 \/ cons1 String
                 \/ cons1 Char
@@ -52,9 +52,9 @@ instance Arbitrary LispVal where
       where lispval' 0 = oneof simpleCons
             lispval' n = oneof $ simpleCons ++
                             [ do num <- choose (0, n)
-                                 List <$> vectorOf num subval
+                                 IList <$> vectorOf num subval
                             , do num <- choose (0, n)
-                                 liftM2 DottedList (vectorOf num subval) subval
+                                 liftM2 IDottedList (vectorOf num subval) subval
                             ]
               where subval = lispval' $ n `div` 2
             simpleCons = [ Atom <$> arbitrary
@@ -153,8 +153,8 @@ prop_ShowVal = QC.testProperty "Showing a LispVal produces correct string" $
             String _      -> testShowString input
             Char _        -> testShowChar input
             Bool _        -> testShowBool input
-            List _        -> testShowList input
-            DottedList {} -> testShowDottedList input
+            IList _        -> testShowList input
+            IDottedList {} -> testShowDottedList input
             Vector _      -> testShowVector input
             _             -> True
   where testShowAtom atomVal = show atomVal == let Atom s = atomVal in s
@@ -170,9 +170,9 @@ prop_ShowVal = QC.testProperty "Showing a LispVal produces correct string" $
             if b
             then "#t"
             else "#f"
-        testShowList listVal = show listVal == let List ls = listVal in
+        testShowList listVal = show listVal == let IList ls = listVal in
             "(" ++ unwords (map show ls) ++ ")"
-        testShowDottedList dListVal = show dListVal == let DottedList ls l = dListVal in
+        testShowDottedList dListVal = show dListVal == let IDottedList ls l = dListVal in
             "(" ++ unwords (map show ls) ++ " . " ++ show l ++ ")"
         testShowVector vecVal = show vecVal == let Vector arr = vecVal in
             "#(" ++ unwords (map show $ elems arr) ++ ")"
