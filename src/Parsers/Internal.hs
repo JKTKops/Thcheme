@@ -57,7 +57,6 @@ float = Tok.float lexer
 lexeme :: Parser a -> Parser a
 lexeme = Tok.lexeme lexer
 
--- the absurd number of parens is because someone thought <?> should be infix 0
 parseExpr :: Parser Val
 parseExpr = lexeme $
              (try parseNumber <?> "number")
@@ -117,7 +116,7 @@ parseNumber = lexeme $ do
 
 parseChar :: Parser Val
 parseChar = lexeme $ do
-    prefix <- string "#\\"
+    _prefix <- string "#\\"
     char   <- do try $ string "space"
                  return ' '
               <|> (do try $ string "newline"
