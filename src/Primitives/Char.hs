@@ -5,7 +5,7 @@ import Control.Monad.Except (throwError)
 import qualified Data.Char as C
     (toLower, toUpper, isAlpha, isNumber, isSpace, isUpper, isLower)
 
-import LispVal
+import Val
 
 primitives :: [Primitive]
 primitives = [ makeCharPrim name Bool f 
@@ -24,7 +24,7 @@ primitives = [ makeCharPrim name Bool f
                 ]
               ]
 
-makeCharPrim :: String -> (a -> LispVal) -> (Char -> a) -> Primitive
+makeCharPrim :: String -> (a -> Val) -> (Char -> a) -> Primitive
 makeCharPrim name constr func = Prim name 1 $ \case
     [Char c] -> return . constr $ func c
     [badArg] -> throwError $ TypeMismatch "char" badArg

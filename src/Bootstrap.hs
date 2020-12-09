@@ -32,5 +32,5 @@ primitiveBindings = do
 -- and do away with this embed file. It puts a _haskell string literal_
 -- containing the entire contents of the file into the executable!
 
-stdlib :: ThrowsError [LispVal]
+stdlib :: ThrowsError [Val]
 stdlib = labeledReadExprList "stdlib" $(embedStringFile "src/stdlib.thm")

@@ -58,7 +58,7 @@ lexeme :: Parser a -> Parser a
 lexeme = Tok.lexeme lexer
 
 -- the absurd number of parens is because someone thought <?> should be infix 0
-parseExpr :: Parser LispVal
+parseExpr :: Parser Val
 parseExpr = lexeme $
              (try parseNumber <?> "number")
              -- atom names can start with #\ too so we need an @try@
@@ -78,10 +78,10 @@ spaces = skipMany1 space
 delim :: Parser ()
 delim = notFollowedBy $ alphaNum <|> symbol
 
-parseString :: Parser LispVal
+parseString :: Parser Val
 parseString = String <$> stringLiteral
 
-parseAtom :: Parser LispVal
+parseAtom :: Parser Val
 parseAtom = do
     atom <- identifier
     return $ case atom of
@@ -89,7 +89,7 @@ parseAtom = do
         "#f" -> Bool False
         _    -> Atom atom
 
-parseNumber :: Parser LispVal
+parseNumber :: Parser Val
 parseNumber = lexeme $ do
     sign <- optionMaybe $ char '-' <|> char '+'
     prefix <- parseRadixPrefix <|> return "#d"
@@ -115,7 +115,7 @@ parseNumber = lexeme $ do
             let n = foldl (\x d -> base * x + toInteger (digitToInt d)) 0 digits
             seq n (return n)
 
-parseChar :: Parser LispVal
+parseChar :: Parser Val
 parseChar = lexeme $ do
     prefix <- string "#\\"
     char   <- do try $ string "space"
@@ -132,13 +132,13 @@ parseChar = lexeme $ do
               <?> "char literal"
     return $ Char char
 
-parseVector :: Parser LispVal
+parseVector :: Parser Val
 parseVector = lexeme $ do
     char '#'
     exprs <- parens $ many parseExpr
     return . Vector . listArray (0, fromIntegral $ length exprs - 1) $ exprs
 
-parseListlike :: Parser LispVal
+parseListlike :: Parser Val
 parseListlike = do
     init <- many parseExpr
     mlast <- optionMaybe $ lexeme (char '.') >> parseExpr
@@ -153,11 +153,11 @@ parseListlike = do
 
 -- these are provided strictly for back-compat with the testing code.
 -- them being separately defined leads to exponential parsing time!
-parseList, parseDottedList :: Parser LispVal
+parseList, parseDottedList :: Parser Val
 parseList = parseListlike
 parseDottedList = parseListlike
 
-parseQuoted :: Parser LispVal
+parseQuoted :: Parser Val
 parseQuoted = lexeme $ foldr1 (<|>) parsers
   where parsers = map (\sym -> do
             try $ string sym

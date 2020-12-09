@@ -4,7 +4,7 @@ import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import           Control.Monad.Except (liftEither)
 
-import           LispVal                     as Val
+import qualified Val
 import qualified Primitives.Bool             as BoolOps
 import qualified Primitives.Char             as CharOps
 import qualified Primitives.Comparison       as Comparison
@@ -20,7 +20,7 @@ import qualified Primitives.IOPrimitives     as IO
 -- temporary
 import Types
 
-primitives :: HashMap String LispVal
+primitives :: HashMap String Val
 primitives = foldr1 Map.union
                 [ primitivesMap
                 , Map.mapWithKey makeRPrimitive rawPrimitives
@@ -54,12 +54,12 @@ macros = Map.fromList $ String.macros ++
                         Vector.macros ++
                         Misc.macros
 
-makePrimitive :: String -> Arity -> Builtin -> LispVal
+makePrimitive :: String -> Arity -> Builtin -> Val
 makePrimitive name arity f = Primitive arity f name
 
-makeRPrimitive :: String -> RawPrimitive -> LispVal
+makeRPrimitive :: String -> RawPrimitive -> Val
 makeRPrimitive name (RPrim arity func) =
     Primitives.makePrimitive name arity (liftEither . func)
 
-makeMacroPrimitive :: String -> Macro -> LispVal
-makeMacroPrimitive name (Macro arity func) = PMacro arity func name
+makeMacroPrimitive :: String -> Macro -> Val
+makeMacroPrimitive name (Macro arity func) = PrimMacro arity func name

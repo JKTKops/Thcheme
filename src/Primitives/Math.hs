@@ -3,7 +3,7 @@ module Primitives.Math (primitives) where
 
 import Control.Monad (mapM)
 
-import LispVal
+import Val
 import EvaluationMonad (throwError)
 import Primitives.Unwrappers (unwrapNum)
 import Primitives.Bool (predicate)

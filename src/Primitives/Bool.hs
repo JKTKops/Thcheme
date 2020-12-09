@@ -3,7 +3,7 @@ module Primitives.Bool (primitives, predicate, boolBinop) where
 
 import Control.Monad.Except (throwError)
 
-import LispVal
+import Val
 import EvaluationMonad (EM)
 import Primitives.Unwrappers (unwrapBool)
 
@@ -13,11 +13,11 @@ primitives = [ boolNot
              , boolOr
              ]
 
--- | Evaluate a predicate on a 'LispVal'. It turns out to be convenient
+-- | Evaluate a predicate on a 'Val'. It turns out to be convenient
 -- (at least, currently, 12/6/2020) in Math to separate an impure projection
--- from the 'LispVal' and a pure predicate on the projected value.
+-- from the 'Val' and a pure predicate on the projected value.
 predicate :: String            -- ^ name of resulting 'Primitive'
-          -> (LispVal -> EM a) -- ^ impure projection
+          -> (Val -> EM a) -- ^ impure projection
           -> (a -> Bool)       -- ^ pure predicate
           -> Primitive
 predicate name unwrapper p = Prim name 1 $ \case
@@ -27,9 +27,9 @@ predicate name unwrapper p = Prim name 1 $ \case
 boolNot :: Primitive
 boolNot = predicate "not" unwrapBool not
 
--- | Evaluate a binary boolean function on two 'LispVal's. See 'predicate'.
+-- | Evaluate a binary boolean function on two 'Val's. See 'predicate'.
 boolBinop :: String            -- ^ name of resulting 'Primitive'
-          -> (LispVal -> EM a) -- ^ impure projection
+          -> (Val -> EM a) -- ^ impure projection
           -> (a -> a -> Bool)  -- ^ pure binary boolean operation
           -> Primitive
 boolBinop name unwrapper op = Prim name 2 $ \case

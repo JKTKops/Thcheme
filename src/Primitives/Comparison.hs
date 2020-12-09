@@ -5,7 +5,7 @@ import Control.Monad.Except (throwError, catchError)
 import Data.Char (ord, chr, toLower)
 
 import Types -- when the equivalence functions are updated to work properly,
-             -- only import LispVal!
+             -- only import Val!
 import Primitives.Bool (boolBinop)
 import Primitives.Unwrappers
 
@@ -53,7 +53,7 @@ primBuilders = [ PrimBuilder makeNumPrim
         makeStrPrim = makePrim "string" False strBoolBinop
         makeCharPrim = makePrim "char" False charBoolBinop
 
--- boolBinop :: String -> (LispVal -> EM a) -> (a -> a -> Bool) -> Primitive
+-- boolBinop :: String -> (Val -> EM a) -> (a -> a -> Bool) -> Primitive
 
 -- TODO: none of these satisfy r7rs, which says the predicate should be
 -- satisfied pairwise along a whole list of elements; we should not use
@@ -70,9 +70,9 @@ charBoolBinop name = boolBinop name unwrapChar
 
 -- TODO [r7rs]
 -- I don't think this function satisfies r7rs currently. Left as TODO
--- because it's highly affected by shoving IORefs into LispVal.
+-- because it's highly affected by shoving IORefs into Val.
 -- Adjust as appropriate later. EM will be required.
-eqv :: [LispVal] -> ThrowsError LispVal
+eqv :: [Val] -> ThrowsError Val
 eqv [Bool x, Bool y]                   = return . Bool $ x == y
 eqv [Number x, Number y]               = return . Bool $ x == y
 eqv [Char x, Char y]                   = return . Bool $ x == y
@@ -94,7 +94,7 @@ eqv badArgs                                = throwError $ NumArgs 2 badArgs
 -- Once we have char-foldcase and string-foldcase we should just call those
 -- similar to how we'd call a type transformer.
 
-coerceNum :: LispVal -> ThrowsError Integer
+coerceNum :: Val -> ThrowsError Integer
 coerceNum (Number n) = return n
 coerceNum (String s) = let parsed = reads s in
     if null parsed
@@ -103,14 +103,14 @@ coerceNum (String s) = let parsed = reads s in
 coerceNum (Char c)   = return . fromIntegral $ ord c
 coerceNum notNum     = throwError $ TypeMismatch "number" notNum
 
-coerceStr :: LispVal -> ThrowsError String
+coerceStr :: Val -> ThrowsError String
 coerceStr (String s) = return s
 coerceStr (Number n) = return $ show n
 coerceStr (Char c)   = return $ pure c
 coerceStr (Bool b)   = return $ let s = show b in toLower (head s) : tail s
 coerceStr notStr     = throwError $ TypeMismatch "string" notStr
 
-coerceChar :: LispVal -> ThrowsError Char
+coerceChar :: Val -> ThrowsError Char
 coerceChar (Char c)   = return c
 coerceChar (String s) =
     if length s == 1
@@ -119,13 +119,13 @@ coerceChar (String s) =
 coerceChar (Number n) = return . chr $ fromIntegral n
 coerceChar notChar    = throwError $ TypeMismatch "char" notChar
 
-coerceBool :: LispVal -> ThrowsError Bool
+coerceBool :: Val -> ThrowsError Bool
 coerceBool (Bool b) = return b
 coerceBool notBool  = throwError $ TypeMismatch "boolean" notBool
 
-data Coercer = forall a. Eq a => Coercer (LispVal -> ThrowsError a)
+data Coercer = forall a. Eq a => Coercer (Val -> ThrowsError a)
 
-coerceEquals :: LispVal -> LispVal -> Coercer -> ThrowsError Bool
+coerceEquals :: Val -> Val -> Coercer -> ThrowsError Bool
 coerceEquals x y (Coercer coercer) =
     do coercedx <- coercer x
        coercedy <- coercer y
@@ -133,7 +133,7 @@ coerceEquals x y (Coercer coercer) =
     `catchError` const (return False)
 
 -- see the comment on eqv
-equal :: [LispVal] -> ThrowsError LispVal
+equal :: [Val] -> ThrowsError Val
 equal [IDottedList xs x, IDottedList ys y] =
     equal [IList $ xs ++ [x], IList $ ys ++ [y]]
 equal [IList xs, IList ys]                 =

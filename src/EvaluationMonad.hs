@@ -41,7 +41,7 @@ import Types
 import qualified Environment as Env
 
 -- | Push an expr to the call stack
-pushExpr :: StepReason -> LispVal -> EM ()
+pushExpr :: StepReason -> Val -> EM ()
 pushExpr r val = do
     s <- get
     put $ s { stack = (r, val) : stack s }
@@ -85,7 +85,7 @@ envSnapshot = do
   where
     flatten = fmap mconcat . mapM readIORef
 
-modifyStackTop :: ((StepReason, LispVal) -> (StepReason, LispVal)) -> EM ()
+modifyStackTop :: ((StepReason, Val) -> (StepReason, Val)) -> EM ()
 modifyStackTop f = modify $ \s ->
     let top : tail = stack s in
     s { stack = f top : tail }
@@ -94,7 +94,7 @@ modifyTopReason :: (StepReason -> StepReason) -> EM ()
 modifyTopReason f = modifyStackTop (\(r, v) -> (f r, v))
 
 -- | Searches the environment stack top-down for a symbol
-getVar :: String -> EM LispVal
+getVar :: String -> EM Val
 getVar var = do
     stack <- symEnv <$> get
     l <- liftIO $ rights <$> mapM (\env -> runExceptT $ Env.getVar env var) stack
@@ -104,9 +104,9 @@ getVar var = do
         v:_ -> return v
 
 -- | Search the environment top-down for a symbol
---   If it's found, bind it to the given LispVal
+--   If it's found, bind it to the given Val
 --   Otherwise, create a new binding in the top-level
-setVar :: String -> LispVal -> EM LispVal
+setVar :: String -> Val -> EM Val
 setVar var val = do
     mEnv <- search var
     case mEnv of
@@ -116,7 +116,7 @@ setVar var val = do
             return v
 
 -- Assumes the first element of args is an Atom; finds it and updates it with given func
-updateWith :: ([LispVal] -> EM LispVal) -> [LispVal] -> EM LispVal
+updateWith :: ([Val] -> EM Val) -> [Val] -> EM Val
 updateWith updater (Atom var : rest) = do
     envRef <- search var
     when (isNothing envRef) $ throwError $ UnboundVar "[Set] unbound symbol" var
@@ -145,7 +145,7 @@ setVarForCapture :: String -> EM ()
 setVarForCapture name = void $
   defineVar name Undefined
 
-defineVar :: String -> LispVal -> EM LispVal
+defineVar :: String -> Val -> EM Val
 defineVar var val = do
     env <- head . symEnv <$> get
     liftIOThrows $ Env.defineVar env var val

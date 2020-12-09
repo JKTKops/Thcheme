@@ -6,7 +6,7 @@ module Primitives.Misc (primitives, macros) where
 import qualified Data.HashMap.Lazy as Map
 
 import Parsers (load)
-import LispVal
+import Val
 import Evaluation
 import EvaluationMonad
 import Control.Monad.Reader -- for qq
@@ -43,15 +43,15 @@ identityFunction = Prim "id" 1 $ \case
 callWithCurrentContinuation :: Primitive
 callWithCurrentContinuation = Prim "call-with-current-continuation" 1 callcc
   where
-    callcc :: [LispVal] -> EM LispVal
+    callcc :: [Val] -> EM Val
     callcc [func] = callCC $ \k -> do
         cont <- reifyCont k
-        -- k :: LispVal -> EM b
-        -- need to produce EM LispVal
+        -- k :: Val -> EM b
+        -- need to produce EM Val
         apply func [cont]
     callcc badArgs = throwError $ NumArgs 1 badArgs
 
-    reifyCont :: (LispVal -> EM LispVal) -> EM LispVal
+    reifyCont :: (Val -> EM Val) -> EM Val
     reifyCont k = do s <- get
                      return $ Continuation s k
 
@@ -94,7 +94,7 @@ defineBuiltin (x:xs) = do
   defnHead <- freezeList x
   defineBuiltinFrozen defnHead xs
 
-defineBuiltinFrozen :: LispVal -> [LispVal] -> EM LispVal
+defineBuiltinFrozen :: Val -> [Val] -> EM Val
 defineBuiltinFrozen (Atom var) [form] = do -- todo: NumArgs (Exact 2) when app.
   setVarForCapture var
   val <- eval form
@@ -127,7 +127,7 @@ define, lambda :: Macro
 define = Macro 1 defineBuiltin
 lambda = Macro 1 mkLambda
 
-mkLambda :: [LispVal] -> EM LispVal
+mkLambda :: [Val] -> EM Val
 -- arity is AtLeast 1 so can't be called with no args
 mkLambda (formals : body) = do 
   frozenFormals <- freezeList formals
@@ -147,18 +147,18 @@ emptyBodyError :: LispErr
 emptyBodyError = Default "Attempt to define function with no body"
 
 makeFunc :: Maybe String
-         -> [LispVal]
-         -> [LispVal]
+         -> [Val]
+         -> [Val]
          -> Maybe String
-         -> EM LispVal
+         -> EM Val
 makeFunc varargs params body name = do
     maybe (pure ()) setVarForCapture name
     env <- envSnapshot
     return $ Func (map show params) varargs body env name
 
-makeFuncNormal :: [LispVal] -> [LispVal] -> Maybe String -> EM LispVal
+makeFuncNormal :: [Val] -> [Val] -> Maybe String -> EM Val
 makeFuncNormal = makeFunc Nothing
-makeFuncVarargs :: LispVal -> [LispVal] -> [LispVal] -> Maybe String -> EM LispVal
+makeFuncVarargs :: Val -> [Val] -> [Val] -> Maybe String -> EM Val
 makeFuncVarargs = makeFunc . Just . show
 
 defmacro :: Macro
@@ -206,7 +206,7 @@ quasiquote = Macro 1 $ \case
     [form]  -> runReaderT (qq form) 0
     badArgs -> throwError $ NumArgs 1 badArgs
 
-  where qq :: LispVal -> ReaderT Int EM LispVal
+  where qq :: Val -> ReaderT Int EM Val
         qq term = lift (freezeList term) >>= \case
           IList [Atom "quasiquote", form] -> local (+ 1) $ do
             inner <- qq form
@@ -232,7 +232,7 @@ quasiquote = Macro 1 $ \case
             fmap canonicalizeList $ IDottedList <$> qqTerms forms <*> qq form
           form -> return form
 
-        qqTerms :: [LispVal] -> ReaderT Int EM [LispVal]
+        qqTerms :: [Val] -> ReaderT Int EM [Val]
         qqTerms [] = return []
         qqTerms (t:ts) = do
           lift $ pushExpr Expand t

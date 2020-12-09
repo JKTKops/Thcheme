@@ -5,7 +5,7 @@ import Control.Monad (replicateM)
 import Data.Foldable (foldrM)
 import Data.Functor (($>))
 
-import LispVal
+import Val
 import EvaluationMonad
 
 primitives :: [Primitive]
@@ -33,7 +33,7 @@ consPrim = Prim "cons" 2 $ \case
 carBuiltin :: Builtin
 carBuiltin [IList (x:_)]         = return x
 carBuiltin [IDottedList (x:_) _] = return x
-carBuiltin [Pair c _d]            = readRef c
+carBuiltin [PairPtr pair]        = derefCar pair
 carBuiltin [badArg] = throwError $ TypeMismatch "pair" badArg
 carBuiltin badArgs  = throwError $ NumArgs 1 badArgs
 
@@ -41,7 +41,7 @@ cdrBuiltin :: Builtin
 cdrBuiltin [IList (_:xs)]         = return $ IList xs
 cdrBuiltin [IDottedList [_] x]    = return x
 cdrBuiltin [IDottedList (_:xs) x] = return $ IDottedList xs x
-cdrBuiltin [Pair _c d]            = readRef d
+cdrBuiltin [PairPtr pair]         = derefCdr pair
 cdrBuiltin [badArg] = throwError $ TypeMismatch "pair" badArg
 cdrBuiltin badArgs  = throwError $ NumArgs 1 badArgs
 
@@ -69,7 +69,7 @@ appendPrim = Prim "append" 1 aux
         (lists, last) <- walk xs
         foldrM cons last $ concat lists
     
-    walk :: [LispVal] -> EM ([[LispVal]], LispVal)
+    walk :: [Val] -> EM ([[Val]], Val)
     walk [x] = return ([], x)
     walk (x:xs) = do
         requireList x
@@ -85,7 +85,7 @@ nullPrim = Prim "null?" 1 $ \case
 
 setCarPrim :: Primitive
 setCarPrim = Prim "set-car!" 2 $ \case
-  [Pair c _d, v] -> writeRef c v $> v
+  [PairPtr pair, v] -> setCarRef pair v $> v
   [badPair, _]
     | isImmutablePair badPair -> throwError $ SetImmutable "pair"
     | otherwise -> throwError $ TypeMismatch "pair" badPair
@@ -93,7 +93,7 @@ setCarPrim = Prim "set-car!" 2 $ \case
 
 setCdrPrim :: Primitive
 setCdrPrim = Prim "set-cdr!" 2 $ \case
-  [Pair _c d, v] -> writeRef d v $> v
+  [PairPtr pair, v] -> setCdrRef pair v $> v
   [badPair, _]
     | isImmutablePair badPair -> throwError $ SetImmutable "pair"
     | otherwise -> throwError $ TypeMismatch "pair" badPair

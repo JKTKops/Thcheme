@@ -20,43 +20,43 @@ import Control.Monad.Cont (runCont, callCC)
 import qualified Data.HashMap.Strict as Map
 
 import Parsers
-import LispVal
+import Val
 import EvaluationMonad
 import qualified Environment as Env
 
-eval :: LispVal -> EM LispVal
+eval :: Val -> EM Val
 eval v = do
     pushExpr Call v
     res <- evalExpr v
     popExpr
     return res
 
-evalExpr :: LispVal -> EM LispVal
+evalExpr :: Val -> EM Val
 evalExpr expr = case expr of
-    val@(String _) -> return val
-    val@(Char _)   -> return val
-    val@(Number _) -> return val
-    val@(Bool _)   -> return val
-    val@(Vector _) -> return val
-    (Atom id)      -> getVar id
-    Nil            -> return Nil
+    val@String{} -> return val
+    val@Char{}   -> return val
+    val@Number{} -> return val
+    val@Bool{}   -> return val
+    val@Vector{} -> return val
+    (Atom id)    -> getVar id
+    Nil          -> return Nil
     IList (function : args) -> handleNonPrim function args
-    p@Pair{} -> freezeList p >>= evalExpr
+    p@PairPtr{}  -> freezeList p >>= evalExpr
     badForm -> throwError $ BadSpecialForm "Unrecognized special form" badForm
 
-handleNonPrim :: LispVal -> [LispVal] -> EM LispVal
+handleNonPrim :: Val -> [Val] -> EM Val
 handleNonPrim function args = do
     func <- case function of
         Primitive{}    -> return function
         Continuation{} -> return function
         Func{}         -> return function
-        PMacro{}       -> return function
+        PrimMacro{}    -> return function
         _              -> eval function
     case func of
-        Primitive {}   -> evalCall func
+        Primitive{}    -> evalCall func
         Continuation{} -> evalCall func
-        Func {}        -> evalCall func
-        PMacro {}      -> evalPMacro func
+        Func{}         -> evalCall func
+        PrimMacro{}    -> evalPMacro func
         -- TODO: this doesn't play well with the introduction of mutable
         -- lists, so it really is time to make a proper distinction between
         -- functions and low-level macros.
@@ -80,18 +80,18 @@ handleNonPrim function args = do
             expansion <- apply macro args
             eval expansion
 
-        isReduced :: LispVal -> LispVal -> Bool
+        isReduced :: Val -> Val -> Bool
         isReduced _ (Atom _) = False
         isReduced new old    = new /= old
 
-apply :: LispVal -> [LispVal] -> EM LispVal
+apply :: Val -> [Val] -> EM Val
 
 -- Applications of primitive functions
 apply (Primitive arity func _) args
    | num args >= arity = func args
    | otherwise         = throwError $ NumArgs arity args
 
-apply (PMacro arity func _) args
+apply (PrimMacro arity func _) args
    | num args >= arity = func args
    | otherwise         = throwError $ NumArgs arity args
 
@@ -139,24 +139,23 @@ apply notFunc _ = throwError $ NotFunction "Not a function" notFunc
 num :: [a] -> Integer
 num = toInteger . length
 
-showResult :: (Either LispErr LispVal, EvalState) -> String
+showResult :: (Either LispErr Val, EvalState) -> String
 showResult res = case res of
     (Left e@(Parser _), _) -> show e ++ "\n"
     (Left err, s) -> show err ++ "\n" ++ show s
     (Right v, _)  -> show v
 
-evalEM :: Env -> Opts -> EM LispVal -> IO (Either LispErr LispVal, EvalState)
+evalEM :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
 evalEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
                                 ES [] [initEnv] opts
 
-evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr LispVal, EvalState)
-evaluate label initEnv opts input = evalEM initEnv opts $ do
-        v <- liftEither $ labeledReadExpr label input
-        eval v
+evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
+evaluate label initEnv opts input = evalEM initEnv opts $
+  labeledReadExpr label input >>= eval
 
-evaluateExpr :: Env -> Opts -> LispVal -> IO (Either LispErr LispVal, EvalState)
+evaluateExpr :: Env -> Opts -> Val -> IO (Either LispErr Val, EvalState)
 evaluateExpr env opts v = evalEM env opts $ eval v
 
 -- | Provided for backwards compatibility.
-runTest :: Env -> Opts -> EM LispVal -> IO (Either LispErr LispVal, EvalState)
+runTest :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
 runTest = evalEM

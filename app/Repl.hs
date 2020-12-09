@@ -14,7 +14,8 @@ import qualified Data.HashMap.Strict as Map
 
 import qualified System.Console.Haskeline as CLI
 
-import Types
+import Val
+import EvaluationMonad (EvalState (..), Env, Opts)
 import Parsers
 import Evaluation
 import Bootstrap
@@ -66,7 +67,7 @@ getInput = runMaybeT $ go id 0
               0 -> ">>> "
               _ -> "... "
 
-replEval :: Maybe String -> Repl (Either LispErr LispVal, EvalState)
+replEval :: Maybe String -> Repl (Either LispErr Val, EvalState)
 replEval Nothing = pure (Left Quit, error "state forced after CTRL-D, report a bug")
 replEval (Just inp) = Repl $
     CLI.handleInterrupt (pure interrupted) $ 
@@ -77,7 +78,7 @@ replEval (Just inp) = Repl $
                   , error "state forced after interrupt, report a bug"
                   )
 
-evaluateTotalInput :: String -> Repl (Either LispErr LispVal, EvalState)
+evaluateTotalInput :: String -> Repl (Either LispErr Val, EvalState)
 evaluateTotalInput input = do
     replState <- get
     let cEnv = env replState

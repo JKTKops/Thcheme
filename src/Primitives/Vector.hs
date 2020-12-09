@@ -50,7 +50,7 @@ vectorSet :: Macro
 vectorSet = Macro 3 $ \case
     args@(Atom _ : _) -> updateWith helper args
     args -> helper args
-  where helper :: [LispVal] -> EM LispVal
+  where helper :: [Val] -> EM Val
         helper args = do
             let head : tail = args
             argVals <- mapM eval tail

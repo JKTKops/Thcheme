@@ -21,7 +21,7 @@ macros = [ ("string-set!", primStringSet)
 
 primString :: RawPrimitive
 primString = RPrim 0 $ fmap String . go
-  where go :: [LispVal] -> ThrowsError String
+  where go :: [Val] -> ThrowsError String
         go []              = return []
         go (Char c : rest) = (c:) <$> go rest
         go (notChar:_)     = throwError $ TypeMismatch "char" notChar
@@ -39,7 +39,7 @@ primStringSet :: Macro
 primStringSet = Macro 3 $ \case
     args@(Atom _ : _) -> updateWith helper args
     args              -> helper args
-  where helper :: [LispVal] -> EM LispVal
+  where helper :: [Val] -> EM Val
         helper args = do
             let (head : tail) = args
             argVals <- mapM eval tail

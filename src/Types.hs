@@ -10,7 +10,8 @@ module Types
     , IOPrimitive (..)
     , Primitive (..)
     , Macro (..)
-    , LispVal (..)
+    , Val (..), PairObj (..)
+    , Ref
     , truthy
     , LispErr (..)
     , ThrowsError
@@ -40,15 +41,16 @@ import Control.Monad.Fail
 import Control.Monad.State.Lazy
 import System.IO (Handle)
 
-type Env = IORef (HashMap String (IORef LispVal))
+type Env = IORef (HashMap String (IORef Val))
+type Ref = IORef
 
 -- * Function types and components
 type Arity = Integer
-type RBuiltin = [LispVal] -> ThrowsError LispVal
+type RBuiltin = [Val] -> ThrowsError Val
 data RawPrimitive = RPrim Arity RBuiltin
-type IBuiltin = [LispVal] -> IOThrowsError LispVal
+type IBuiltin = [Val] -> IOThrowsError Val
 data IOPrimitive = IPrim Arity IBuiltin
-type Builtin = [LispVal] -> EM LispVal
+type Builtin = [Val] -> EM Val
 data Primitive = Prim String Arity Builtin
 data Macro = Macro Arity Builtin
 
@@ -61,54 +63,49 @@ data Macro = Macro Arity Builtin
 -- The mutable variant of both IList and IDottedList is Pair.
 --
 -- Invariant: immutable lists are finite.
-data LispVal = Atom String
-             -- | Nil is represented by @IList []@
-             | IList [LispVal]
-             | IDottedList [LispVal] LispVal
-             | Pair (IORef LispVal) (IORef LispVal)
-             | Vector (Array Integer LispVal)
-             | Number Integer
-             | String String
-             | Char Char
-             | Bool Bool
-             | Primitive Arity Builtin String
-             | Continuation EvalState (LispVal -> EM LispVal)
-             | Func { params  :: [String]
-                    , vararg  :: Maybe String
-                    , body    :: [LispVal]
-                    , closure :: Env
-                    , name    :: Maybe String
-                    }
-             | PMacro Arity Builtin String
-             | Port Handle
-               -- | Undefined values are only created when they are stored
-               -- immediately into an environment and an error is thrown
-               -- immediately when they are looked up. Therefore, they should
-               -- never appear, well, anywhere, really. Used for 'define'
-               -- to create a location before evaluating the value.
-             | Undefined
+data Val
+  = Atom String
+  | IList [Val]
+  | IDottedList [Val] Val
+  | Vector (Array Integer Val)
+  | Number Integer
+  | String String
+  | Char Char
+  | Bool Bool
+  | Primitive Arity Builtin String
+  | PrimMacro Arity Builtin String
+  | Continuation EvalState (Val -> EM Val)
+  | Func { params  :: [String]
+         , vararg  :: Maybe String
+         , body    :: [Val]
+         , closure :: Env
+         , name    :: Maybe String
+         }
+  | Port Handle
+  | Undefined
+  | PairPtr (IORef PairObj)
+
+data PairObj = PairObj !(IORef Val) !(IORef Val)
 
 -- TODO: [r7rs]
 -- Defined here because it's used in `showEs` 12/6/2020.
 -- If stack changes in the future (perhaps to be properly tail-recursive)
--- and this can be moved to LispVal.hs, do so.
--- | Is this 'LispVal' truthy?
-truthy :: LispVal -> Bool
-truthy v = not $ v == Bool False
-              || v == Number 0
-              || v == IList []
-              || v == String ""
+-- and this can be moved to Val.hs, do so.
+-- | Is this 'Val' truthy?
+truthy :: Val -> Bool
+truthy (Bool False) = False
+truthy _ = True
 
-instance Eq LispVal where (==) = eqVal
+instance Eq Val where (==) = eqVal
 
-instance Show LispVal where
+instance Show Val where
     showsPrec _ v s = showVal v s
 
-data LispErr = NumArgs Integer [LispVal]
-             | TypeMismatch String LispVal
+data LispErr = NumArgs Integer [Val]
+             | TypeMismatch String Val
              | Parser ParseError
-             | BadSpecialForm String LispVal
-             | NotFunction String LispVal
+             | BadSpecialForm String Val
+             | NotFunction String Val
              | UnboundVar String String
              | EvaluateDuringInit String 
              | SetImmutable String -- type name
@@ -127,7 +124,7 @@ trapError action = catchError action (return . show)
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
 
-isTerminationError :: ThrowsError LispVal -> Bool
+isTerminationError :: ThrowsError Val -> Bool
 isTerminationError (Left Quit) = True
 isTerminationError _           = False
 
@@ -136,7 +133,7 @@ type IOThrowsError = ExceptT LispErr IO
 runIOThrows :: IOThrowsError String -> IO String
 runIOThrows action = extractValue . trapError <$> runExceptT action
 
-eqVal :: LispVal -> LispVal -> Bool
+eqVal :: Val -> Val -> Bool
 eqVal (Atom s) (Atom s') = s == s'
 eqVal (Number n) (Number n') = n == n'
 eqVal (String s) (String s') = s == s'
@@ -159,7 +156,7 @@ eqVal (Func p v b _ n) (Func p' v' b' _ n') = and [ p == p'
                                                   ]
 eqVal _ _ = False
 
-showVal :: LispVal -> ShowS
+showVal :: Val -> ShowS
 showVal (Atom s) = showString s
 showVal (Number n) = shows n
 showVal (String s) = shows s
@@ -175,10 +172,10 @@ showVal (IList ls) = showParen True $ unwordsList ls
 showVal (IDottedList ls l) = showParen True $
     unwordsList ls . showString " . " . shows l
 showVal (Vector v) = showChar '#' . showParen True (unwordsList (elems v))
-showVal Port{} = showString "<port>"
-showVal Undefined = showString "#<undef>"
+showVal Port{} = showString "#<port>"
+showVal Undefined = showString "#<undefined>"
 showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
-showVal Continuation{} = showString "<cont>"
+showVal Continuation{} = showString "#<cont>"
 showVal (Func args varargs body env name) = 
     showParen True $
         displayName . showChar ' '
@@ -190,7 +187,8 @@ showVal (Func args varargs body env name) =
     displayVarargs = case varargs of
         Nothing  -> id
         Just arg -> showString " . " . showString arg
-showVal (PMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
+showVal (PrimMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
+showVal PairPtr{} = showString "<can't show mutable pair>"
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname
@@ -217,7 +215,7 @@ intercalateS sep = go
         go [s]    = s
         go (s:ss) = s . showString sep . go ss
 
-unwordsList :: [LispVal] -> ShowS
+unwordsList :: [Val] -> ShowS
 unwordsList = intercalateS " " . map shows
 
 -- ideally; EMCont = forall r. EvalState -> IO (Either LispErr r)
@@ -228,7 +226,7 @@ unwordsList = intercalateS " " . map shows
 -- Note that complexity on the right-hand side of the arrow doesn't affect
 -- the amount of work performed at any point because it is merely the eventual
 -- return of a continuation.
-type EMCont = EvalState -> IO (Either LispErr LispVal, EvalState)
+type EMCont = EvalState -> IO (Either LispErr Val, EvalState)
 -- | The Evaluation Monad
 newtype EM a = EM { unEM :: Cont EMCont a }
   deriving (Functor, Applicative, Monad, MonadCont)
@@ -277,10 +275,10 @@ liftIOThrows = liftEither <=< liftIO . runExceptT
 -- | Reasons a step was performed
 data StepReason = Call | Reduce | Expand deriving (Eq, Show, Read, Enum)
 -- | Type of options from the REPL
-type Opts = Map.HashMap String LispVal
+type Opts = Map.HashMap String Val
 
 -- | The current state of evaluation
-data EvalState = ES { stack      :: [(StepReason, LispVal)]
+data EvalState = ES { stack      :: [(StepReason, Val)]
                     , symEnv     :: [Env]
                     , options    :: Opts
                     }
