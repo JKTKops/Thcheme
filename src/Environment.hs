@@ -15,6 +15,8 @@ import Data.IORef
 import Data.Maybe (isJust)
 import Control.Monad.Except (liftIO, throwError)
 
+-- This module is allowed to import Types because EvaluationMonad
+-- imports this module!
 import Types
 
 isBound :: Env -> String -> IO Bool

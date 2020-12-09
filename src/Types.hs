@@ -41,6 +41,20 @@ import Control.Monad.Fail
 import Control.Monad.State.Lazy
 import System.IO (Handle)
 
+{- Note: [IORefs in Envs]
+
+Vals already have a notion of being "primitive" or a "pointer".
+So why do 'Env's store 'IORef's? We want to be able to
+_duplicate environments_ (for the purposes of capturing them in closures)
+and be sure that the copied environments reflect changes in the originals.
+
+It's not impossible that I'm completely off-base here and duplicating the
+environments is not actually worth it in terms of performance. A duplicated
+environment is always smaller than the original, since it flattens the
+scope structure and removes shadowed bindings. However, That _usually_
+isn't significantly smaller, and currently we pay an extra dereference for
+every single name lookup. Low-hanging fruit?
+-}
 type Env = IORef (HashMap String (IORef Val))
 type Ref = IORef
 
