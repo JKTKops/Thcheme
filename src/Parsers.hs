@@ -12,16 +12,16 @@ import Control.Monad.Except (MonadError, MonadIO, liftIO)
 
 import Parsers.Internal
 import Val
-import EvaluationMonad (EM, liftEither)
+import EvaluationMonad (liftEither)
 
-labeledReadExpr :: String -> String -> EM Val
+labeledReadExpr :: String -> String -> Either LispErr Val
 labeledReadExpr label = liftEither . labeledReadOrThrow label do
     whiteSpace
     expr <- parseExpr
     eof
     return expr
 
-readExpr :: String -> EM Val
+readExpr :: String -> Either LispErr Val
 readExpr = labeledReadExpr "Thcheme"
 
 labeledReadExprList :: String -> String -> Either LispErr [Val]

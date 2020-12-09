@@ -126,6 +126,7 @@ testCircularList v =  next v >>= \case
       | otherwise = return False
 
     next (PairPtr pair) = Just <$> derefCdr pair
+    next _ = pure Nothing
 
     next2 = runMaybeT . (next' >=> next')
       where next' = MaybeT . next

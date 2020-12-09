@@ -39,9 +39,11 @@ repl = do
 
 replLoop :: Repl ()
 replLoop = until_
-    (isTerminationError . fst)
+    (stop . fst)
     (getInput >>= replEval)
     (Repl . CLI.outputStrLn . showResult)
+  where stop Right{}  = False
+        stop (Left e) = isTerminationError e
 
 getInputLine :: String -> Repl (Maybe String)
 getInputLine = Repl . CLI.getInputLine

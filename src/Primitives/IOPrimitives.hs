@@ -4,9 +4,9 @@ module Primitives.IOPrimitives (primitives) where
 import System.IO ( IOMode (..)
                  , openFile, hClose, hGetLine, hPutStr
                  , getLine, stdin, stdout)
-import Control.Monad.Except (throwError, liftIO)
 
 import Val
+import EvaluationMonad (liftEither, MonadIO (liftIO), MonadError (throwError))
 import Parsers (readExpr, load)
 
 primitives :: [Primitive]
@@ -41,7 +41,7 @@ readProc = Prim "read" 0 read
   where
     read :: Builtin
     read []         = read [Port stdin]
-    read [Port hdl] = liftIO (hGetLine hdl) >>= readExpr
+    read [Port hdl] = liftIO (hGetLine hdl) >>= liftEither . readExpr
     read [badArg]   = throwError $ TypeMismatch "port" badArg
     read badArgs    = throwError $ NumArgs 1 badArgs
 

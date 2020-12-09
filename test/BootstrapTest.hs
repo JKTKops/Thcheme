@@ -1,7 +1,6 @@
 module BootstrapTest (bootstrapTests) where
 
 import Test.Tasty
-import Test.Tasty.SmallCheck
 import Test.Tasty.HUnit
 
 import Data.IORef
@@ -21,15 +20,18 @@ unitTests = testGroup "Unit tests"
     ]
 
 -- UNIT TESTS
+testNullEnvEmpty :: TestTree
 testNullEnvEmpty = testCase "Null environment is empty" $
     do env <- nullEnv >>= readIORef
        Map.null env @? "Null Environment is not empty"
 
+testPrimitiveBindingsSize :: TestTree
 testPrimitiveBindingsSize = testCase "Prim. env has correct size" $
     do env <- primitiveBindings >>= readIORef
        let (Right stdlibExprs) = stdlib
        Map.size env @?= length primitives + length stdlibExprs
 
+testPrimitiveEnvSameKeys :: TestTree
 testPrimitiveEnvSameKeys = testCase "Prim. env has same keys as prim. list" $
     do let keys = map fst $ Map.toList primitives
        env <- primitiveBindings >>= readIORef

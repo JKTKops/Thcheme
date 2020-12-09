@@ -59,7 +59,7 @@ vector _          = Bool False
 procedure :: Val -> Val
 procedure Primitive{}    = Bool True
 procedure Continuation{} = Bool True
-procedure Func{}         = Bool True
+procedure Closure{}      = Bool True
 procedure _ = Bool False
 
 continuation :: Val -> Val

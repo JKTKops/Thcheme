@@ -15,7 +15,7 @@ import Data.Either
 import Data.Array
 import qualified Data.HashMap.Strict as Map
 
-import Types
+import Val
 import Parsers
 import Parsers.Internal
 import Bootstrap
@@ -118,19 +118,24 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Number 5
         }
     , EvalTest
-        { testName = "0 is falsy"
+        { testName = "#f is falsy"
+        , input    = "(if #f 1 0)"
+        , expected = Right $ Number 0
+        }
+    , EvalTest
+        { testName = "0 is truthy"
         , input = "(if 0 1 0)"
-        , expected = Right $ Number 0
+        , expected = Right $ Number 1
         }
     , EvalTest
-        { testName = "() is falsy"
+        { testName = "() is truthy"
         , input = "(if () 1 0)"
-        , expected = Right $ Number 0
+        , expected = Right $ Number 1
         }
     , EvalTest
-        { testName = "\"\" is falsy"
+        { testName = "\"\" is truthy"
         , input = "(if \"\" 1 0)"
-        , expected = Right $ Number 0
+        , expected = Right $ Number 1
         }
     , EvalTest
         { testName = "non-falsy is truthy"
@@ -170,12 +175,12 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Define func no varargs evaluation"
         , input = "(define (test x) ())"
-        , expected = Right $ Func
-            { params  = ["x"]
-            , vararg  = Nothing
-            , body    = [IList []]
-            , closure = undefined
-            , name    = Just "test"
+        , expected = Right $ Closure
+            { params = ["x"]
+            , vararg = Nothing
+            , body   = [IList []]
+            , cloEnv = undefined
+            , name   = Just "test"
             }
         }
     , EvalTest
@@ -186,12 +191,12 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Define func varargs evaluation"
         , input = "(define (test x . y) (x y))"
-        , expected = Right $ Func
-            { params  = ["x"]
-            , vararg  = Just "y"
-            , body    = [IList [Atom "x", Atom "y"]]
-            , closure = undefined
-            , name = Just "test"
+        , expected = Right $ Closure
+            { params = ["x"]
+            , vararg = Just "y"
+            , body   = [IList [Atom "x", Atom "y"]]
+            , cloEnv = undefined
+            , name   = Just "test"
             }
         }
     , EvalTest
@@ -207,34 +212,34 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Lambda normal form no varargs"
         , input = "(lambda (x) (+ 1 x))"
-        , expected = Right $ Func
-            { params  = ["x"]
-            , vararg  = Nothing
-            , body    = [IList [Atom "+", Number 1, Atom "x"]]
-            , closure = undefined -- we only check == so this should never be evaluated
-            , name    = Nothing
+        , expected = Right $ Closure
+            { params = ["x"]
+            , vararg = Nothing
+            , body   = [IList [Atom "+", Number 1, Atom "x"]]
+            , cloEnv = undefined -- we only check == so this should never be evaluated
+            , name   = Nothing
             }
         }
     , EvalTest
         { testName = "Lambda normal form varargs"
         , input = "(lambda (x y . zs) (null? zs))"
-        , expected = Right $ Func
-            { params  = ["x", "y"]
-            , vararg  = Just "zs"
-            , body    = [IList [Atom "null?", Atom "zs"]]
-            , closure = undefined
-            , name    = Nothing
+        , expected = Right $ Closure
+            { params = ["x", "y"]
+            , vararg = Just "zs"
+            , body   = [IList [Atom "null?", Atom "zs"]]
+            , cloEnv = undefined
+            , name   = Nothing
             }
         }
     , EvalTest
         { testName = "Lambda short form"
         , input = "(lambda xs (cons 0 xs))"
-        , expected = Right $ Func
-            { params  = []
-            , vararg  = Just "xs"
-            , body    = [IList [Atom "cons", Number 0, Atom "xs"]]
-            , closure = undefined
-            , name    = Nothing
+        , expected = Right $ Closure
+            { params = []
+            , vararg = Just "xs"
+            , body   = [IList [Atom "cons", Number 0, Atom "xs"]]
+            , cloEnv = undefined
+            , name   = Nothing
             }
         }
     , EvalTest
@@ -252,7 +257,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
                 [ "(define test (letrec ((foo (lambda () foo))) foo))"
                 , "(test)"
                 ]
-        , expected = Right $ Func []
+        , expected = Right $ Closure []
                                   Nothing
                                   [Atom "foo"]
                                   undefined
@@ -348,15 +353,15 @@ data EvalTest
   = ImpureEvalTest 
     { testName       :: String
     , input          :: String
-    , impureExpected :: IO (Either LispErr LispVal)
+    , impureExpected :: IO (Either LispErr Val)
     }
   | EvalTest
     { testName :: String
     , input    :: String
-    , expected :: Either LispErr LispVal
+    , expected :: Either LispErr Val
     }
 
-buildExpected :: EvalTest -> IO (Either LispErr LispVal)
+buildExpected :: EvalTest -> IO (Either LispErr Val)
 buildExpected iet@ImpureEvalTest{} = impureExpected iet
 buildExpected et@EvalTest{} = pure $ expected et
 
@@ -453,8 +458,8 @@ applyTests = testGroup "Apply" $ map mkApplyTest
 data ApplyTB = ApplyTB
              { testNameA :: String
              , funcIn :: String
-             , args :: [LispVal]
-             , expectedA :: Either LispErr LispVal
+             , args :: [Val]
+             , expectedA :: Either LispErr Val
              }
 
 mkApplyTest :: ApplyTB -> TestTree

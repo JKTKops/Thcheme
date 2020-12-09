@@ -99,7 +99,7 @@ defineBuiltinFrozen (Atom var) [form] = do -- todo: NumArgs (Exact 2) when app.
   setVarForCapture var
   val <- eval form
   let renamed = case val of
-        Func {} -> val { name = Just var }
+        Closure{} -> val { name = Just var }
         _ -> val
   defineVar var renamed
 
@@ -154,7 +154,7 @@ makeFunc :: Maybe String
 makeFunc varargs params body name = do
     maybe (pure ()) setVarForCapture name
     env <- envSnapshot
-    return $ Func (map show params) varargs body env name
+    return $ Closure (map show params) varargs body env name
 
 makeFuncNormal :: [Val] -> [Val] -> Maybe String -> EM Val
 makeFuncNormal = makeFunc Nothing

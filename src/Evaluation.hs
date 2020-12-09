@@ -49,18 +49,18 @@ handleNonPrim function args = do
     func <- case function of
         Primitive{}    -> return function
         Continuation{} -> return function
-        Func{}         -> return function
+        Closure{}      -> return function
         PrimMacro{}    -> return function
         _              -> eval function
     case func of
         Primitive{}    -> evalCall func
         Continuation{} -> evalCall func
-        Func{}         -> evalCall func
+        Closure{}      -> evalCall func
         PrimMacro{}    -> evalPMacro func
         -- TODO: this doesn't play well with the introduction of mutable
         -- lists, so it really is time to make a proper distinction between
         -- functions and low-level macros.
-        IDottedList [Atom "macro"] macro@Func{} -> evalMacro macro
+        IDottedList [Atom "macro"] macro@Closure{} -> evalMacro macro
         _              -> evalCall func
 
   where evalCall func = do
@@ -100,7 +100,7 @@ apply (Continuation state func) [arg] = put state >> func arg
 apply Continuation{} badArgs = throwError $ NumArgs 1 badArgs
 
 -- Applications of user-defined functions
-apply (Func params varargs body closure _name) args =
+apply (Closure params varargs body cloEnv _name) args =
     case num args `compare` num params of
         -- Throw error if too many args and no varargs
         GT -> if isNothing varargs
@@ -122,7 +122,7 @@ apply (Func params varargs body closure _name) args =
                       return result
 
         makeBindings :: [String] -> EM Env
-        makeBindings vars = liftIO . Env.bindVars closure . Map.fromList $ zip vars args
+        makeBindings vars = liftIO . Env.bindVars cloEnv . Map.fromList $ zip vars args
 
         remainingArgs = drop (length params) args
         -- evaluate every expression in body, return value of the last one
@@ -151,7 +151,7 @@ evalEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
 
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
 evaluate label initEnv opts input = evalEM initEnv opts $
-  labeledReadExpr label input >>= eval
+  liftEither (labeledReadExpr label input) >>= eval
 
 evaluateExpr :: Env -> Opts -> Val -> IO (Either LispErr Val, EvalState)
 evaluateExpr env opts v = evalEM env opts $ eval v

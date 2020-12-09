@@ -5,22 +5,20 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.SmallCheck as SC
 import Test.Tasty.QuickCheck as QC
-import Test.QuickCheck.Arbitrary
-import Test.QuickCheck.Monadic as QC
 import Test.SmallCheck.Series
 
 import Data.List (isPrefixOf)
 import Data.IORef
 import Data.Array
 import qualified Data.HashMap.Strict as Map
-import Control.Monad (liftM2, (<=<))
-import Control.Monad.Trans.Except (runExceptT)
+import Control.Monad (liftM2)
 import System.IO (stdout)
 
-import Types
+import Val
+import Types (trapError, extractValue) -- these functions can probably be removed entirely.
 import Primitives
 
-instance Monad m => Serial m LispVal where
+instance Monad m => Serial m Val where
     series = cons1 Atom
                 \/ cons1 IList
                 \/ cons2 IDottedList
@@ -29,9 +27,8 @@ instance Monad m => Serial m LispVal where
                 \/ cons1 Char
                 \/ cons1 Bool
                 -- \/ cons3 Primitive
-                -- \/ cons3 IOPrimitive
                 -- Primitive function types left off for now
-                -- \/ cons5 Func
+                -- \/ cons5 Closure
                 -- Env is probably difficult/impossible to give Serial instance
                 -- \/ cons1 Port
                 -- Handle is probably difficult/impossible to give Serial instance
@@ -47,7 +44,7 @@ instance Monad m => Serial m LispErr where
                 \/ cons1 Default
                 \/ cons0 Quit
 
-instance Arbitrary LispVal where
+instance Arbitrary Val where
     arbitrary = sized lispval'
       where lispval' 0 = oneof simpleCons
             lispval' n = oneof $ simpleCons ++
@@ -77,7 +74,7 @@ instance Arbitrary LispErr where
                       ]
 
 lispValTests :: TestTree
-lispValTests = testGroup "LispVal" [unitTests, propTests]
+lispValTests = testGroup "Val" [unitTests, propTests]
 
 unitTests :: TestTree
 unitTests = testGroup "Unit tests"
@@ -104,48 +101,53 @@ scTests = testGroup "(SmallCheck)"
 
 -- UNIT TESTS
 testShowPort = testCase "Ports show correctly" $
-    show (Port stdout) @?= "<port>"
+    show (Port stdout) @?= "#<port>"
 
 testShowPrimitives = testCase "Primitives show correctly" $
     mapM_
         (\(key, func) -> let pType = case func of
                                  Primitive {} -> "function"
-                                 PMacro {}     -> "macro"
+                                 PrimMacro {} -> "macro"
                          in show func @?= "#<" ++ pType ++ " " ++ key ++ ">")
         -- Test only some of the primitives list as eventually it will be quite large
         . take 50 $ Map.toList primitives
 
+testShowFunctions :: TestTree
 testShowFunctions = testCase "Functions show correctly" $
     do emptyEnv <- newIORef Map.empty
-       show (Func [] Nothing [] emptyEnv (Just "testFunc")) @?= "(testFunc () ...)"
-       show (Func ["x"] Nothing [] emptyEnv (Just "testFunc")) @?=
+       show (Closure [] Nothing [] emptyEnv (Just "testFunc")) @?= "(testFunc () ...)"
+       show (Closure ["x"] Nothing [] emptyEnv (Just "testFunc")) @?=
             "(testFunc (x) ...)"
-       show (Func [] Nothing [] emptyEnv Nothing) @?= "(lambda () ...)"
-       show (Func ["x"] Nothing [] emptyEnv Nothing) @?= "(lambda (x) ...)"
-       show (Func [] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
+       show (Closure [] Nothing [] emptyEnv Nothing) @?= "(lambda () ...)"
+       show (Closure ["x"] Nothing [] emptyEnv Nothing) @?= "(lambda (x) ...)"
+       show (Closure [] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
             "(testFunc ( . xs) ...)"
-       show (Func ["x"] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
+       show (Closure ["x"] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
             "(testFunc (x . xs) ...)"
-       show (Func ["x"] (Just "xs") [] emptyEnv Nothing) @?= "(lambda (x . xs) ...)"
-       show (Func ["x", "y", "z"] (Just "others") [] emptyEnv Nothing) @?=
+       show (Closure ["x"] (Just "xs") [] emptyEnv Nothing) @?= "(lambda (x . xs) ...)"
+       show (Closure ["x", "y", "z"] (Just "others") [] emptyEnv Nothing) @?=
             "(lambda (x y z . others) ...)"
 
 -- PROPERTY TESTS
+prop_TrapErrorOutputsRight :: TestTree
 prop_TrapErrorOutputsRight = QC.testProperty "Trap error evaluates to Right" $
     \input -> case trapError input of
         Left _  -> False
         Right _ -> True
 
+prop_TrapErrorIdemp :: TestTree
 prop_TrapErrorIdemp = QC.testProperty "trapError . trapError == trapError" $
     \input -> (extractValue . trapError . trapError) input == extractValue (trapError input)
 
+prop_TerminationErrors :: TestTree
 prop_TerminationErrors = QC.testProperty "Only Quit is a termination error" $
     withMaxSuccess 50 $
         \input -> isTerminationError input == case input of
-            (Left Quit) -> True
-            _           -> False
+            Quit -> True
+            _    -> False
 
-prop_ShowVal = QC.testProperty "Showing a LispVal produces correct string" $
+prop_ShowVal :: TestTree
+prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
     withMaxSuccess 500 $
         \input -> case input of
             Atom _        -> testShowAtom input
@@ -177,6 +179,7 @@ prop_ShowVal = QC.testProperty "Showing a LispVal produces correct string" $
         testShowVector vecVal = show vecVal == let Vector arr = vecVal in
             "#(" ++ unwords (map show $ elems arr) ++ ")"
 
+prop_ShowErrPrefix :: TestTree
 prop_ShowErrPrefix = SC.testProperty "Showing LispErr is prefixed with 'Error:'" $
     changeDepth (const 3) $
         \input -> "Error: " `isPrefixOf` show (input :: LispErr)

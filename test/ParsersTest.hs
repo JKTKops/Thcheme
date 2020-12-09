@@ -205,10 +205,10 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         }
     ]
 
-mkE2Etest :: TestBuilder LispVal
+mkE2Etest :: TestBuilder Val
 mkE2Etest = TB End2End "" "" Nothing
 
-testParseExpr :: TestBuilder LispVal -> TestTree
+testParseExpr :: TestBuilder Val -> TestTree
 testParseExpr testBuilder =
     testCaseSteps (testName testBuilder) $ \step -> do
         step "Parsing"
@@ -529,21 +529,21 @@ prop_CorrectSymbols = testProperty "Recognize correct set of symbols" $
 
 prop_QuoteParser = testProperty "tick always results in quote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" ('\'' : show (input :: LispVal))
+        let result = parse parseQuoted "" ('\'' : show (input :: Val))
         in isRight result ==> case result of
             Right (IList (Atom "quote" : _)) -> True
             _ -> False
 
 prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" ('`' : show (input :: LispVal))
+        let result = parse parseQuoted "" ('`' : show (input :: Val))
         in isRight result ==> case result of
             Right (IList (Atom "quasiquote" : _)) -> True
             _ -> False
 
 prop_UnquoteParser = testProperty "comma always results in unquote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" (',' : clean (show (input :: LispVal)))
+        let result = parse parseQuoted "" (',' : clean (show (input :: Val)))
         in isRight result ==> case result of
             Right (IList (Atom "unquote" : _)) -> True
             _ -> False
@@ -553,7 +553,7 @@ prop_UnquoteParser = testProperty "comma always results in unquote" $
 
 prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-splicing" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" (",@" ++ show (input :: LispVal))
+        let result = parse parseQuoted "" (",@" ++ show (input :: Val))
         in isRight result ==> case result of
             Right (IList (Atom "unquote-splicing" : _)) -> True
             _ -> False
@@ -599,7 +599,7 @@ mkCharTest = TB TChar "Char Parser Test" "" Nothing
 
 testParser :: (Eq a, Show a)
            => TestBuilder a
-           -> (LispVal -> Maybe a)
+           -> (Val -> Maybe a)
            -> TestTree
 testParser testBuilder decons = let
     parser = case testType testBuilder of
@@ -629,22 +629,22 @@ testParser testBuilder decons = let
             step "Verifying failure"
             isLeft parse @? "Parse succeeded on: " ++ input testBuilder
 
-fromString :: LispVal -> Maybe String
+fromString :: Val -> Maybe String
 fromString (String s) = Just s
 fromString _          = Nothing
 
-fromAtom :: LispVal -> Maybe String
+fromAtom :: Val -> Maybe String
 fromAtom (Atom s) = Just s
 fromAtom _        = Nothing
 
-fromNumber :: LispVal -> Maybe Integer
+fromNumber :: Val -> Maybe Integer
 fromNumber (Number n) = Just n
 fromNumber _          = Nothing
 
-fromChar :: LispVal -> Maybe Char
+fromChar :: Val -> Maybe Char
 fromChar (Char c) = Just c
 fromChar _        = Nothing
 
-fromList :: LispVal -> Maybe [LispVal]
+fromList :: Val -> Maybe [Val]
 fromList (IList ls) = Just ls
 fromList _          = Nothing

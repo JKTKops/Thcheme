@@ -2,16 +2,13 @@ module EnvironmentTest (environmentTests) where
 
 import Test.Tasty
 import Test.Tasty.HUnit
-import Test.Tasty.QuickCheck as QC
 
-import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.IORef
 import Data.Either
 import Control.Monad.Trans.Except (runExceptT)
-import Control.Monad.Trans (lift)
 
-import LispValTest
+import LispValTest ()
 
 import Types
 import Bootstrap
@@ -20,6 +17,7 @@ import Environment
 environmentTests :: TestTree
 environmentTests = testGroup "Environment" [unitTests]
 
+unitTests :: TestTree
 unitTests = testGroup "Unit Tests"
     [ testIsBound
     , testGetVar
@@ -27,6 +25,7 @@ unitTests = testGroup "Unit Tests"
     , testDefineVar
     ]
 
+testIsBound :: TestTree
 testIsBound = testGroup "isBound"
     [ testCase "Var is bound" $ do
         primEnv <- primitiveBindings
@@ -36,6 +35,7 @@ testIsBound = testGroup "isBound"
         not <$> isBound primEnv "dumbname" @? "'dumbname' is bound"
     ]
 
+testGetVar :: TestTree
 testGetVar = testGroup "getVar"
     [ testCase "Get +" $ do
         primEnv <- primitiveBindings
@@ -57,6 +57,7 @@ testGetVar = testGroup "getVar"
         f @?= UnboundVar "[Get] unbound symbol" "fail"
     ]
 
+testSetVar :: TestTree
 testSetVar = testGroup "setVar"
     [ testCase "Set +" $ do
         primEnv <- primitiveBindings
@@ -82,6 +83,7 @@ testSetVar = testGroup "setVar"
         e @?= UnboundVar "[Set] unbound symbol" "x"
     ]
 
+testDefineVar :: TestTree
 testDefineVar = testGroup "defineVar"
     [ testCase "Define x 5" $ do
         primEnv <- primitiveBindings
@@ -105,6 +107,7 @@ testDefineVar = testGroup "defineVar"
         v @?= Char '+'
     ]
 
+testBindVar :: TestTree
 testBindVar = testGroup "bindVar"
     [ testCaseSteps "bindVar in nullEnv" $ \step -> do
         step "Bind x to 5"

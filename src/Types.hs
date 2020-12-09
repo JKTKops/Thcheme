@@ -89,12 +89,13 @@ data Val
   | Primitive Arity Builtin String
   | PrimMacro Arity Builtin String
   | Continuation EvalState (Val -> EM Val)
-  | Func { params  :: [String]
-         , vararg  :: Maybe String
-         , body    :: [Val]
-         , closure :: Env
-         , name    :: Maybe String
-         }
+  | Closure
+     { params :: [String]
+     , vararg :: Maybe String
+     , body   :: [Val]
+     , cloEnv :: Env
+     , name   :: Maybe String
+     }
   | Port Handle
   | Undefined
   | PairPtr (IORef PairObj)
@@ -138,9 +139,9 @@ trapError action = catchError action (return . show)
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
 
-isTerminationError :: ThrowsError Val -> Bool
-isTerminationError (Left Quit) = True
-isTerminationError _           = False
+isTerminationError :: LispErr -> Bool
+isTerminationError Quit = True
+isTerminationError _    = False
 
 type IOThrowsError = ExceptT LispErr IO
 
@@ -162,12 +163,14 @@ eqVal Continuation{} _ = False -- perhaps it's possible to give continuations
 eqVal _ Continuation{} = False -- unique identifiers to make this work.
                                -- The state would have to have an IORef holding
                                -- the counter to preserve it between repl
-                               -- steps / continuation invocations.
-eqVal (Func p v b _ n) (Func p' v' b' _ n') = and [ p == p'
-                                                  , v == v'
-                                                  , b == b'
-                                                  , n == n'
-                                                  ]
+                               -- steps / continuation invocations. Invoking a
+                               -- continuation needs to preserve the count.
+eqVal (Closure p v b _ n) (Closure p' v' b' _ n') = 
+    and [ p == p'
+        , v == v'
+        , b == b'
+        , n == n'
+        ]
 eqVal _ _ = False
 
 showVal :: Val -> ShowS
@@ -190,7 +193,7 @@ showVal Port{} = showString "#<port>"
 showVal Undefined = showString "#<undefined>"
 showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
 showVal Continuation{} = showString "#<cont>"
-showVal (Func args varargs body env name) = 
+showVal (Closure args varargs body env name) = 
     showParen True $
         displayName . showChar ' '
       . showParen True (displayArgs . displayVarargs)
