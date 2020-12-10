@@ -16,7 +16,7 @@ module Val
 
     -- * Basic handling of lists
   , getList, getListOrError, freezeList, testCircularList
-  , isList, requireList, makeMutableList, consSSS
+  , isListSH, requireList, makeMutableList, consSSS
 
     -- * Direct handling of pairs
   , carRR, cdrRR, carRS, cdrRS, setCarRSS, setCdrRSS
@@ -60,8 +60,8 @@ Primarily, most operations end up walking the structure more than once.
 not circular) since it terminates when it sees a cdr that isn't a Pair.
 But then 'flattenFiniteList' also walks the whole list, to flatten it,
 and is always called separately from 'testCircularList'. Notably,
-'isList' currently tests, then flattens to check the ending. But then
-'getList' calls 'isList', then flattens to get the list! So 'getList'
+'isListSH' currently tests, then flattens to check the ending. But then
+'getList' calls 'isListSH', then flattens to get the list! So 'getList'
 ends up walking the whole structure 3 times.
 
 I think the most frequently-called function here should end up being
@@ -75,7 +75,7 @@ I think the most frequently-called function here should end up being
 -- list are returned.
 getList :: Val -> EM (Maybe [Val])
 getList v = do
-  b <- isList v
+  b <- isListSH v
   if b
     then Just . fst <$> flattenFiniteList v
     else return Nothing
@@ -164,8 +164,8 @@ makeMutableList (v:vs) = do
 -- See page 42 of the r7rs report:
 -- "By definition, all lists have finite length 
 -- and are terminated by the empty list."
-isList :: Val -> EM Bool
-isList v = callCC $ \exit -> do
+isListSH :: Val -> EM Bool
+isListSH v = callCC $ \exit -> do
   whenM (testCircularList v) $ exit False
   (_, tl) <- flattenFiniteList v
   case tl of
@@ -211,7 +211,7 @@ setCdrRSS pair v = do
 -- | Require that the given Val is a list. Otherwise, raises a 'TypeError'.
 requireList :: Val -> EM ()
 requireList v =
-  whenM (not <$> isList v) $ throwError $ TypeMismatch "list" v
+  whenM (not <$> isListSH v) $ throwError $ TypeMismatch "list" v
 
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM test thing = do

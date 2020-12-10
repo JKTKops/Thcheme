@@ -22,6 +22,9 @@ module EvaluationMonad
       -- * Adjusting the debug stack
     , pushExpr, popExpr, modifyStackTop, modifyTopReason
 
+      -- * using options
+    , enableOpt, disableOpt, lintAssert, noOpts
+
       -- * Use the evaluation environment
     , getVar, setVar, updateWith, search
     , setVarForCapture, defineVar
@@ -40,6 +43,7 @@ import Control.Monad.Cont (callCC, runCont)
 import Control.Monad.Except (MonadError (..), liftEither, runExceptT)
 import Control.Monad.State.Lazy (MonadIO (..), MonadState (..), modify, gets)
 
+import Options
 import Types
 import qualified Environment as Env
 
@@ -114,6 +118,15 @@ modifyStackTop f = modify $ \s ->
 
 modifyTopReason :: (StepReason -> StepReason) -> EM ()
 modifyTopReason f = modifyStackTop (\(r, v) -> (f r, v))
+
+-- | If linting is enabled, assert that a predicate is true.
+-- If the assertion fails, the runtime will panic.
+lintAssert :: EM Bool -> String -> EM ()
+lintAssert test msg = whenOpt Lint $ test >>= \b ->
+  if b
+    then error $ panicmsg ++ msg
+    else pure ()
+  where panicmsg = "\nPanic! Linter detected an invariant violation:\n"
 
 -- | Searches the environment stack top-down for a symbol
 getVar :: String -> EM Val

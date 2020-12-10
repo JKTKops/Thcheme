@@ -9,40 +9,40 @@ import EvaluationMonad
 
 primitives :: [Primitive]
 primitives =
-  [ isListPrim
-  , consPrim
-  , listPrim
-  , appendPrim
-  , nullPrim
-  , setCarPrim
-  , setCdrPrim
+  [ isListP
+  , consP
+  , listP
+  , appendP
+  , nullP
+  , setCarP
+  , setCdrP
   ]
   ++ cxrCompositions [1..4]
 
-isListPrim :: Primitive
-isListPrim = Prim "list?" 1 $ \case
-  [x] -> Bool <$> isList x
+isListP :: Primitive
+isListP = Prim "list?" 1 $ \case
+  [x] -> Bool <$> isListSH x
   bad -> throwError $ NumArgs 1 bad
 
-consPrim :: Primitive
-consPrim = Prim "cons" 2 $ \case
+consP :: Primitive
+consP = Prim "cons" 2 $ \case
     [x, y]  -> consSSS x y
     badArgs -> throwError $ NumArgs 2 badArgs
 
-carBuiltin :: Builtin
-carBuiltin [IList (x:_)]         = return x
-carBuiltin [IDottedList (x:_) _] = return x
-carBuiltin [PairPtr pair]        = carRS pair
-carBuiltin [badArg] = throwError $ TypeMismatch "pair" badArg
-carBuiltin badArgs  = throwError $ NumArgs 1 badArgs
+carB :: Builtin
+carB [IList (x:_)]         = return x
+carB [IDottedList (x:_) _] = return x
+carB [PairPtr pair]        = carRS pair
+carB [badArg] = throwError $ TypeMismatch "pair" badArg
+carB badArgs  = throwError $ NumArgs 1 badArgs
 
-cdrBuiltin :: Builtin
-cdrBuiltin [IList (_:xs)]         = return $ IList xs
-cdrBuiltin [IDottedList [_] x]    = return x
-cdrBuiltin [IDottedList (_:xs) x] = return $ IDottedList xs x
-cdrBuiltin [PairPtr pair]         = cdrRS pair
-cdrBuiltin [badArg] = throwError $ TypeMismatch "pair" badArg
-cdrBuiltin badArgs  = throwError $ NumArgs 1 badArgs
+cdrB :: Builtin
+cdrB [IList (_:xs)]         = return $ IList xs
+cdrB [IDottedList [_] x]    = return x
+cdrB [IDottedList (_:xs) x] = return $ IDottedList xs x
+cdrB [PairPtr pair]         = cdrRS pair
+cdrB [badArg] = throwError $ TypeMismatch "pair" badArg
+cdrB badArgs  = throwError $ NumArgs 1 badArgs
 
 cxrCompositions :: [Int] -> [Primitive]
 cxrCompositions ns = do
@@ -51,16 +51,16 @@ cxrCompositions ns = do
     let (n, b) = foldr1 combine combination
     return $ Prim ("c" ++ n ++ "r") 1 b
   where
-    carAndCdr = [("a", carBuiltin), ("d", cdrBuiltin)]
+    carAndCdr = [("a", carB), ("d", cdrB)]
     -- 'cadr' does cdr, then car, so we use left fish instead of right
     combine (c1, m1) (c2, m2) = (c1 ++ c2, m1 . single <=< m2)
     single x = [x]
 
-listPrim :: Primitive
-listPrim = Prim "list" 0 makeMutableList
+listP :: Primitive
+listP = Prim "list" 0 makeMutableList
 
-appendPrim :: Primitive
-appendPrim = Prim "append" 1 aux
+appendP :: Primitive
+appendP = Prim "append" 1 aux
   where 
     -- aux will never be called with 0 arguments since arity is 1+
     aux [x] = return x
@@ -76,22 +76,22 @@ appendPrim = Prim "append" 1 aux
         IList fx <- freezeList x
         return (fx:lists, last)
 
-nullPrim :: Primitive
-nullPrim = Prim "null?" 1 $ \case
+nullP :: Primitive
+nullP = Prim "null?" 1 $ \case
   [Nil] -> return $ Bool True
   [_]   -> return $ Bool False
   badArgs -> throwError $ NumArgs 1 badArgs
 
-setCarPrim :: Primitive
-setCarPrim = Prim "set-car!" 2 $ \case
+setCarP :: Primitive
+setCarP = Prim "set-car!" 2 $ \case
   [PairPtr pair, v] -> setCarRSS pair v
   [badPair, _]
     | isImmutablePair badPair -> throwError $ SetImmutable "pair"
     | otherwise -> throwError $ TypeMismatch "pair" badPair
   badArgs -> throwError $ NumArgs 2 badArgs
 
-setCdrPrim :: Primitive
-setCdrPrim = Prim "set-cdr!" 2 $ \case
+setCdrP :: Primitive
+setCdrP = Prim "set-cdr!" 2 $ \case
   [PairPtr pair, v] -> setCdrRSS pair v
   [badPair, _]
     | isImmutablePair badPair -> throwError $ SetImmutable "pair"

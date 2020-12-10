@@ -3,7 +3,7 @@ module Primitives.Misc (primitives, macros) where
 
 -- TODO split into Control and Syntax
 
-import qualified Data.HashMap.Lazy as Map
+import Text.Read (readMaybe)
 
 import Parsers (load)
 import Val
@@ -76,7 +76,10 @@ setOpt :: Macro
 setOpt = Macro 2 $ \case
     [Atom optName, form] -> do
         val <- eval form
-        modify $ \s -> s { options = Map.insert optName val (options s) }
+        let mopt = readMaybe optName
+        case mopt of
+          Nothing -> pure ()
+          Just opt -> if truthy val then enableOpt opt else disableOpt opt
         return val
     [notAtom, _] -> throwError $ TypeMismatch "symbol" notAtom
     badArgs      -> throwError $ NumArgs 2 badArgs

@@ -14,6 +14,7 @@ import Parsers (labeledReadExprList)
 import Primitives (primitives)
 import Environment (Env, bindVars, nullEnv)
 
+import Options (noOpts)
 import Evaluation (evaluateExpr)
 
 primitiveBindings :: IO Env
@@ -21,7 +22,7 @@ primitiveBindings = do
     ne <- nullEnv
     env <- bindVars ne primitives
     let (Right exprs) = stdlib
-    mapM_ (evaluateExpr env Map.empty) exprs
+    mapM_ (evaluateExpr env noOpts) exprs
     return env
 
 -- we absolutely need to set up a data dir for "installing" packages

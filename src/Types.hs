@@ -41,6 +41,8 @@ import Control.Monad.Fail
 import Control.Monad.State.Lazy
 import System.IO (Handle)
 
+import Options
+
 {- Note: [IORefs in Envs]
 
 Vals already have a notion of being "primitive" or a "pointer".
@@ -323,9 +325,6 @@ liftIOThrows = liftEither <=< liftIO . runExceptT
 -- | Reasons a step was performed
 data StepReason = Call | Reduce | Expand deriving (Eq, Show, Read, Enum)
 
--- | Type of options from the REPL
-type Opts = Map.HashMap String Val
-
 -- | The current state of evaluation
 data EvalState = ES { stack      :: [(StepReason, Val)]
                     , symEnv     :: [Env]
@@ -334,6 +333,10 @@ data EvalState = ES { stack      :: [(StepReason, Val)]
 
 instance Show EvalState where show = showEs
 
+instance HasOpts EM where
+    getOpts = gets options
+    setOpts opts = modify $ \s -> s { options = opts }
+
 data TraceType = CallOnly | FullHistory deriving (Eq, Show, Read, Enum)
 showEs :: EvalState -> String
 showEs es = "Stack trace:\n" ++ numberedLines
@@ -341,13 +344,12 @@ showEs es = "Stack trace:\n" ++ numberedLines
         numberedLines = unlines $ zipWith (<+>) numbers exprs
         numbers = map (\i -> show i ++ ";") [1..]
 
-        fehOpt :: TraceType
-        fehOpt =
-            case truthy <$> Map.lookup "full-stack-trace" (options es) of
-                Just True -> FullHistory
-                _         -> CallOnly
+        fstOpt :: TraceType
+        fstOpt = if checkOpt FullStackTrace (options es)
+                 then FullHistory
+                 else CallOnly
 
-        exprs = if fehOpt == CallOnly
+        exprs = if fstOpt == CallOnly
                 then map (show . snd) . filter ((`elem` [Call, Expand]) . fst) $ stack es
                 else map (\(s, v) ->
                          let buffer = case s of
