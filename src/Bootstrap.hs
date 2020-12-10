@@ -1,7 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Bootstrap (
-      nullEnv
-    , primitiveBindings
+      primitiveBindings
     , stdlib -- for testing... might want to move to Bootstrap.Internal
     ) where
 
@@ -13,12 +12,9 @@ import Types
 import Parsers (labeledReadExprList)
 
 import Primitives (primitives)
-import Environment (Env, bindVars)
+import Environment (Env, bindVars, nullEnv)
 
 import Evaluation (evaluateExpr)
-
-nullEnv :: IO Env
-nullEnv = newIORef Map.empty
 
 primitiveBindings :: IO Env
 primitiveBindings = do

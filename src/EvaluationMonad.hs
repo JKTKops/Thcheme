@@ -8,10 +8,13 @@ module EvaluationMonad
     , Opts
 
     -- * Re-exported modules
-    , module Control.Monad.Cont
+    , callCC -- only useful export of Control.Monad.Cont
     , module Control.Monad.Except
     , module Control.Monad.State.Lazy
     , (Fish.>=>), (Fish.<=<)
+
+      -- * Execute EM actions
+    , execEM, execAnyEM
 
       -- * Adjusting the evaluation environment
     , pushEnv, withNewScope, popEnv, envSnapshot
@@ -33,12 +36,31 @@ import Data.Either
 import qualified Data.HashMap.Strict as Map
 import Control.Monad (when, void)
 import qualified Control.Monad as Fish ((>=>), (<=<))
-import Control.Monad.Cont (MonadCont (..))
+import Control.Monad.Cont (callCC, runCont)
 import Control.Monad.Except (MonadError (..), liftEither, runExceptT)
 import Control.Monad.State.Lazy (MonadIO (..), MonadState (..), modify, gets)
 
 import Types
 import qualified Environment as Env
+
+
+execEM :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
+execEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
+                                ES [] [initEnv] opts
+
+-- | Useful for testing etc.
+execAnyEM :: Env -> Opts -> EM a -> IO (Either LispErr a)
+execAnyEM env opts m = do
+  -- This hack looks very weird if you don't know what's going on here.
+  -- See Note: [EM return types] in Types.hs.
+  store <- newIORef (error "execAnyEM: forced store")
+  (either, _) <- execEM env opts $ do
+    a <- m
+    writeRef store a
+    return Undefined
+  case either of
+    Right _ -> Right <$> readIORef store
+    Left e  -> return $ Left e
 
 -- | Push an expr to the call stack
 pushExpr :: StepReason -> Val -> EM ()

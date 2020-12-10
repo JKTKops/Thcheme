@@ -5,8 +5,6 @@ module Evaluation
     , evaluateExpr
       -- | evaluate inside EM monad
     , eval
-      -- | callCC (exported for use with EM)
-    , callCC
     , runTest
       -- | Convert the evaluation output into a meaningful string
     , showResult
@@ -16,7 +14,6 @@ module Evaluation
 
 import Data.Maybe
 import Control.Monad
-import Control.Monad.Cont (runCont, callCC)
 import qualified Data.HashMap.Strict as Map
 
 import Parsers
@@ -145,17 +142,13 @@ showResult res = case res of
     (Left err, s) -> show err ++ "\n" ++ show s
     (Right v, _)  -> show v
 
-evalEM :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
-evalEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
-                                ES [] [initEnv] opts
-
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
-evaluate label initEnv opts input = evalEM initEnv opts $
+evaluate label initEnv opts input = execEM initEnv opts $
   liftEither (labeledReadExpr label input) >>= eval
 
 evaluateExpr :: Env -> Opts -> Val -> IO (Either LispErr Val, EvalState)
-evaluateExpr env opts v = evalEM env opts $ eval v
+evaluateExpr env opts v = execEM env opts $ eval v
 
 -- | Provided for backwards compatibility.
 runTest :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
-runTest = evalEM
+runTest = execEM

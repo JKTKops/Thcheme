@@ -1,5 +1,6 @@
 module Environment
     ( Env -- re-exported from Types
+    , nullEnv
     , isBound
     , getVar
     , setVar
@@ -18,6 +19,9 @@ import Control.Monad.Except (liftIO, throwError)
 -- This module is allowed to import Types because EvaluationMonad
 -- imports this module!
 import Types
+
+nullEnv :: IO Env
+nullEnv = newIORef Map.empty
 
 isBound :: Env -> String -> IO Bool
 isBound envRef var = isJust . Map.lookup var <$> readIORef envRef

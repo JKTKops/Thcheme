@@ -3,20 +3,17 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 module Repl where
 
-import System.IO
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.Char (isSpace)
 import Data.Function ((&))
 import Data.List (isPrefixOf, sort)
-import Data.Maybe (fromMaybe)
 import qualified Data.HashMap.Strict as Map
 
 import qualified System.Console.Haskeline as CLI
 
 import Val
 import EvaluationMonad (EvalState (..), Env, Opts)
-import Parsers
 import Evaluation
 import Bootstrap
 import qualified Environment as Env (keys)
@@ -87,7 +84,8 @@ evaluateTotalInput input = do
         cOpts = replOpts replState
     result@(_, evalState) <- liftIO (evaluate "<interactive>" cEnv cOpts input)
     -- since Env = IORef (HashMap...), executing the 'evaluate' action has already
-    -- updated everything in the env in the replState!
+    -- updated everything in the env in the replState! The 'EvalState' is returned
+    -- so that we can print the stack.
     put $ replState { replOpts = options evalState }
     return result
 

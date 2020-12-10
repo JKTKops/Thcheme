@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedLabels #-}
 module EvaluationTest
   ( evaluationTests
 
@@ -454,7 +453,7 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         }
     ]
 
--- Precondition on apply: args are fully evaluated
+-- Precondition on apply: args are fully evaluated scheme forms
 data ApplyTB = ApplyTB
              { testNameA :: String
              , funcIn :: String

@@ -235,14 +235,30 @@ intercalateS sep = go
 unwordsList :: [Val] -> ShowS
 unwordsList = intercalateS " " . map shows
 
--- ideally; EMCont = forall r. EvalState -> IO (Either LispErr r)
--- but GHC screams at that and also I'm not sure how to recover the EvalState
--- to implement evalEM properly so that a partial state is returned even if an
--- error occurs.
--- So instead we have to force the type that evalEM is allowed to produce.
--- Note that complexity on the right-hand side of the arrow doesn't affect
--- the amount of work performed at any point because it is merely the eventual
--- return of a continuation.
+{- Note: [EM return types]
+Ideally, we'd like EM to be able to return any type, instead of just 'Val'.
+MTL's Cont type handles this with a type variable; 'Cont r a'.
+
+I tried lots of variations on EM that didn't require putting an 'r' type
+everywhere. I couldn't make it work. The most promising attempt was
+type EMCont r = EvalState -> IO (Either LispErr r)
+newtype EMR r a = EM { unEM :: Cont (EMCont r) a }
+  deriving...
+type EM a = forall r. EMR r a
+
+This almost works. In fact, if we didn't have continuations, it _would_
+work. Alas, the need to be able to reify an EM computation and store it
+into a Val required either making Val quantify over r (non-universally)
+or making Continuation existential. The first doesn't solve the problem,
+it just pushes the problem down onto Val. The second doesn't work because
+we can't apply an existentially quantified continuation in 'apply', because
+the 'r' in the type of 'apply' is universally quantified.
+
+So instead, we force EM actions to produce a Val. This is OK, because we
+can use a hack with IORefs to get the actual value we care about instead,
+if needed.
+-}
+
 type EMCont = EvalState -> IO (Either LispErr Val, EvalState)
 -- | The Evaluation Monad
 newtype EM a = EM { unEM :: Cont EMCont a }
