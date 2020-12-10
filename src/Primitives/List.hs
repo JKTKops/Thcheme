@@ -3,7 +3,6 @@ module Primitives.List (primitives) where
 
 import Control.Monad (replicateM)
 import Data.Foldable (foldrM)
-import Data.Functor (($>))
 
 import Val
 import EvaluationMonad
@@ -27,13 +26,13 @@ isListPrim = Prim "list?" 1 $ \case
 
 consPrim :: Primitive
 consPrim = Prim "cons" 2 $ \case
-    [x, y]  -> cons x y
+    [x, y]  -> consSSS x y
     badArgs -> throwError $ NumArgs 2 badArgs
 
 carBuiltin :: Builtin
 carBuiltin [IList (x:_)]         = return x
 carBuiltin [IDottedList (x:_) _] = return x
-carBuiltin [PairPtr pair]        = derefCar pair
+carBuiltin [PairPtr pair]        = carRS pair
 carBuiltin [badArg] = throwError $ TypeMismatch "pair" badArg
 carBuiltin badArgs  = throwError $ NumArgs 1 badArgs
 
@@ -41,7 +40,7 @@ cdrBuiltin :: Builtin
 cdrBuiltin [IList (_:xs)]         = return $ IList xs
 cdrBuiltin [IDottedList [_] x]    = return x
 cdrBuiltin [IDottedList (_:xs) x] = return $ IDottedList xs x
-cdrBuiltin [PairPtr pair]         = derefCdr pair
+cdrBuiltin [PairPtr pair]         = cdrRS pair
 cdrBuiltin [badArg] = throwError $ TypeMismatch "pair" badArg
 cdrBuiltin badArgs  = throwError $ NumArgs 1 badArgs
 
@@ -67,7 +66,7 @@ appendPrim = Prim "append" 1 aux
     aux [x] = return x
     aux xs = do
         (lists, last) <- walk xs
-        foldrM cons last $ concat lists
+        foldrM consSSS last $ concat lists
     
     walk :: [Val] -> EM ([[Val]], Val)
     walk [x] = return ([], x)
@@ -85,7 +84,7 @@ nullPrim = Prim "null?" 1 $ \case
 
 setCarPrim :: Primitive
 setCarPrim = Prim "set-car!" 2 $ \case
-  [PairPtr pair, v] -> setCarRef pair v $> v
+  [PairPtr pair, v] -> setCarRSS pair v
   [badPair, _]
     | isImmutablePair badPair -> throwError $ SetImmutable "pair"
     | otherwise -> throwError $ TypeMismatch "pair" badPair
@@ -93,7 +92,7 @@ setCarPrim = Prim "set-car!" 2 $ \case
 
 setCdrPrim :: Primitive
 setCdrPrim = Prim "set-cdr!" 2 $ \case
-  [PairPtr pair, v] -> setCdrRef pair v $> v
+  [PairPtr pair, v] -> setCdrRSS pair v
   [badPair, _]
     | isImmutablePair badPair -> throwError $ SetImmutable "pair"
     | otherwise -> throwError $ TypeMismatch "pair" badPair

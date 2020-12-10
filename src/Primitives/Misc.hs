@@ -44,16 +44,9 @@ callWithCurrentContinuation :: Primitive
 callWithCurrentContinuation = Prim "call-with-current-continuation" 1 callcc
   where
     callcc :: [Val] -> EM Val
-    callcc [func] = callCC $ \k -> do
-        cont <- reifyCont k
-        -- k :: Val -> EM b
-        -- need to produce EM Val
-        apply func [cont]
+    callcc [func] = callCC $ \k ->
+        apply func [Continuation k]
     callcc badArgs = throwError $ NumArgs 1 badArgs
-
-    reifyCont :: (Val -> EM Val) -> EM Val
-    reifyCont k = do s <- get
-                     return $ Continuation s k
 
 -- compose?
 

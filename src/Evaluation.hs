@@ -93,7 +93,7 @@ apply (PrimMacro arity func _) args
    | otherwise         = throwError $ NumArgs arity args
 
 -- Application of continuation
-apply (Continuation state func) [arg] = put state >> func arg
+apply (Continuation func) [arg] = func arg
 apply Continuation{} badArgs = throwError $ NumArgs 1 badArgs
 
 -- Applications of user-defined functions

@@ -88,7 +88,7 @@ data Val
   | Bool Bool
   | Primitive Arity Builtin String
   | PrimMacro Arity Builtin String
-  | Continuation EvalState (Val -> EM Val)
+  | Continuation (Val -> EM Val)
   | Closure
      { params :: [String]
      , vararg :: Maybe String
@@ -259,10 +259,20 @@ can use a hack with IORefs to get the actual value we care about instead,
 if needed.
 -}
 
+{- Note: [EM structure]
+EM uses a little trick about continuation monads to embed state and errors,
+instead of stacking StateT and ErrorT. The reason for this is that
+ConT r (ErrorT e m) a doesn't (and in fact, can't!) provide a MonadError
+instance. However, this type can.
+
+Cont r a ~ (a -> r) -> r, so
+EM a ~ (a -> EvalState -> IO (...)) -> EvalState -> IO (...).
+-}
+
 type EMCont = EvalState -> IO (Either LispErr Val, EvalState)
 -- | The Evaluation Monad
 newtype EM a = EM { unEM :: Cont EMCont a }
-  deriving (Functor, Applicative, Monad, MonadCont)
+  deriving (Functor, Applicative, Monad {-, MonadCont -})
 
 emCont :: ((a -> EMCont) -> EMCont) -> EM a
 emCont = EM . cont
@@ -288,6 +298,11 @@ emPut s = emCont $ \k _s -> k () s
 emLiftIO :: IO a -> EM a
 emLiftIO io = emCont $ \k s -> io >>= flip k s
 
+-- | Invoking a continuation restores the state to when it was captured.
+instance MonadCont EM where
+    callCC f = emCont $ \k s -> 
+        runCont (unEM (f (\x -> emCont $ \_ _ -> k x s))) k s
+
 instance MonadState EvalState EM where
     get = emGet
     put = emPut
@@ -307,6 +322,7 @@ liftIOThrows = liftEither <=< liftIO . runExceptT
 
 -- | Reasons a step was performed
 data StepReason = Call | Reduce | Expand deriving (Eq, Show, Read, Enum)
+
 -- | Type of options from the REPL
 type Opts = Map.HashMap String Val
 

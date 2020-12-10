@@ -16,10 +16,10 @@ module Val
 
     -- * Basic handling of lists
   , getList, getListOrError, freezeList, testCircularList
-  , isList, requireList, makeMutableList, cons
+  , isList, requireList, makeMutableList, consSSS
 
     -- * Direct handling of pairs
-  , carRef, cdrRef, derefCar, derefCdr, setCarRef, setCdrRef
+  , carRR, cdrRR, carRS, cdrRS, setCarRSS, setCdrRSS
 
     -- * Test for immutable data
   , isImmutablePair
@@ -125,7 +125,7 @@ testCircularList v =  next v >>= \case
         else lift2 go (next t) (next2 h)
       | otherwise = return False
 
-    next (PairPtr pair) = Just <$> derefCdr pair
+    next (PairPtr pair) = Just <$> cdrRS pair
     next _ = pure Nothing
 
     next2 = runMaybeT . (next' >=> next')
@@ -146,8 +146,8 @@ flattenFiniteList :: Val -> EM ([Val], Val)
 flattenFiniteList (IList xs) = return (xs, Nil)
 flattenFiniteList (IDottedList xs dot) = return (xs, dot)
 flattenFiniteList (PairPtr pair) = do
-  hd <- derefCar pair
-  ~(tl, dot) <- derefCdr pair >>= flattenFiniteList
+  hd <- carRS pair
+  ~(tl, dot) <- cdrRS pair >>= flattenFiniteList
   return (hd:tl, dot)
 flattenFiniteList other = return ([], other)
 
@@ -157,7 +157,7 @@ makeMutableList :: [Val] -> EM Val
 makeMutableList [] = pure Nil
 makeMutableList (v:vs) = do
   tl <- makeMutableList vs
-  cons v tl
+  consSSS v tl
 
 -- | Primitive list? operation.
 --
@@ -173,34 +173,40 @@ isList v = callCC $ \exit -> do
     _   -> return False
 
 -- | Primitive cons operation.
-cons :: Val -> Val -> EM Val
-cons car cdr = do
+consSSS :: Val -> Val -> EM Val
+consSSS car cdr = do
   pair <- PairObj <$> newRef car <*> newRef cdr
   PairPtr <$> newRef pair
 
 -- | Get the Ref to the car of a pair.
-carRef :: Ref PairObj -> EM (Ref Val)
-carRef pair = do
+carRR :: Ref PairObj -> EM (Ref Val)
+carRR pair = do
   PairObj c _d <- readRef pair
   return c
 
 -- | Get the Ref to the cdr of a pair.
-cdrRef :: Ref PairObj -> EM (Ref Val)
-cdrRef pair = do
+cdrRR :: Ref PairObj -> EM (Ref Val)
+cdrRR pair = do
   PairObj _c d <- readRef pair
   return d
 
-derefCar :: Ref PairObj -> EM Val
-derefCar ref = carRef ref >>= readRef
+carRS :: Ref PairObj -> EM Val
+carRS ref = carRR ref >>= readRef
 
-derefCdr :: Ref PairObj -> EM Val
-derefCdr ref = cdrRef ref >>= readRef
+cdrRS :: Ref PairObj -> EM Val
+cdrRS ref = cdrRR ref >>= readRef
 
-setCarRef :: Ref PairObj -> Val -> EM ()
-setCarRef pair v = carRef pair >>= flip writeRef v
+setCarRSS :: Ref PairObj -> Val -> EM Val
+setCarRSS pair v = do
+  carRef <- carRR pair
+  writeRef carRef v
+  return v
 
-setCdrRef :: Ref PairObj -> Val -> EM ()
-setCdrRef pair v = cdrRef pair >>= flip writeRef v
+setCdrRSS :: Ref PairObj -> Val -> EM Val
+setCdrRSS pair v = do
+  cdrRef <- cdrRR pair
+  writeRef cdrRef v
+  return v
 
 -- | Require that the given Val is a list. Otherwise, raises a 'TypeError'.
 requireList :: Val -> EM ()
