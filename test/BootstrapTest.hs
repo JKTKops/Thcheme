@@ -7,6 +7,7 @@ import Data.IORef
 import qualified Data.HashMap.Strict as Map
 
 import Bootstrap
+import Environment (nullEnv)
 import Primitives
 
 bootstrapTests :: TestTree

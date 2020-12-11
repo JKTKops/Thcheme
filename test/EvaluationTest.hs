@@ -19,6 +19,7 @@ import Parsers
 import Parsers.Internal
 import Bootstrap
 import Evaluation
+import Options (noOpts)
 
 evaluationTests :: TestTree
 evaluationTests = testGroup "Evaluation" [unitTests]
@@ -376,7 +377,7 @@ mkEvalTest tb = let exprs = lines $ input tb
         let Right expr = pExpr
 
         step "Evaluating input"
-        evaluateExpr primEnv Map.empty expr
+        evaluateExpr primEnv noOpts expr
 
     step "Verifying evaluation"
     let evaluation = last evaluations
@@ -465,6 +466,6 @@ mkApplyTest :: ApplyTB -> TestTree
 mkApplyTest tb = testCase (testNameA tb) $ do
     let Right funcP = parse parseExpr "" $ funcIn tb
     primEnv <- primitiveBindings
-    (Right func) <- fst <$> evaluateExpr primEnv Map.empty funcP
-    res <- runTest primEnv Map.empty $ apply func (args tb)
+    (Right func) <- fst <$> evaluateExpr primEnv noOpts funcP
+    res <- runTest primEnv noOpts $ apply func (args tb)
     fst res @?= expectedA tb

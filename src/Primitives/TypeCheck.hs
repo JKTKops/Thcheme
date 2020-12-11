@@ -50,6 +50,7 @@ pair (IList []) = Bool False
 pair (IList _)  = Bool True
 pair IDottedList{} = Bool True
 pair PairPtr{} = Bool True
+pair IPairPtr{} = Bool True
 pair _ = Bool False
 
 vector :: Val -> Val

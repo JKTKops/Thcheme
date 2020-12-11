@@ -25,6 +25,9 @@ module EvaluationMonad
       -- * using options
     , enableOpt, disableOpt, lintAssert, noOpts
 
+      -- * explode
+    , panic
+
       -- * Use the evaluation environment
     , getVar, setVar, updateWith, search
     , setVarForCapture, defineVar
@@ -37,6 +40,8 @@ import Data.IORef
 import Data.Maybe
 import Data.Either
 import qualified Data.HashMap.Strict as Map
+
+import Control.Arrow (first)
 import Control.Monad (when, void)
 import qualified Control.Monad as Fish ((>=>), (<=<))
 import Control.Monad.Cont (callCC, runCont)
@@ -117,16 +122,23 @@ modifyStackTop f = modify $ \s ->
     s { stack = f top : tail }
 
 modifyTopReason :: (StepReason -> StepReason) -> EM ()
-modifyTopReason f = modifyStackTop (\(r, v) -> (f r, v))
+modifyTopReason f = modifyStackTop $ first f
 
 -- | If linting is enabled, assert that a predicate is true.
--- If the assertion fails, the runtime will panic.
-lintAssert :: EM Bool -> String -> EM ()
-lintAssert test msg = whenOpt Lint $ test >>= \b ->
+-- If the assertion fails, the runtime will panic with the given message.
+lintAssert :: (Monad m, HasOpts m) => String -> m Bool -> m ()
+lintAssert msg test = whenOpt Lint $ test >>= \b ->
   if b
-    then error $ panicmsg ++ msg
+    then panic $ panicmsg ++ msg
     else pure ()
-  where panicmsg = "\nPanic! Linter detected an invariant violation:\n"
+  where panicmsg = "\nLinter detected an invariant violation:\n"
+
+-- | Panic.
+--
+-- Calling this function throws a synchronous Haskell exception, printing
+-- the given message along with a note about "the impossible" happening.
+panic :: String -> a
+panic msg = error $ "Panic! The \"impossible\" happened.\n" ++ msg
 
 -- | Searches the environment stack top-down for a symbol
 getVar :: String -> EM Val

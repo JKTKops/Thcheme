@@ -90,32 +90,33 @@ defineBuiltin (x:xs) = do
   defnHead <- freezeList x
   defineBuiltinFrozen defnHead xs
 
-defineBuiltinFrozen :: Val -> [Val] -> EM Val
-defineBuiltinFrozen (Atom var) [form] = do -- todo: NumArgs (Exact 2) when app.
-  setVarForCapture var
-  val <- eval form
-  let renamed = case val of
-        Closure{} -> val { name = Just var }
-        _ -> val
-  defineVar var renamed
-
-defineBuiltinFrozen (IList (Atom name : params)) body = case body of
-  [] -> throwError emptyBodyError
-  _  -> makeFuncNormal params body (Just name) >>= defineVar name
-
-defineBuiltinFrozen (IDottedList (Atom name : params) varargs) body = 
-  case body of
-    [] -> throwError emptyBodyError
-    _  -> makeFuncVarargs varargs params body (Just name) >>= defineVar name
-
-defineBuiltinFrozen (IList (notAtom : _)) _ = 
-  throwError $ TypeMismatch "symbol" notAtom
-
-defineBuiltinFrozen (IDottedList (notAtom : _) _) _ =
-  throwError $ TypeMismatch "symbol" notAtom
-
-defineBuiltinFrozen notAtomOrList _ = 
-  throwError $ TypeMismatch "symbol or list" notAtomOrList
+  where
+    defineBuiltinFrozen :: FrozenList -> [Val] -> EM Val
+    defineBuiltinFrozen (FNotList (Atom var)) [form] = do -- todo: NumArgs (Exact 2) when app.
+      setVarForCapture var
+      val <- eval form
+      let renamed = case val of
+            Closure{} -> val { name = Just var }
+            _ -> val
+      defineVar var renamed
+    
+    defineBuiltinFrozen (FList (Atom name : params)) body = case body of
+      [] -> throwError emptyBodyError
+      _  -> makeFuncNormal params body (Just name) >>= defineVar name
+    
+    defineBuiltinFrozen (FDottedList (Atom name : params) varargs) body = 
+      case body of
+        [] -> throwError emptyBodyError
+        _  -> makeFuncVarargs varargs params body (Just name) >>= defineVar name
+    
+    defineBuiltinFrozen (FList (notAtom : _)) _ = 
+      throwError $ TypeMismatch "symbol" notAtom
+    
+    defineBuiltinFrozen (FDottedList (notAtom : _) _) _ =
+      throwError $ TypeMismatch "symbol" notAtom
+    
+    defineBuiltinFrozen _notAtomOrList _ = 
+      throwError $ TypeMismatch "symbol or list" x
 
 -- arities are AtLeast 1 so that we can throw a nicer error than just
 -- "expects at least 2 arguments" in the case of defining a function.
@@ -128,16 +129,16 @@ mkLambda :: [Val] -> EM Val
 mkLambda (formals : body) = do 
   frozenFormals <- freezeList formals
   case frozenFormals of
-    IList params -> case body of
+    FList params -> case body of
       [] -> throwError emptyBodyError
       _  -> makeFuncNormal params body Nothing
-    IDottedList params varargs -> case body of
+    FDottedList params varargs -> case body of
       [] -> throwError emptyBodyError
       _  -> makeFuncVarargs varargs params body Nothing
-    varargs@(Atom _) -> case body of
+    FNotList varargs@(Atom _) -> case body of
       [] -> throwError emptyBodyError
       _  -> makeFuncVarargs varargs [] body Nothing
-    notAtomOrList -> throwError $ TypeMismatch "symbol or list" notAtomOrList
+    _notAtomOrList -> throwError $ TypeMismatch "symbol or list" formals
 
 emptyBodyError :: LispErr
 emptyBodyError = Default "Attempt to define function with no body"
@@ -174,14 +175,14 @@ evalPrim = Prim "eval" 1 $ \case
     [form]  -> eval form
     badArgs -> throwError $ NumArgs 1 badArgs
 
--- TODO: [r7rs] (also it's just borked rn because of Pair)
+-- TODO: [r7rs]
 applyFunc :: Primitive
 applyFunc = Prim "apply" 1 $ \case
     [func, form] -> do
       frozenForm <- freezeList form
       case frozenForm of
-        IList args -> apply func args
-        bad -> throwError $ TypeMismatch "list" bad
+        FList args -> apply func args
+        _bad -> throwError $ TypeMismatch "list" form
     (func : args) -> apply func args
     [] -> throwError $ Default "Expected at least 1 arg; found []"
 
@@ -204,29 +205,28 @@ quasiquote = Macro 1 $ \case
 
   where qq :: Val -> ReaderT Int EM Val
         qq term = lift (freezeList term) >>= \case
-          IList [Atom "quasiquote", form] -> local (+ 1) $ do
+          FList [Atom "quasiquote", form] -> local (+ 1) $ do
             inner <- qq form
             return $ IList [Atom "quasiquote", inner]
-          IList [Atom "unquote", form] -> do
+          FList [Atom "unquote", form] -> do
             depth <- ask
             if depth == 0
             then lift $ eval form
             else local (subtract 1) $ do
               inner <- qq form
               return $ IList [Atom "unquote", inner]
-          IList forms
+          FList forms
               -- this can happen because the parser is smart enough to rewrite
               -- `(0 . ,lst) as IList [Number 0, Atom unquote, Atom lst]
               -- however whenever this happens, ',lst' will definitely be of size 2
             | Atom "unquote" `elem` forms
             , (list, dot) <- break (== Atom "unquote") forms
             , [_,_] <- dot
-            -> fmap canonicalizeList $ IDottedList <$> qqTerms list <*> qq (IList dot)
+            -> do lift (makeMutableList dot) >>= qqImproper list
             | otherwise
             -> IList <$> qqTerms forms
-          IDottedList forms form ->
-            fmap canonicalizeList $ IDottedList <$> qqTerms forms <*> qq form
-          form -> return form
+          FDottedList forms form -> qqImproper forms form
+          _other -> return term
 
         qqTerms :: [Val] -> ReaderT Int EM [Val]
         qqTerms [] = return []
@@ -234,7 +234,7 @@ quasiquote = Macro 1 $ \case
           lift $ pushExpr Expand t
           frozenT <- lift $ freezeList t
           terms <- case frozenT of
-            IList [Atom "unquote-splicing", form] -> do
+            FList [Atom "unquote-splicing", form] -> do
               depth <- ask
               val <- if depth == 0
                      then lift $ eval form
@@ -243,6 +243,13 @@ quasiquote = Macro 1 $ \case
             _ -> (:[]) <$> qq t
           lift popExpr
           (terms ++) <$> qqTerms ts
+        
+        qqImproper :: [Val] -> Val -> ReaderT Int EM Val
+        qqImproper prop improp = do
+          fmap canonicalizeList $ IDottedList <$> qqTerms prop <*> qq improp
+        --  qqprop <- qqTerms prop
+        --  qqimprop <- qq improp
+        --  lift $ makeImproperMutableList qqprop qqimprop
 
 quit :: Primitive
 quit = Prim "quit" 0 $ \_ -> throwError Quit

@@ -29,7 +29,17 @@ eval v = do
     return res
 
 evalExpr :: Val -> EM Val
-evalExpr expr = case expr of
+evalExpr expr = do
+    fexpr <- freezeList expr
+    case fexpr of
+        FList (function : args) -> handleApp function args
+        FList [] -> return Nil -- see Note: [Freezing Nil] in Val.hs
+        FNotList obj -> handleSimpleDatum obj
+        FDottedList{} ->
+            throwError $ BadSpecialForm "" expr -- TODO NEXT: push string of BSF error into the show instance
+
+handleSimpleDatum :: Val -> EM Val
+handleSimpleDatum obj = case obj of
     val@String{} -> return val
     val@Char{}   -> return val
     val@Number{} -> return val
@@ -37,12 +47,10 @@ evalExpr expr = case expr of
     val@Vector{} -> return val
     (Atom id)    -> getVar id
     Nil          -> return Nil
-    IList (function : args) -> handleNonPrim function args
-    p@PairPtr{}  -> freezeList p >>= evalExpr
-    badForm -> throwError $ BadSpecialForm "Unrecognized special form" badForm
+    _other -> panic "handleSimpleDatum: datum is not simple!"
 
-handleNonPrim :: Val -> [Val] -> EM Val
-handleNonPrim function args = do
+handleApp :: Val -> [Val] -> EM Val
+handleApp function args = do
     func <- case function of
         Primitive{}    -> return function
         Continuation{} -> return function

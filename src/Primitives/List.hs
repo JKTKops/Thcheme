@@ -2,7 +2,6 @@
 module Primitives.List (primitives) where
 
 import Control.Monad (replicateM)
-import Data.Foldable (foldrM)
 
 import Val
 import EvaluationMonad
@@ -66,19 +65,20 @@ appendP = Prim "append" 1 aux
     aux [x] = return x
     aux xs = do
         (lists, last) <- walk xs
-        foldrM consSSS last $ concat lists
+        makeImproperMutableList (concat lists) last
     
     walk :: [Val] -> EM ([[Val]], Val)
     walk [x] = return ([], x)
     walk (x:xs) = do
         requireList x
         ~(lists, last) <- walk xs
-        IList fx <- freezeList x
+        FList fx <- freezeList x
         return (fx:lists, last)
 
 nullP :: Primitive
 nullP = Prim "null?" 1 $ \case
   [Nil] -> return $ Bool True
+  [IList []] -> return $ Bool True -- AAAAAAAH
   [_]   -> return $ Bool False
   badArgs -> throwError $ NumArgs 1 badArgs
 

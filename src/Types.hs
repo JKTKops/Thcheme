@@ -10,8 +10,8 @@ module Types
     , IOPrimitive (..)
     , Primitive (..)
     , Macro (..)
-    , Val (..), PairObj (..)
-    , Ref
+    , Val (..), PairObj (..), IPairObj (..)
+    , Ref, ConstRef (ConstRef)
     , truthy
     , LispErr (..)
     , ThrowsError
@@ -32,7 +32,7 @@ module Types
 import Text.ParserCombinators.Parsec (ParseError)
 import Data.Maybe (fromMaybe)
 import Data.HashMap.Strict (HashMap)
-import qualified Data.HashMap.Strict as Map
+import Data.ConstRef
 import Data.IORef
 import Data.Array
 import Control.Monad.Cont
@@ -78,7 +78,9 @@ data Macro = Macro Arity Builtin
 -- lists, and vectors. The immutable variant begins with I, where applicable.
 -- The mutable variant of both IList and IDottedList is Pair.
 --
--- Invariant: immutable lists are finite.
+-- Invariant: immutable lists are finite. -- TODO: this is no longer true; it only made sense in the context of Haskell ILists.
+-- Invariant: All objects contained in an IPairObj or IVector are immutable.
+--   note that this is implicitly transitive.
 data Val
   = Atom String
   | IList [Val]
@@ -100,9 +102,13 @@ data Val
      }
   | Port Handle
   | Undefined
+
+  | Nil
   | PairPtr (IORef PairObj)
+  | IPairPtr (ConstRef IPairObj)
 
 data PairObj = PairObj !(IORef Val) !(IORef Val)
+data IPairObj = IPairObj !(ConstRef Val) !(ConstRef Val)
 
 -- TODO: [r7rs]
 -- Defined here because it's used in `showEs` 12/6/2020.
@@ -208,6 +214,8 @@ showVal (Closure args varargs body env name) =
         Just arg -> showString " . " . showString arg
 showVal (PrimMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
 showVal PairPtr{} = showString "<can't show mutable pair>"
+showVal IPairPtr{} = showString "<no show impl for pair>"
+showVal Nil = showString "()"
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname

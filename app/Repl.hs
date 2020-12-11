@@ -8,12 +8,11 @@ import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.Char (isSpace)
 import Data.Function ((&))
 import Data.List (isPrefixOf, sort)
-import qualified Data.HashMap.Strict as Map
 
 import qualified System.Console.Haskeline as CLI
 
 import Val
-import EvaluationMonad (EvalState (..), Env, Opts)
+import EvaluationMonad (EvalState (..), Env, Opts, noOpts)
 import Evaluation
 import Bootstrap
 import qualified Environment as Env (keys)
@@ -32,7 +31,7 @@ repl = do
     replLoop
       & runRepl
       & CLI.runInputT settings
-      & flip evalStateT (RS env Map.empty)
+      & flip evalStateT (RS env noOpts)
 
 replLoop :: Repl ()
 replLoop = until_
