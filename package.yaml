@@ -28,6 +28,7 @@ dependencies:
 - array
 - containers
 - haskeline
+- monad-loops
 - mtl
 - parsec
 - transformers

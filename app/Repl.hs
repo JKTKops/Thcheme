@@ -37,7 +37,7 @@ replLoop :: Repl ()
 replLoop = until_
     (stop . fst)
     (getInput >>= replEval)
-    (Repl . CLI.outputStrLn . showResult)
+    (Repl . (CLI.outputStrLn <=< liftIO . showResultIO))
   where stop Right{}  = False
         stop (Left e) = isTerminationError e
 

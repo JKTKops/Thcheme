@@ -62,7 +62,7 @@ ifMacro = Macro 2 $ \case
         if truthy p
         then eval conseq
         else case alts of
-            [] -> return $ IList []
+            [] -> return Nil -- r7rs says unspecified
             xs -> last <$> mapM eval xs
     badArgs -> throwError $ Default $ "Expected at least 2 args; found " ++ show badArgs
 
@@ -162,7 +162,7 @@ defmacro :: Macro
 defmacro = Macro 3 $ \case
     (Atom name : ps : body) -> do
         lam <- mkLambda (ps : body)
-        let macro = IDottedList [Atom "macro"] lam
+        macro <- makeImproperMutableList [Atom "macro"] lam
         defineVar name macro
 
 begin :: Macro
@@ -207,14 +207,14 @@ quasiquote = Macro 1 $ \case
         qq term = lift (freezeList term) >>= \case
           FList [Atom "quasiquote", form] -> local (+ 1) $ do
             inner <- qq form
-            return $ IList [Atom "quasiquote", inner]
+            lift $ makeMutableList [Atom "quasiquote", inner]
           FList [Atom "unquote", form] -> do
             depth <- ask
             if depth == 0
             then lift $ eval form
             else local (subtract 1) $ do
               inner <- qq form
-              return $ IList [Atom "unquote", inner]
+              lift $ makeMutableList [Atom "unquote", inner]
           FList forms
               -- this can happen because the parser is smart enough to rewrite
               -- `(0 . ,lst) as IList [Number 0, Atom unquote, Atom lst]
@@ -224,7 +224,7 @@ quasiquote = Macro 1 $ \case
             , [_,_] <- dot
             -> do lift (makeMutableList dot) >>= qqImproper list
             | otherwise
-            -> IList <$> qqTerms forms
+            -> qqTerms forms >>= lift . makeMutableList
           FDottedList forms form -> qqImproper forms form
           _other -> return term
 
@@ -246,10 +246,9 @@ quasiquote = Macro 1 $ \case
         
         qqImproper :: [Val] -> Val -> ReaderT Int EM Val
         qqImproper prop improp = do
-          fmap canonicalizeList $ IDottedList <$> qqTerms prop <*> qq improp
-        --  qqprop <- qqTerms prop
-        --  qqimprop <- qq improp
-        --  lift $ makeImproperMutableList qqprop qqimprop
+          qqprop <- qqTerms prop
+          qqimprop <- qq improp
+          lift $ makeImproperMutableList qqprop qqimprop
 
 quit :: Primitive
 quit = Prim "quit" 0 $ \_ -> throwError Quit

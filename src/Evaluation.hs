@@ -7,7 +7,7 @@ module Evaluation
     , eval
     , runTest
       -- | Convert the evaluation output into a meaningful string
-    , showResult
+    , showResult, showResultIO
       -- | Function application, not sure why this is here rn
     , apply
     ) where
@@ -32,7 +32,7 @@ evalExpr :: Val -> EM Val
 evalExpr expr = do
     fexpr <- freezeList expr
     case fexpr of
-        FList (function : args) -> handleApp function args
+        FList (function : args) -> handleApp expr function args
         FList [] -> return Nil -- see Note: [Freezing Nil] in Val.hs
         FNotList obj -> handleSimpleDatum obj
         FDottedList{} ->
@@ -49,8 +49,9 @@ handleSimpleDatum obj = case obj of
     Nil          -> return Nil
     _other -> panic "handleSimpleDatum: datum is not simple!"
 
-handleApp :: Val -> [Val] -> EM Val
-handleApp function args = do
+handleApp :: Val -- ^ the original unfrozen Val, to put on the stack
+          -> Val -> [Val] -> EM Val
+handleApp form function args = do
     func <- case function of
         Primitive{}    -> return function
         Continuation{} -> return function
@@ -65,7 +66,11 @@ handleApp function args = do
         -- TODO: this doesn't play well with the introduction of mutable
         -- lists, so it really is time to make a proper distinction between
         -- functions and low-level macros.
-        IDottedList [Atom "macro"] macro@Closure{} -> evalMacro macro
+        p@PairPtr{} -> do
+            fp <- freezeList p
+            case fp of
+                FDottedList [Atom "macro"] macro@Closure{} -> evalMacro macro
+                _ -> evalCall func
         _              -> evalCall func
 
   where evalCall func = do
@@ -73,7 +78,7 @@ handleApp function args = do
             let reduced = func `isReduced` function || args /= argVals
             when reduced $ do
                 modifyTopReason $ const Reduce
-                pushExpr Call (IList (function : argVals))
+                pushExpr Call form
             v <- apply func argVals
             when reduced popExpr
             return v
@@ -149,6 +154,12 @@ showResult res = case res of
     (Left e@(Parser _), _) -> show e ++ "\n"
     (Left err, s) -> show err ++ "\n" ++ show s
     (Right v, _)  -> show v
+
+showResultIO :: (Either LispErr Val, EvalState) -> IO String
+showResultIO (Left e@(Parser _), _) = pure $ show e ++ "\n"
+showResultIO (Left e, _s) =
+    pure $ show e ++ "\nTemporarily unable to show the stack."
+showResultIO (Right v, _) = showValIO v
 
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
 evaluate label initEnv opts input = execEM initEnv opts $

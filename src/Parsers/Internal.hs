@@ -10,7 +10,8 @@ import Data.Char (digitToInt)
 import Data.Array (listArray)
 import Control.Monad.Except (throwError)
 
-import Types
+import Types (ThrowsError)
+import Val
 
 labeledReadOrThrow :: String -> Parser a -> String -> ThrowsError a
 labeledReadOrThrow label parser input = case parse parser label input of
@@ -142,13 +143,9 @@ parseListlike = do
     init <- many parseExpr
     mlast <- optionMaybe $ lexeme (char '.') >> parseExpr
     case (init, mlast) of
-        (list, Nothing) -> return $ IList list
-
+        (list, Nothing) -> return $ makeImmutableList list
         ([], Just e)  -> return e
-        (init, Just (IList ls)) -> return . IList $ init ++ ls
-        (init0, Just (IDottedList init1 dot)) ->
-            return $ IDottedList (init0 ++ init1) dot
-        (init, Just dot) -> return $ IDottedList init dot
+        (init, Just dot) -> return $ makeImproperImmutableList init dot
 
 -- these are provided strictly for back-compat with the testing code.
 -- them being separately defined leads to exponential parsing time!
@@ -166,4 +163,4 @@ parseQuoted = lexeme $ foldr1 (<|>) parsers
                     ","  -> "unquote"
                     ",@" -> "unquote-splicing"
             x <- parseExpr
-            return $ IList [Atom macro, x]) ["'", "`", ",@", ","]
+            return $ makeImmutableList [Atom macro, x]) ["'", "`", ",@", ","]

@@ -3,7 +3,7 @@ module Main (main) where
 import System.Environment
 import Control.Monad.Except
 
-import Types
+import Val
 import Parsers (readExpr)
 import Evaluation (evaluateExpr)
 import Environment (Env, bindVar)
@@ -21,8 +21,9 @@ main = do
 runOne :: [String] -> IO ()
 runOne (filename : args) = do
     primEnv <- primitiveBindings
-    env' <- bindVar primEnv "args" $ IList . map String $ args
-    result <- evaluateExpr env' noOpts (IList [Atom "load", String filename])
+    env' <- bindVar primEnv "args" $ makeImmutableList $ map String $ args
+    result <- evaluateExpr env' noOpts $
+        makeImmutableList [Atom "load", String filename]
     case result of
         (Left err, s) -> print err >> print s
         _             -> return ()

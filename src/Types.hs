@@ -78,13 +78,10 @@ data Macro = Macro Arity Builtin
 -- lists, and vectors. The immutable variant begins with I, where applicable.
 -- The mutable variant of both IList and IDottedList is Pair.
 --
--- Invariant: immutable lists are finite. -- TODO: this is no longer true; it only made sense in the context of Haskell ILists.
 -- Invariant: All objects contained in an IPairObj or IVector are immutable.
 --   note that this is implicitly transitive.
 data Val
   = Atom String
-  | IList [Val]
-  | IDottedList [Val] Val
   | Vector (Array Integer Val)
   | Number Integer
   | String String
@@ -162,8 +159,6 @@ eqVal (Number n) (Number n') = n == n'
 eqVal (String s) (String s') = s == s'
 eqVal (Char c) (Char c') = c == c'
 eqVal (Bool b) (Bool b') = b == b'
-eqVal (IList ls) (IList ls') = ls == ls'
-eqVal (IDottedList ls l) (IDottedList ls' l') = ls == ls' && l == l'
 eqVal (Vector v) (Vector v') = v == v'
 eqVal (Port p) (Port p') = p == p'
 eqVal (Primitive _ _ n) (Primitive _ _ n') = n == n'
@@ -193,9 +188,6 @@ showVal (Char c)   = showString "#\\" . showString (case c of
     _    -> [c])
 showVal (Bool True) = showString "#t"
 showVal (Bool False) = showString "#f"
-showVal (IList ls) = showParen True $ unwordsList ls
-showVal (IDottedList ls l) = showParen True $
-    unwordsList ls . showString " . " . shows l
 showVal (Vector v) = showChar '#' . showParen True (unwordsList (elems v))
 showVal Port{} = showString "#<port>"
 showVal Undefined = showString "#<undefined>"

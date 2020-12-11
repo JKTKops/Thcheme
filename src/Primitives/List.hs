@@ -29,17 +29,14 @@ consP = Prim "cons" 2 $ \case
     badArgs -> throwError $ NumArgs 2 badArgs
 
 carB :: Builtin
-carB [IList (x:_)]         = return x
-carB [IDottedList (x:_) _] = return x
-carB [PairPtr pair]        = carRS pair
+carB [PairPtr pair]  = carRS pair
+carB [IPairPtr pair] = carCS pair
 carB [badArg] = throwError $ TypeMismatch "pair" badArg
 carB badArgs  = throwError $ NumArgs 1 badArgs
 
 cdrB :: Builtin
-cdrB [IList (_:xs)]         = return $ IList xs
-cdrB [IDottedList [_] x]    = return x
-cdrB [IDottedList (_:xs) x] = return $ IDottedList xs x
-cdrB [PairPtr pair]         = cdrRS pair
+cdrB [PairPtr pair]  = cdrRS pair
+cdrB [IPairPtr pair] = cdrCS pair
 cdrB [badArg] = throwError $ TypeMismatch "pair" badArg
 cdrB badArgs  = throwError $ NumArgs 1 badArgs
 
@@ -78,7 +75,6 @@ appendP = Prim "append" 1 aux
 nullP :: Primitive
 nullP = Prim "null?" 1 $ \case
   [Nil] -> return $ Bool True
-  [IList []] -> return $ Bool True -- AAAAAAAH
   [_]   -> return $ Bool False
   badArgs -> throwError $ NumArgs 1 badArgs
 

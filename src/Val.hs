@@ -10,7 +10,6 @@ module Val
 
     -- * Manipulating pure 'Val's
   , truthy
-  , canonicalizeList
 
     -- * Constructing primitive functions
   , makePrimitive
@@ -28,33 +27,27 @@ module Val
   , setCarRSS, setCdrRSS
 
     -- * Test for immutable data
-  , isImmutablePair
+  , isImmutablePair, isImmutable
+
+    -- * Equality testing
+  , equalSSH
+
+    -- * Showing 'Val' in IO
+  , showValIO
   ) where
 
 import Types
 import EvaluationMonad
-import Control.Monad (when)
+import Control.Monad (join, when)
+import Control.Monad.Loops (allM)
 import Control.Monad.Trans.Maybe (MaybeT(..))
+import Data.IORef (readIORef) -- for show in IO
 import Data.Foldable (foldrM)
+
+import qualified Data.Array as A
 
 makePrimitive :: Primitive -> Val
 makePrimitive (Prim name arity func) = Primitive arity func name
-
--- | Canonicalize the form of an _immutable_ Val list.
--- if the input is not a list, or is not an immutable list,
--- it is returned unchanged.
---
--- Canonicalizing a mutable list doesn't really make sense,
--- since both mutable proper and improper lists are just chains
--- of pairs.
-canonicalizeList :: Val -> Val
--- since Nil = IList [], the first case turns
--- IDottedList xs Nil into IList xs as it should.
-canonicalizeList (IDottedList [] obj) = obj
-canonicalizeList (IDottedList lst (IList cdr)) = IList (lst ++ cdr)
-canonicalizeList (IDottedList lst1 (IDottedList lst2 dot)) =
-  canonicalizeList (IDottedList (lst1 ++ lst2) dot)
-canonicalizeList other = other
 
 {- Note: [List Operation Efficiency]
 There's some low-hanging fruit here for optimizing list operations.
@@ -207,8 +200,6 @@ testCircularList v = case nextS v of
 -- See 'freezeList', which wraps this function and further converts
 -- the pair to a proper Scheme object.
 flattenFiniteList :: Val -> EM ([Val], Val)
-flattenFiniteList (IList xs) = return (xs, Nil)
-flattenFiniteList (IDottedList xs dot) = return (xs, dot)
 flattenFiniteList (PairPtr pair) = do
   hd <- carRS pair
   ~(tl, dot) <- cdrRS pair >>= flattenFiniteList
@@ -281,32 +272,32 @@ immutableCons :: Val -> Val -> Val
 immutableCons car cdr =
   IPairPtr $ ConstRef $ IPairObj (ConstRef car) (ConstRef cdr)
 
-carRR :: Ref PairObj -> EM (Ref Val)
+carRR :: MonadIO m => Ref PairObj -> m (Ref Val)
 carRR pair = do
-  PairObj c _d <- readRef pair
+  PairObj c _d <- liftIO $ readIORef pair
   return c
 
 carCC :: ConstRef IPairObj -> ConstRef Val
 carCC (ConstRef (IPairObj c _d)) = c
 
-cdrRR :: Ref PairObj -> EM (Ref Val)
+cdrRR :: MonadIO m => Ref PairObj -> m (Ref Val)
 cdrRR pair = do
-  PairObj _c d <- readRef pair
+  PairObj _c d <- liftIO $ readIORef pair
   return d
 
 cdrCC :: ConstRef IPairObj -> ConstRef Val
 cdrCC (ConstRef (IPairObj _c d)) = d
 
-carRS :: Ref PairObj -> EM Val
-carRS ref = carRR ref >>= readRef
+carRS :: MonadIO m => Ref PairObj -> m Val
+carRS ref = carRR ref >>= liftIO . readIORef
 
 carCS :: ConstRef IPairObj -> EM Val
 carCS cr = do lintAssert "carCS: car is mutable" (pure $ isImmutable v)
               return v
   where ConstRef v = carCC cr
 
-cdrRS :: Ref PairObj -> EM Val
-cdrRS ref = cdrRR ref >>= readRef
+cdrRS :: MonadIO m => Ref PairObj -> m Val
+cdrRS ref = cdrRR ref >>= liftIO . readIORef
 
 cdrCS :: ConstRef IPairObj -> EM Val
 cdrCS cr = do lintAssert "cdrCS: cdr is mutable" (pure $ isImmutable v)
@@ -337,8 +328,7 @@ whenM test thing = do
 
 -- | Test if a given Scheme object is an immutable pair.
 isImmutablePair :: Val -> Bool
-isImmutablePair IList{} = True
-isImmutablePair IDottedList{} = True
+isImmutablePair IPairPtr{} = True
 isImmutablePair _ = False
 
 -- | Test if a given Scheme object is immutable.
@@ -352,3 +342,89 @@ isImmutablePair _ = False
 isImmutable :: Val -> Bool
 isImmutable PairPtr{} = False
 isImmutable _ = True
+
+
+-- TODO [r7rs]
+-- This implementation of 'equalSSH':
+--  (1) loops on cyclic data
+--  (2) can't compare closures/continuations
+--      because we aren't tagging them
+
+-- | Test if two given Scheme objects are equal, in the sense of
+-- r7rs' equal? procedure.
+equalSSH :: Val -> Val -> EM Bool
+equalSSH (Atom i) (Atom j) = pure $ i == j
+equalSSH (Vector v1) (Vector v2) =
+  if A.bounds v1 /= A.bounds v2
+    then pure False
+    else do
+      let l1 = A.elems v1
+          l2 = A.elems v2
+          r = zipWith equalSSH l1 l2
+      allM id r
+equalSSH (Number i) (Number j) = pure $ i == j
+equalSSH (String s) (String t) = pure $ s == t
+equalSSH (Char c1) (Char c2) = pure $ c1 == c2
+equalSSH (Bool b1) (Bool b2) = pure $ b1 == b2
+equalSSH (Primitive _ _ n1) (Primitive _ _ n2) =
+  pure $ n1 == n2
+equalSSH (PrimMacro _ _ n1) (PrimMacro _ _ n2) =
+  pure $ n1 == n2
+equalSSH Continuation{} _ = pure False
+equalSSH _ Continuation{} = pure False
+equalSSH Closure{} _ = pure False
+equalSSH _ Closure{} = pure False
+equalSSH (Port h1) (Port h2) = pure $ h1 == h2
+equalSSH Undefined _ = panic "equalSSH: #<undefined>"
+equalSSH _ Undefined = panic "equalSSH: #<undefined>"
+equalSSH Nil Nil = pure True
+equalSSH (PairPtr r1) (PairPtr r2) = do
+  let carEqual = equalSSH <$> carRS r1 <*> carRS r2
+      cdrEqual = equalSSH <$> cdrRS r1 <*> cdrRS r2
+  allM id [join carEqual, join cdrEqual]
+equalSSH (IPairPtr r1) (IPairPtr r2) = do
+  let carEqual = equalSSH <$> carCS r1 <*> carCS r2
+      cdrEqual = equalSSH <$> cdrCS r1 <*> cdrCS r2
+  allM id [join carEqual, join cdrEqual]
+
+
+-- | Show a 'Val' in IO. This function loops forever
+-- on cyclic data; it's morally equivalent to write-simple.
+-- However we don't use it to _implement_ write-simple
+-- because we can 't do the linting that we want to do
+-- since we aren't in EM. This is mostly just a temporary
+-- (12/10/2020) thing so that we can look at values until
+-- write-simple/write-shared are implemented. Once we have
+-- those, it's easy enough to implement
+-- 'unsafeEMtoIO :: EM a -> IO a' using 'execAnyEM'.
+showValIO :: Val -> IO String
+showValIO = fmap ($ "") . showsValIO
+
+-- | ShowS version of 'showValIO'.
+showsValIO :: Val -> IO ShowS
+showsValIO p@PairPtr{}  = showParen True <$> showsListIO p
+showsValIO p@IPairPtr{} = showParen True <$> showsListIO p     
+showsValIO s = pure $ shows s
+
+showsListIO :: Val -> IO ShowS
+-- only accepts pairs
+showsListIO (PairPtr r) = do
+  car <- carRS r
+  showsCar <- showsValIO car
+  (showsCar .) <$> (cdrRS r >>= showsListIO1)
+-- we're in IO, so have to forego linting here.
+showsListIO (IPairPtr (ConstRef ipo)) = case ipo of
+  IPairObj (ConstRef car) (ConstRef cdr) -> do
+    showsCar <- showsValIO car
+    (showsCar .) <$> showsListIO1 cdr
+
+-- | 'showsListIO', but puts a space before showing
+-- the next object. If the next object is 'Nil' (i.e., we're done)
+-- then no space is printed.
+--
+-- This is suitable for printing objects in lists other than the first.
+showsListIO1 :: Val -> IO ShowS
+showsListIO1 p@PairPtr{} = (showString " " .) <$> showsListIO p
+showsListIO1 p@IPairPtr{} = (showString " " .) <$> showsListIO p
+showsListIO1 Nil = pure id
+showsListIO1 dot = (showString " . " .) <$> showsValIO dot
