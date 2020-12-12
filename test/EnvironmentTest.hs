@@ -9,8 +9,9 @@ import Data.Either
 import Control.Monad.Trans.Except (runExceptT)
 
 import LispValTest ()
+import EvaluationTest ((?=))
 
-import Types
+import Val
 import Bootstrap
 import Environment
 
@@ -129,7 +130,7 @@ testBindVar = testGroup "bindVar"
         oldSize <- do
             map <- readIORef env
             return $ Map.size map
-        env <- bindVar env "list" $ IList [Number 1, Number 2]
+        env <- bindVar env "list" $ makeImmutableList [Number 1, Number 2]
 
         step "Check env size"
         map <- readIORef env
@@ -138,6 +139,5 @@ testBindVar = testGroup "bindVar"
         step "Verify binding"
         check <- runExceptT $ getVar env "list"
         isRight check @? "Failed to get list after bind"
-        let Right v = check
-        v @?= IList [Number 1, Number 2]
+        check ?= Right (makeImmutableList [Number 1, Number 2])
     ]

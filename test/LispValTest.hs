@@ -11,21 +11,26 @@ import Data.List (isPrefixOf)
 import Data.IORef
 import Data.Array
 import qualified Data.HashMap.Strict as Map
-import Control.Monad (liftM2)
+import Control.Monad (liftM2, (>=>))
+import Control.Monad.Trans (lift)
 import System.IO (stdout)
 
 import Val
+import EvaluationMonad (unsafeEMtoIO)
+import System.IO.Unsafe (unsafePerformIO) -- be careful! for arbitrary instance
 import Types (trapError, extractValue) -- these functions can probably be removed entirely.
 import Primitives
 
-instance Monad m => Serial m Val where
+instance Serial IO Val where
     series = cons1 Atom
-                \/ cons1 IList
-                \/ cons2 IDottedList
+                \/ (series >>= lift . unsafeEMtoIO . makeMutableList)
+                \/ (makeImmutableList <$> series)
                 \/ cons1 Number
                 \/ cons1 String
                 \/ cons1 Char
                 \/ cons1 Bool
+                \/ cons0 Undefined
+                -- vector?
                 -- \/ cons3 Primitive
                 -- Primitive function types left off for now
                 -- \/ cons5 Closure
@@ -33,7 +38,7 @@ instance Monad m => Serial m Val where
                 -- \/ cons1 Port
                 -- Handle is probably difficult/impossible to give Serial instance
 
-instance Monad m => Serial m LispErr where
+instance Serial IO LispErr where
     series = cons2 NumArgs
                 \/ cons2 TypeMismatch
                 -- Parser ParseError left off for now
@@ -49,9 +54,20 @@ instance Arbitrary Val where
       where lispval' 0 = oneof simpleCons
             lispval' n = oneof $ simpleCons ++
                             [ do num <- choose (0, n)
-                                 IList <$> vectorOf num subval
-                            , do num <- choose (0, n)
-                                 liftM2 IDottedList (vectorOf num subval) subval
+                                 unsafePerformIO 
+                                    . unsafeEMtoIO 
+                                    . makeMutableList 
+                                  <$> vectorOf num subval
+            -- TODO: there's quite a conundrum here. I'm not _super_
+            -- concerned about being able to test immutable data. After
+            -- all, all the implementations should mirror the mutable versions
+            -- exactly anyway. However there's always the chance that I do
+            -- something really dumb.
+            -- However, it's an invariant that once we start making immutable
+            -- data, everything that that data contains must also be immutable.
+            -- How to encode into the Arbitrary instance? Perhaps we should
+            -- choose mutable/immutable with probability favoring mutable
+            -- and then we need a helper that only generates immutable data.
                             ]
               where subval = lispval' $ n `div` 2
             simpleCons = [ Atom <$> arbitrary
@@ -148,18 +164,43 @@ prop_TerminationErrors = QC.testProperty "Only Quit is a termination error" $
 
 prop_ShowVal :: TestTree
 prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
-    withMaxSuccess 500 $
-        \input -> case input of
-            Atom _        -> testShowAtom input
-            Number _      -> testShowNumber input
-            String _      -> testShowString input
-            Char _        -> testShowChar input
-            Bool _        -> testShowBool input
-            IList _        -> testShowList input
-            IDottedList {} -> testShowDottedList input
-            Vector _      -> testShowVector input
-            _             -> True
-  where testShowAtom atomVal = show atomVal == let Atom s = atomVal in s
+    \input -> QC.ioProperty $
+        (==) <$> unsafeEMtoIO (referenceShowV input) <*> showValIO input
+            --Atom _        -> testShowAtom input
+            --Number _      -> testShowNumber input
+            --String _      -> testShowString input
+            --Char _        -> testShowChar input
+            --Bool _        -> testShowBool input
+            --IList _        -> testShowList input
+            --IDottedList {} -> testShowDottedList input
+            --Nil -> ("()" == ) <$> showValIO input
+            --Vector _      -> testShowVector input
+            --_             -> True
+  where referenceShowV = freezeList >=> referenceShow
+      
+        referenceShow (FNotList (Atom s)) = pure s
+        referenceShow (FNotList (Number n)) = pure $ show n
+        referenceShow (FNotList (String s)) = pure $ show s
+        referenceShow (FNotList (Char c)) = pure $ case c of
+            ' '  -> "#\\space"
+            '\t' -> "#\\tab"
+            '\n' -> "#\\newline"
+            '\r' -> "#\\carriage-return"
+            _    -> "#\\" ++ [c]
+        referenceShow (FNotList (Bool b)) = pure $
+            if b then "#t" else "#f"
+        referenceShow (FNotList (Vector arr)) =
+            (\es -> "#(" ++ unwords es ++ ")") 
+            <$> mapM referenceShowV (elems arr)
+
+        referenceShow (FList vs) = (\es -> "(" ++ unwords es ++ ")") 
+            <$> mapM referenceShowV vs
+        referenceShow (FDottedList vs v) =
+            (\es e -> "(" ++ unwords es ++ ". " ++ e ++ ")")
+            <$> mapM referenceShowV vs <*> referenceShowV v
+        --    "(" ++ unwords (map show vs) ++ " . " ++ show v ++ ")"
+      
+        testShowAtom atomVal = show atomVal == let Atom s = atomVal in s
         testShowNumber nVal = show nVal == let Number n = nVal in show n
         testShowString sVal = show sVal == let String s = sVal in show s
         testShowChar charVal = show charVal == let Char c = charVal in case c of
@@ -172,10 +213,10 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
             if b
             then "#t"
             else "#f"
-        testShowList listVal = show listVal == let IList ls = listVal in
-            "(" ++ unwords (map show ls) ++ ")"
-        testShowDottedList dListVal = show dListVal == let IDottedList ls l = dListVal in
-            "(" ++ unwords (map show ls) ++ " . " ++ show l ++ ")"
+        --testShowList listVal = show listVal == let IList ls = listVal in
+        --    "(" ++ unwords (map show ls) ++ ")"
+        --testShowDottedList dListVal = show dListVal == let IDottedList ls l = dListVal in
+        --    "(" ++ unwords (map show ls) ++ " . " ++ show l ++ ")"
         testShowVector vecVal = show vecVal == let Vector arr = vecVal in
             "#(" ++ unwords (map show $ elems arr) ++ ")"
 

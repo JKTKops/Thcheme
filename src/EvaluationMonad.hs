@@ -14,7 +14,7 @@ module EvaluationMonad
     , (Fish.>=>), (Fish.<=<)
 
       -- * Execute EM actions
-    , execEM, execAnyEM
+    , execEM, execAnyEM, unsafeEMtoIO
 
       -- * Adjusting the evaluation environment
     , pushEnv, withNewScope, popEnv, envSnapshot
@@ -42,7 +42,7 @@ import Data.Either
 import qualified Data.HashMap.Strict as Map
 
 import Control.Arrow (first)
-import Control.Monad (when, void)
+import Control.Monad (when, unless, void)
 import qualified Control.Monad as Fish ((>=>), (<=<))
 import Control.Monad.Cont (callCC, runCont)
 import Control.Monad.Except (MonadError (..), liftEither, runExceptT)
@@ -70,6 +70,20 @@ execAnyEM env opts m = do
   case either of
     Right _ -> Right <$> readIORef store
     Left e  -> return $ Left e
+
+-- | Convert an EM action to an IO action.
+--
+-- This function is unsafe in the sense that it doesn't handle errors
+-- raised in the EM action, so the action should be guaranteed not to
+-- raise errors. This function is exposed mainly for the test suite,
+-- which uses it to access 'equalSSH' as an IO action.
+--
+-- The EM action is run with linting enabled.
+unsafeEMtoIO :: EM a -> IO a
+unsafeEMtoIO em = do
+  ne <- Env.nullEnv
+  Right a <- execAnyEM ne (setOpt Lint noOpts) em
+  return a
 
 -- | Push an expr to the call stack
 pushExpr :: StepReason -> Val -> EM ()
@@ -128,9 +142,7 @@ modifyTopReason f = modifyStackTop $ first f
 -- If the assertion fails, the runtime will panic with the given message.
 lintAssert :: (Monad m, HasOpts m) => String -> m Bool -> m ()
 lintAssert msg test = whenOpt Lint $ test >>= \b ->
-  if b
-    then panic $ panicmsg ++ msg
-    else pure ()
+  unless b $ panic $ panicmsg ++ msg
   where panicmsg = "\nLinter detected an invariant violation:\n"
 
 -- | Panic.

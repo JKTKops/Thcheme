@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms, ViewPatterns #-}
 module ParsersTest (parsersTests) where
 
 import Test.Tasty
@@ -9,10 +10,19 @@ import Data.Maybe
 import Data.Either
 import Data.Array
 
+import Control.Arrow (first)
+
 import Parsers
 import Parsers.Internal
-import Types
+import Data.ConstRef
+import Val
 import LispValTest
+
+pattern IList xs <- (fromList -> Just xs)
+  where IList xs = makeImmutableList xs
+
+pattern IDottedList xs x <- (fromDList -> Just (xs, x))
+  where IDottedList xs x = makeImproperImmutableList xs x
 
 parsersTests :: TestTree
 parsersTests = testGroup "Parser tests" [unitTests, propTests]
@@ -493,21 +503,20 @@ dotListParserTests = testGroup "Parsing Dotted Lists"
     [ testCase "\"5 #a . #\\a\"" $ do
         let p = parse parseDottedList "" "5 #a . #\\a"
         isRight p @? "Parse failed."
-        let val = case fromRight undefined p of
-                IDottedList ls l -> Just (ls, l)
-                _ -> Nothing
-        isJust val @? "Parse did not return a Dotted List."
-        let correct = case fromJust val of
-                ([Number 5, Atom "#a"], Char 'a') -> True
-                _ -> False
-        correct @? "Contents of the dotted list are wrong: " ++ show (fromJust val)
+        let Right val = p
+            mpair = fromDList val
+        isJust mpair @? "Parse did not return a dotted list."
+        let correct = case fromJust mpair of
+              ([Number 5, Atom "#a"], Char 'a') -> True
+              _ -> False
+        correct @? "Contents of the dotted list are wrong: " ++ show val
     ]
 
 vectorParserTests = testGroup "Parsing vectors"
     [ testCase "\"#(1 #\\x ())\"" $ do
         let p = run parseVector "#(1 #\\x ())"
         val <- verify p
-        fromJust val @?= listArray (0, 2) [Number 1, Char 'x', IList []]
+        fromJust val @?= listArray (0, 2) [Number 1, Char 'x', Nil]
     , testCase "\"#()\"" $ do
         let p = run parseVector "#()"
         val <- verify p
@@ -531,21 +540,24 @@ prop_QuoteParser = testProperty "tick always results in quote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" ('\'' : show (input :: Val))
         in isRight result ==> case result of
-            Right (IList (Atom "quote" : _)) -> True
+            Right (IPairPtr (ConstRef 
+                (IPairObj (ConstRef (Atom "quote")) _))) -> True
             _ -> False
 
 prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" ('`' : show (input :: Val))
         in isRight result ==> case result of
-            Right (IList (Atom "quasiquote" : _)) -> True
+            Right (IPairPtr (ConstRef 
+                (IPairObj (ConstRef (Atom "quasiquote")) _)))  -> True
             _ -> False
 
 prop_UnquoteParser = testProperty "comma always results in unquote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" (',' : clean (show (input :: Val)))
         in isRight result ==> case result of
-            Right (IList (Atom "unquote" : _)) -> True
+            Right (IPairPtr (ConstRef 
+                (IPairObj (ConstRef (Atom "unquote")) _)))  -> True
             _ -> False
   -- if we don't do this, a LispString/Atom that starts with '@' will turn it into
   -- an unquote splicing, which happened in a test at least once.
@@ -555,7 +567,8 @@ prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-spli
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" (",@" ++ show (input :: Val))
         in isRight result ==> case result of
-            Right (IList (Atom "unquote-splicing" : _)) -> True
+            Right (IPairPtr (ConstRef 
+                (IPairObj (ConstRef (Atom "unquote-splicing")) _)))  -> True
             _ -> False
 
 -- HELPER
@@ -646,5 +659,13 @@ fromChar (Char c) = Just c
 fromChar _        = Nothing
 
 fromList :: Val -> Maybe [Val]
-fromList (IList ls) = Just ls
-fromList _          = Nothing
+fromList (IPairPtr (ConstRef (IPairObj (ConstRef c) (ConstRef d)))) =
+    (c:) <$> fromList d
+fromList Nil = Just []
+fromList _ = Nothing
+
+fromDList :: Val -> Maybe ([Val], Val)
+fromDList (IPairPtr (ConstRef (IPairObj (ConstRef c) (ConstRef d)))) =
+    first (c:) <$> fromDList d
+fromDList Nil = Nothing -- not dotted
+fromDList obj = Just ([], obj)

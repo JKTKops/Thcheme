@@ -1,6 +1,6 @@
 module Val
   ( -- * Val and support types
-    Val (..), PairObj (..)
+    Val (..), PairObj (..), IPairObj (..)
   , LispErr (..), isTerminationError
   , Primitive (..)
   , Macro (..)
@@ -30,7 +30,7 @@ module Val
   , isImmutablePair, isImmutable
 
     -- * Equality testing
-  , equalSSH
+  , valsSameShape
 
     -- * Showing 'Val' in IO
   , showValIO
@@ -101,7 +101,7 @@ data FrozenList
   | FNotList Val
 
 lintFrozenList :: FrozenList -> EM ()
-lintFrozenList fl = lintAssert "FNotList contains Nil or a Pair" $ pure $
+lintFrozenList fl = lintAssert "FNotList contains Nil or a pair" $ pure $
   case fl of
     FNotList Nil -> False
     FNotList PairPtr{} -> False
@@ -344,49 +344,79 @@ isImmutable PairPtr{} = False
 isImmutable _ = True
 
 
--- TODO [r7rs]
--- This implementation of 'equalSSH':
---  (1) loops on cyclic data
---  (2) can't compare closures/continuations
---      because we aren't tagging them
+-- TODO
+-- This implementation of 'valsSameShape':
+--  (1) loops on cyclic data 
+--      (doesn't know about shared structure at all, in fact)
+--
+-- (there used to be a (2) here, but it was fixed)
 
--- | Test if two given Scheme objects are equal, in the sense of
--- r7rs' equal? procedure.
-equalSSH :: Val -> Val -> EM Bool
-equalSSH (Atom i) (Atom j) = pure $ i == j
-equalSSH (Vector v1) (Vector v2) =
+-- | Test if two given Scheme objects are equal,
+-- in the sense that they would print the same under
+-- r7rs's 'write-simple' procedure.
+--
+-- This function pretty much only exists for the test suite
+-- and for GHCi, so it's actually a bit less strict about
+-- Closures (and it's also _slower_). For closures, we check
+-- that the closures "look" the same in terms of how they could
+-- be used. We don't inspect the environment, because the
+-- current method of "environment snapshots" means that will
+-- always fail on two same-shape but distinct-object closures.
+valsSameShape :: Val -> Val -> EM Bool
+valsSameShape (Atom i) (Atom j) = pure $ i == j
+valsSameShape (Vector v1) (Vector v2) =
   if A.bounds v1 /= A.bounds v2
     then pure False
     else do
       let l1 = A.elems v1
           l2 = A.elems v2
-          r = zipWith equalSSH l1 l2
+          r = zipWith valsSameShape l1 l2
       allM id r
-equalSSH (Number i) (Number j) = pure $ i == j
-equalSSH (String s) (String t) = pure $ s == t
-equalSSH (Char c1) (Char c2) = pure $ c1 == c2
-equalSSH (Bool b1) (Bool b2) = pure $ b1 == b2
-equalSSH (Primitive _ _ n1) (Primitive _ _ n2) =
+valsSameShape (Number i) (Number j) = pure $ i == j
+valsSameShape (String s) (String t) = pure $ s == t
+valsSameShape (Char c1) (Char c2) = pure $ c1 == c2
+valsSameShape (Bool b1) (Bool b2) = pure $ b1 == b2
+valsSameShape (Primitive _ _ n1) (Primitive _ _ n2) =
   pure $ n1 == n2
-equalSSH (PrimMacro _ _ n1) (PrimMacro _ _ n2) =
+valsSameShape (PrimMacro _ _ n1) (PrimMacro _ _ n2) =
   pure $ n1 == n2
-equalSSH Continuation{} _ = pure False
-equalSSH _ Continuation{} = pure False
-equalSSH Closure{} _ = pure False
-equalSSH _ Closure{} = pure False
-equalSSH (Port h1) (Port h2) = pure $ h1 == h2
-equalSSH Undefined _ = panic "equalSSH: #<undefined>"
-equalSSH _ Undefined = panic "equalSSH: #<undefined>"
-equalSSH Nil Nil = pure True
-equalSSH (PairPtr r1) (PairPtr r2) = do
-  let carEqual = equalSSH <$> carRS r1 <*> carRS r2
-      cdrEqual = equalSSH <$> cdrRS r1 <*> cdrRS r2
-  allM id [join carEqual, join cdrEqual]
-equalSSH (IPairPtr r1) (IPairPtr r2) = do
-  let carEqual = equalSSH <$> carCS r1 <*> carCS r2
-      cdrEqual = equalSSH <$> cdrCS r1 <*> cdrCS r2
-  allM id [join carEqual, join cdrEqual]
+valsSameShape Continuation{} _ = pure False
+valsSameShape _ Continuation{} = pure False
+valsSameShape (Closure p v b _ n) (Closure p' v' b' _ n') =
+  if p == p' && v == v' && n == n'
+    then allM id $ zipWith valsSameShape b b'
+    else pure False
+valsSameShape (Port h1) (Port h2) = pure $ h1 == h2
+valsSameShape Undefined _ = panic "valsSameShape: #<undefined>"
+valsSameShape _ Undefined = panic "valsSameShape: #<undefined>"
+valsSameShape Nil Nil = pure True
+valsSameShape (PairPtr r1) (PairPtr r2) = pairEqual (Left r1) (Left r2)
+valsSameShape (PairPtr r) (IPairPtr c) = pairEqual (Left r) (Right c)
+valsSameShape (IPairPtr c) (PairPtr r) = pairEqual (Right c) (Left r)
+valsSameShape (IPairPtr c1) (IPairPtr c2) = pairEqual (Right c1) (Right c2)
 
+valsSameShape _ _ = pure False
+
+pairEqual
+  :: Either (Ref PairObj)
+            (ConstRef IPairObj)
+  -> Either (Ref PairObj)
+            (ConstRef IPairObj)
+  -> EM Bool
+pairEqual r1 r2 =
+  let carEqual = valsSameShape <$> car1 <*> car2
+      cdrEqual = valsSameShape <$> cdr1 <*> cdr2
+  in allM id [join carEqual, join cdrEqual]
+  where
+    getCar (Left pair) = carRS pair
+    getCar (Right ipair) = carCS ipair
+    getCdr (Left pair) = cdrRS pair
+    getCdr (Right ipair) = cdrCS ipair
+
+    car1 = getCar r1
+    car2 = getCar r2
+    cdr1 = getCdr r1
+    cdr2 = getCdr r2
 
 -- | Show a 'Val' in IO. This function loops forever
 -- on cyclic data; it's morally equivalent to write-simple.

@@ -173,7 +173,17 @@ eqVal (Closure p v b _ n) (Closure p' v' b' _ n') =
         , v == v'
         , b == b'
         , n == n'
-        ]
+        ] 
+eqVal Nil Nil = True
+eqVal p@IPairPtr{} q@IPairPtr{} =
+    fromList p == fromList q
+  where
+    fromList :: Val -> ([Val], Val)
+    fromList (IPairPtr (ConstRef (IPairObj (ConstRef c) (ConstRef d)))) =
+      first (c:) $ fromList d
+    fromList obj = ([], obj)
+    
+    first f (a, b) = (f a, b)
 eqVal _ _ = False
 
 showVal :: Val -> ShowS
@@ -206,7 +216,19 @@ showVal (Closure args varargs body env name) =
         Just arg -> showString " . " . showString arg
 showVal (PrimMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
 showVal PairPtr{} = showString "<can't show mutable pair>"
-showVal IPairPtr{} = showString "<no show impl for pair>"
+showVal p@IPairPtr{} = showParen True $ showDList $ fromList p
+  where
+    fromList :: Val -> ([Val], Val)
+    fromList (IPairPtr (ConstRef (IPairObj (ConstRef c) (ConstRef d)))) =
+      first (c:) $ fromList d
+    fromList obj = ([], obj)
+    
+    first f (a, b) = (f a, b)
+
+    showDList (vs, v) = unwordsList vs . case v of
+        Nil -> id
+        obj -> showString " . " . shows obj
+
 showVal Nil = showString "()"
 
 showErr :: LispErr -> String
