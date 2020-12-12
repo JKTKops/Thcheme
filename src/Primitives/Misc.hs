@@ -141,7 +141,7 @@ mkLambda (formals : body) = do
     _notAtomOrList -> throwError $ TypeMismatch "symbol or list" formals
 
 emptyBodyError :: LispErr
-emptyBodyError = Default "Attempt to define function with no body"
+emptyBodyError = EmptyBody -- historical artifact, feel free to inline
 
 makeFunc :: Maybe String
          -> [Val]

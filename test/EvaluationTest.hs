@@ -338,12 +338,12 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Define rejects empty-bodied functions"
         , input = "(define (test))"
-        , expected = Left $ Default "Attempt to define function with no body"
+        , expected = Left EmptyBody
         }
     , EvalTest
         { testName = "Lambda creation rejects empty-bodied functions"
         , input = "(lambda (x y))"
-        , expected = Left $ Default "Attempt to define function with no body"
+        , expected = Left EmptyBody
         }
     , ImpureEvalTest
         { testName = "dot unquote is unquote-splicing"

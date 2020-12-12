@@ -130,6 +130,7 @@ data LispErr = NumArgs Integer [Val]
              | EvaluateDuringInit String 
              | SetImmutable String -- type name
              | CircularList
+             | EmptyBody
              | Default String
              | Quit
     deriving (Eq)
@@ -245,6 +246,7 @@ showErr (NumArgs expected found)      = "expected " ++ show expected
 showErr (TypeMismatch expected found) = "invalid type: expected " ++ expected
     ++ ", found " ++ show found
 showErr CircularList                  = "circular list"
+showErr EmptyBody                     = "attempt to define function with no body"
 showErr (Parser parseErr)             = "parse error at " ++ show parseErr
 showErr (Default message)             = message
 showErr Quit                          = "quit invoked"
