@@ -6,7 +6,12 @@ For each argument/return of the function, append the corresponding letter to
 the end of the name:
 
 * S - Scheme object (aka `Val`)
-* R - Ref to an obj, i.e. `Ref PairObj` or `Ref String`
+* P - Scheme object, but only handles the cases where the object has the
+      correct type. P is for "partial". It is OK for partial functions to
+      panic when they see an object of the wrong type. Write/use with care!
+      A function in `EM` that throws a Scheme error instead of panicking
+      should use S, not P.
+* R - Ref to an obj, i.e. `Ref Val` or `Ref String`
 * C - ConstRef to an obj
 * H - any other Haskell type, i.e. `[Val]`, `String`, `Vector` etc.
 

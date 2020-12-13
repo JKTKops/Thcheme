@@ -18,7 +18,7 @@ import System.IO (stdout)
 import Val
 import EvaluationMonad (unsafeEMtoIO)
 import System.IO.Unsafe (unsafePerformIO) -- be careful! for arbitrary instance
-import Types (trapError, extractValue) -- these functions can probably be removed entirely.
+import Types (extractValue) -- these functions can probably be removed entirely.
 import Primitives
 
 instance Serial IO Val where
@@ -104,9 +104,7 @@ propTests = testGroup "Property tests" [qcTests, scTests]
 
 qcTests :: TestTree
 qcTests = testGroup "(QuickCheck)"
-    [ prop_TrapErrorOutputsRight
-    , prop_TrapErrorIdemp
-    , prop_TerminationErrors
+    [ prop_TerminationErrors
     , prop_ShowVal
     ]
 
@@ -145,16 +143,6 @@ testShowFunctions = testCase "Functions show correctly" $
             "(lambda (x y z . others) ...)"
 
 -- PROPERTY TESTS
-prop_TrapErrorOutputsRight :: TestTree
-prop_TrapErrorOutputsRight = QC.testProperty "Trap error evaluates to Right" $
-    \input -> case trapError input of
-        Left _  -> False
-        Right _ -> True
-
-prop_TrapErrorIdemp :: TestTree
-prop_TrapErrorIdemp = QC.testProperty "trapError . trapError == trapError" $
-    \input -> (extractValue . trapError . trapError) input == extractValue (trapError input)
-
 prop_TerminationErrors :: TestTree
 prop_TerminationErrors = QC.testProperty "Only Quit is a termination error" $
     withMaxSuccess 50 $

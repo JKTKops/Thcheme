@@ -29,14 +29,14 @@ consP = Prim "cons" 2 $ \case
     badArgs -> throwError $ NumArgs 2 badArgs
 
 carB :: Builtin
-carB [PairPtr pair]  = carRS pair
-carB [IPairPtr pair] = carCS pair
+carB [pair@Pair{}]  = carPS pair
+carB [pair@IPair{}] = carPS pair
 carB [badArg] = throwError $ TypeMismatch "pair" badArg
 carB badArgs  = throwError $ NumArgs 1 badArgs
 
 cdrB :: Builtin
-cdrB [PairPtr pair]  = cdrRS pair
-cdrB [IPairPtr pair] = cdrCS pair
+cdrB [pair@Pair{}]  = cdrPS pair
+cdrB [pair@IPair{}] = cdrPS pair
 cdrB [badArg] = throwError $ TypeMismatch "pair" badArg
 cdrB badArgs  = throwError $ NumArgs 1 badArgs
 
@@ -80,16 +80,10 @@ nullP = Prim "null?" 1 $ \case
 
 setCarP :: Primitive
 setCarP = Prim "set-car!" 2 $ \case
-  [PairPtr pair, v] -> setCarRSS pair v
-  [badPair, _]
-    | isImmutablePair badPair -> throwError $ SetImmutable "pair"
-    | otherwise -> throwError $ TypeMismatch "pair" badPair
+  [pair, v] -> setCarSSS pair v
   badArgs -> throwError $ NumArgs 2 badArgs
 
 setCdrP :: Primitive
 setCdrP = Prim "set-cdr!" 2 $ \case
-  [PairPtr pair, v] -> setCdrRSS pair v
-  [badPair, _]
-    | isImmutablePair badPair -> throwError $ SetImmutable "pair"
-    | otherwise -> throwError $ TypeMismatch "pair" badPair
+  [pair, v] -> setCdrSSS pair v
   badArgs -> throwError $ NumArgs 2 badArgs

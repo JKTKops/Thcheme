@@ -66,7 +66,7 @@ handleApp form function args = do
         -- TODO: this doesn't play well with the introduction of mutable
         -- lists, so it really is time to make a proper distinction between
         -- functions and low-level macros.
-        p@PairPtr{} -> do
+        p@Pair{} -> do
             fp <- freezeList p
             case fp of
                 FDottedList [Atom "macro"] macro@Closure{} -> evalMacro macro

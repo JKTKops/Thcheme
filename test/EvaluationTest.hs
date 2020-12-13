@@ -406,7 +406,7 @@ outputEquals (Right e) (Right a) = unsafeEMtoIO (valsSameShape e a)
 outputEquals _ _ = pure False
 
 showOutput :: Either LispErr Val -> IO String
-showOutput (Left e) = pure $ show e
+showOutput (Left e)  = showErrIO e
 showOutput (Right v) = showValIO v
 
 buildExpected :: EvalTest -> IO (Either LispErr Val)

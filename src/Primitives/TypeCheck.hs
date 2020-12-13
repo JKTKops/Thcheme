@@ -46,8 +46,8 @@ bool (Bool _) = Bool True
 bool _        = Bool False
 
 pair :: Val -> Val
-pair PairPtr{} = Bool True
-pair IPairPtr{} = Bool True
+pair Pair{}  = Bool True
+pair IPair{} = Bool True
 pair _ = Bool False
 
 vector :: Val -> Val

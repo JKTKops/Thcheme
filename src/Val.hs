@@ -1,6 +1,6 @@
 module Val
   ( -- * Val and support types
-    Val (..), PairObj (..), IPairObj (..)
+    Val (..)
   , LispErr (..), isTerminationError
   , Primitive (..)
   , Macro (..)
@@ -23,8 +23,8 @@ module Val
   , FrozenList (..), freezeList, lintFrozenList
 
     -- * Direct handling of pairs
-  , carRR, carCC, cdrRR, cdrCC, carRS, carCS, cdrRS, cdrCS
-  , setCarRSS, setCdrRSS
+  , carPR, carPC, cdrPR, cdrPC, carPS, cdrPS
+  , setCarSSS, setCdrSSS
 
     -- * Test for immutable data
   , isImmutablePair, isImmutable
@@ -48,6 +48,7 @@ import Data.Foldable (foldrM)
 
 import qualified Data.Array as A
 import Data.Maybe (fromMaybe)
+import System.Mem.StableName (makeStableName)
 
 makePrimitive :: Primitive -> Val
 makePrimitive (Prim name arity func) = Primitive arity func name
@@ -94,11 +95,11 @@ showVal (Closure args varargs body env name) =
         Nothing  -> id
         Just arg -> showString " . " . showString arg
 showVal (PrimMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
-showVal PairPtr{} = showString "<can't show mutable pair>"
-showVal p@IPairPtr{} = showParen True $ showDList $ fromList p
+showVal Pair{} = showString "<can't show mutable pair>"
+showVal p@IPair{} = showParen True $ showDList $ fromList p
   where
     fromList :: Val -> ([Val], Val)
-    fromList (IPairPtr (ConstRef (IPairObj (ConstRef c) (ConstRef d)))) =
+    fromList (IPair (ConstRef c) (ConstRef d)) =
       first (c:) $ fromList d
     fromList obj = ([], obj)
     
@@ -198,9 +199,9 @@ data FrozenList
 lintFrozenList :: FrozenList -> EM ()
 lintFrozenList fl = lintAssert "FNotList contains Nil or a pair" $ pure $
   case fl of
-    FNotList Nil -> False
-    FNotList PairPtr{} -> False
-    FNotList IPairPtr{} -> False
+    FNotList Nil     -> False
+    FNotList Pair{}  -> False
+    FNotList IPair{} -> False
     _ -> True
 
 {- Note: [Freezing Nil]
@@ -251,37 +252,29 @@ requireFiniteList v = whenM (testCircularList v) (throwError CircularList)
 
 -- | Test if a Scheme value is a circular list.
 testCircularList :: Val -> EM Bool
-testCircularList v = case nextS v of
+testCircularList v = next v >>= \case
     Nothing   -> pure False
-    Just node -> lift2 go (pure $ Just node) (nextR node)
+    Just node -> lift2 go (pure $ Just node) (next node)
   where
     -- Floyd's Algorithm
+    go :: Maybe Val -> Maybe Val -> EM Bool
     go tortoise hare
       | Just t <- tortoise
       , Just h <- hare
-      = if t == h
-        then return True
-        else lift2 go (nextR t) (next2 h)
+      = ifM ((==) <$> liftIO (makeStableName t) <*> liftIO (makeStableName h))
+            (return True)
+            (lift2 go (next t) (next2 h))
       | otherwise = return False
 
     -- takes a ref to a pair obj (mut. or immut. via Either)
     -- and gets Just a ref to the cdr PairObj if the cdr is a pair,
     -- otherwise Nothing.
-    nextR (Right pair) = do
-      cdrR <- cdrRR pair
-      val <- readRef cdrR
-      return $ nextS val
-    nextR (Left pair) =
-      let cdrC = cdrCC pair
-          ConstRef val = cdrC
-      in pure $ nextS val
-    
-    nextS (PairPtr r) = Just (Right r)
-    nextS (IPairPtr cr) = Just (Left cr)
-    nextS _ = Nothing
+    next p@Pair{}  = Just <$> cdrPS p
+    next p@IPair{} = Just <$> cdrPS p
+    next _ = pure Nothing
 
-    next2 = runMaybeT . (nextR' >=> nextR')
-      where nextR' = MaybeT . nextR
+    next2 = runMaybeT . (next' >=> next')
+      where next' = MaybeT . next
 
     lift2 f x y = do
       xv <- x
@@ -295,13 +288,13 @@ testCircularList v = case nextS v of
 -- See 'freezeList', which wraps this function and further converts
 -- the pair to a proper Scheme object.
 flattenFiniteList :: Val -> EM ([Val], Val)
-flattenFiniteList (PairPtr pair) = do
-  hd <- carRS pair
-  ~(tl, dot) <- cdrRS pair >>= flattenFiniteList
+flattenFiniteList p@Pair{} = do
+  hd <- carPS p
+  ~(tl, dot) <- cdrPS p >>= flattenFiniteList
   return (hd:tl, dot)
-flattenFiniteList (IPairPtr cr) = do
-  car <- carCS cr -- use these instead of pattern matching for linting
-  cdr <- cdrCS cr
+flattenFiniteList p@IPair{} = do
+  car <- carPS p
+  cdr <- cdrPS p
   ~(tl, dot) <- flattenFiniteList cdr
   return (car:tl, dot)
 
@@ -349,9 +342,7 @@ isListSH v = callCC $ \exit -> do
 
 -- | Primitive cons operation.
 consSSS :: Val -> Val -> EM Val
-consSSS car cdr = do
-  pair <- PairObj <$> newRef car <*> newRef cdr
-  PairPtr <$> newRef pair
+consSSS car cdr = Pair <$> newRef car <*> newRef cdr
 
 -- | Primitive cons operation for immutable lists.
 --
@@ -364,66 +355,62 @@ consSSS car cdr = do
 --
 -- Unless you're working on the parser, you really shouldn't use this function!
 immutableCons :: Val -> Val -> Val
-immutableCons car cdr =
-  IPairPtr $ ConstRef $ IPairObj (ConstRef car) (ConstRef cdr)
+immutableCons car cdr = IPair (ConstRef car) (ConstRef cdr)
 
-carRR :: MonadIO m => Ref PairObj -> m (Ref Val)
-carRR pair = do
-  PairObj c _d <- liftIO $ readIORef pair
-  return c
+carPR :: Val -> Ref Val
+carPR (Pair c _d) = c
+carPR _ = panic "carPR: not a mutable pair"
 
-carCC :: ConstRef IPairObj -> ConstRef Val
-carCC (ConstRef (IPairObj c _d)) = c
+carPC :: Val -> ConstRef Val
+carPC (IPair c _d) = c
+carPC _ = panic "carPC: not an immutable pair"
 
-cdrRR :: MonadIO m => Ref PairObj -> m (Ref Val)
-cdrRR pair = do
-  PairObj _c d <- liftIO $ readIORef pair
-  return d
+cdrPR :: Val -> Ref Val
+cdrPR (Pair _c d) = d
+cdrPR _ = panic "cdrPR: not a mutable pair"
 
-cdrCC :: ConstRef IPairObj -> ConstRef Val
-cdrCC (ConstRef (IPairObj _c d)) = d
+cdrPC :: Val -> ConstRef Val
+cdrPC (IPair _c d) = d
+cdrPC _ = panic "cdrPC: not an immutable pair"
 
-carRS :: MonadIO m => Ref PairObj -> m Val
-carRS ref = carRR ref >>= liftIO . readIORef
+carPS :: MonadIO m => Val -> m Val
+carPS p@Pair{} = liftIO $ readIORef $ carPR p
+carPS (IPair (ConstRef car) _) = pure car
+carPS _ = panic "carPS: not a pair"
 
-carCS :: ConstRef IPairObj -> EM Val
-carCS cr = do lintAssert "carCS: car is mutable" (pure $ isImmutable v)
-              return v
-  where ConstRef v = carCC cr
+cdrPS :: MonadIO m => Val -> m Val
+cdrPS p@Pair{} = liftIO $ readIORef $ cdrPR p
+cdrPS (IPair _ (ConstRef cdr)) = pure cdr
+cdrPS _ = panic "cdrPS: not a pair"
 
-cdrRS :: MonadIO m => Ref PairObj -> m Val
-cdrRS ref = cdrRR ref >>= liftIO . readIORef
-
-cdrCS :: ConstRef IPairObj -> EM Val
-cdrCS cr = do lintAssert "cdrCS: cdr is mutable" (pure $ isImmutable v)
-              return v 
-  where ConstRef v = cdrCC cr
-
-setCarRSS :: Ref PairObj -> Val -> EM Val
-setCarRSS pair v = do
-  carRef <- carRR pair
-  writeRef carRef v
+setCarSSS :: Val -> Val -> EM Val
+setCarSSS (Pair c _d) v = do
+  writeRef c v
   return v
+setCarSSS IPair{} _ = throwError $ SetImmutable "pair"
+setCarSSS v _ = throwError $ TypeMismatch "pair" v
 
-setCdrRSS :: Ref PairObj -> Val -> EM Val
-setCdrRSS pair v = do
-  cdrRef <- cdrRR pair
-  writeRef cdrRef v
+setCdrSSS :: Val -> Val -> EM Val
+setCdrSSS (Pair _c d) v = do
+  writeRef d v
   return v
+setCdrSSS IPair{} _ = throwError $ SetImmutable "pair"
+setCdrSSS v _ = throwError $ TypeMismatch "pair" v
 
 -- | Require that the given Val is a list. Otherwise, raises a 'TypeError'.
 requireList :: Val -> EM ()
 requireList v =
   whenM (not <$> isListSH v) $ throwError $ TypeMismatch "list" v
 
+ifM :: Monad m => m Bool -> m a -> m a -> m a
+ifM b t f = b >>= \b' -> if b' then t else f
+
 whenM :: Monad m => m Bool -> m () -> m ()
-whenM test thing = do
-  b <- test
-  when b thing
+whenM test thing = ifM test thing (pure ())
 
 -- | Test if a given Scheme object is an immutable pair.
 isImmutablePair :: Val -> Bool
-isImmutablePair IPairPtr{} = True
+isImmutablePair IPair{} = True
 isImmutablePair _ = False
 
 -- | Test if a given Scheme object is immutable.
@@ -435,7 +422,7 @@ isImmutablePair _ = False
 -- Most objects qualify; 'PairPtr', 'VecPtr', 'U8VecPtr', and 'StringPtr' do
 -- not.
 isImmutable :: Val -> Bool
-isImmutable PairPtr{} = False
+isImmutable Pair{} = False
 isImmutable _ = True
 
 
@@ -485,33 +472,24 @@ valsSameShape (Port h1) (Port h2) = pure $ h1 == h2
 valsSameShape Undefined _ = panic "valsSameShape: #<undefined>"
 valsSameShape _ Undefined = panic "valsSameShape: #<undefined>"
 valsSameShape Nil Nil = pure True
-valsSameShape (PairPtr r1) (PairPtr r2) = pairEqual (Left r1) (Left r2)
-valsSameShape (PairPtr r) (IPairPtr c) = pairEqual (Left r) (Right c)
-valsSameShape (IPairPtr c) (PairPtr r) = pairEqual (Right c) (Left r)
-valsSameShape (IPairPtr c1) (IPairPtr c2) = pairEqual (Right c1) (Right c2)
+valsSameShape p1@Pair{}  p2@Pair{}  = pairEqual p1 p2
+valsSameShape p1@Pair{}  p2@IPair{} = pairEqual p1 p2
+valsSameShape p1@IPair{} p2@Pair{}  = pairEqual p1 p2
+valsSameShape p1@IPair{} p2@IPair{} = pairEqual p1 p2
 
 valsSameShape _ _ = pure False
 
-pairEqual
-  :: Either (Ref PairObj)
-            (ConstRef IPairObj)
-  -> Either (Ref PairObj)
-            (ConstRef IPairObj)
-  -> EM Bool
+-- both argument vals _must_ be pairs. Otherwise panic ensues.
+pairEqual :: Val -> Val -> EM Bool
 pairEqual r1 r2 =
   let carEqual = valsSameShape <$> car1 <*> car2
       cdrEqual = valsSameShape <$> cdr1 <*> cdr2
   in allM id [join carEqual, join cdrEqual]
   where
-    getCar (Left pair) = carRS pair
-    getCar (Right ipair) = carCS ipair
-    getCdr (Left pair) = cdrRS pair
-    getCdr (Right ipair) = cdrCS ipair
-
-    car1 = getCar r1
-    car2 = getCar r2
-    cdr1 = getCdr r1
-    cdr2 = getCdr r2
+    car1 = carPS r1
+    car2 = carPS r2
+    cdr1 = cdrPS r1
+    cdr2 = cdrPS r2
 
 -- | Show a 'Val' in IO. This function loops forever
 -- on cyclic data; it's morally equivalent to write-simple.
@@ -526,19 +504,18 @@ showValIO = fmap ($ "") . showsValIO
 
 -- | ShowS version of 'showValIO'.
 showsValIO :: Val -> IO ShowS
-showsValIO p@PairPtr{}  = showParen True <$> showsListIO p
-showsValIO p@IPairPtr{} = showParen True <$> showsListIO p     
+showsValIO p@Pair{}  = showParen True <$> showsListIO p
+showsValIO p@IPair{} = showParen True <$> showsListIO p     
 showsValIO s = pure $ shows s
 
 showsListIO :: Val -> IO ShowS
 -- only accepts pairs
-showsListIO (PairPtr r) = do
-  car <- carRS r
+showsListIO (Pair c d) = do
+  car <- readIORef c
   showsCar <- showsValIO car
-  (showsCar .) <$> (cdrRS r >>= showsListIO1)
+  (showsCar .) <$> (readIORef d >>= showsListIO1)
 -- we're in IO, so have to forego linting here.
-showsListIO (IPairPtr (ConstRef ipo)) = case ipo of
-  IPairObj (ConstRef car) (ConstRef cdr) -> do
+showsListIO (IPair (ConstRef car) (ConstRef cdr)) = do
     showsCar <- showsValIO car
     (showsCar .) <$> showsListIO1 cdr
 
@@ -548,8 +525,8 @@ showsListIO (IPairPtr (ConstRef ipo)) = case ipo of
 --
 -- This is suitable for printing objects in lists other than the first.
 showsListIO1 :: Val -> IO ShowS
-showsListIO1 p@PairPtr{} = (showString " " .) <$> showsListIO p
-showsListIO1 p@IPairPtr{} = (showString " " .) <$> showsListIO p
+showsListIO1 p@Pair{}  = (showString " " .) <$> showsListIO p
+showsListIO1 p@IPair{} = (showString " " .) <$> showsListIO p
 showsListIO1 Nil = pure id
 showsListIO1 dot = (showString " . " .) <$> showsValIO dot
 

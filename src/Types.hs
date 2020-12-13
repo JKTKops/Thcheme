@@ -10,12 +10,11 @@ module Types
     , IOPrimitive (..)
     , Primitive (..)
     , Macro (..)
-    , Val (..), PairObj (..), IPairObj (..)
+    , Val (..)
     , Ref, ConstRef (ConstRef)
     , LispErr (..)
     , ThrowsError
     , IOThrowsError
-   -- , trapError
     , extractValue
     , isTerminationError
     , liftEither
@@ -29,7 +28,6 @@ module Types
     ) where
 
 import Text.ParserCombinators.Parsec (ParseError)
-import Data.Maybe (fromMaybe)
 import Data.HashMap.Strict (HashMap)
 import Data.ConstRef
 import Data.IORef
@@ -100,14 +98,12 @@ data Val
   | Undefined
 
   | Nil
-  | PairPtr !(IORef PairObj)
-  | IPairPtr !(ConstRef IPairObj)
+  | Pair  !(IORef Val)    !(IORef Val)
+  | IPair !(ConstRef Val) !(ConstRef Val)
 
 -- all the strictness annotations on various Ref types are necessary.
 -- Otherwise, we could run into issues when we use 'StableName's to hash
 -- refs in equal? and write-shared.
-data PairObj = PairObj !(IORef Val) !(IORef Val)
-data IPairObj = IPairObj !(ConstRef Val) !(ConstRef Val)
 
 eqVal :: Val -> Val -> Bool
 eqVal (Atom s) (Atom s') = s == s'
@@ -131,11 +127,11 @@ eqVal (Closure p v b _ n) (Closure p' v' b' _ n') =
         , n == n'
         ] 
 eqVal Nil Nil = True
-eqVal p@IPairPtr{} q@IPairPtr{} =
+eqVal p@IPair{} q@IPair{} =
     fromList p == fromList q
   where
     fromList :: Val -> ([Val], Val)
-    fromList (IPairPtr (ConstRef (IPairObj (ConstRef c) (ConstRef d)))) =
+    fromList (IPair (ConstRef c) (ConstRef d)) =
       first (c:) $ fromList d
     fromList obj = ([], obj)
     
