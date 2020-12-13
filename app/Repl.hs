@@ -62,6 +62,8 @@ getInput = runMaybeT $ go id 0
       where prompt = case balance of
        -- balance is only 0 on the first input, otherwise we
        -- would've returned the input after the last round.
+       -- If the user enters only whitespace and hits enter,
+       -- we loop around and should get 0 again.
               0 -> ">>> "
               _ -> "... "
 

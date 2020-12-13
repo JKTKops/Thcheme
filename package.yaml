@@ -31,6 +31,7 @@ dependencies:
 - monad-loops
 - mtl
 - parsec
+- tardis # let's have some fun :D
 - transformers
 - unordered-containers
 

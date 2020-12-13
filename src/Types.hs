@@ -100,9 +100,12 @@ data Val
   | Undefined
 
   | Nil
-  | PairPtr (IORef PairObj)
-  | IPairPtr (ConstRef IPairObj)
+  | PairPtr !(IORef PairObj)
+  | IPairPtr !(ConstRef IPairObj)
 
+-- all the strictness annotations on various Ref types are necessary.
+-- Otherwise, we could run into issues when we use 'StableName's to hash
+-- refs in equal? and write-shared.
 data PairObj = PairObj !(IORef Val) !(IORef Val)
 data IPairObj = IPairObj !(ConstRef Val) !(ConstRef Val)
 
@@ -218,7 +221,7 @@ EM a ~ (a -> EvalState -> IO (...)) -> EvalState -> IO (...).
 type EMCont = EvalState -> IO (Either LispErr Val, EvalState)
 -- | The Evaluation Monad
 newtype EM a = EM { unEM :: Cont EMCont a }
-  deriving (Functor, Applicative, Monad {-, MonadCont -})
+  deriving (Functor, Applicative, Monad)
 
 emCont :: ((a -> EMCont) -> EMCont) -> EM a
 emCont = EM . cont
