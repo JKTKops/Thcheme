@@ -7,7 +7,7 @@ module Evaluation
     , eval
     , runTest
       -- | Convert the evaluation output into a meaningful string
-    , showResult, showResultIO
+    , showResultIO
       -- | Function application, not sure why this is here rn
     , apply
     ) where
@@ -149,17 +149,12 @@ apply notFunc _ = throwError $ NotFunction "Not a function" notFunc
 num :: [a] -> Integer
 num = toInteger . length
 
-showResult :: (Either LispErr Val, EvalState) -> String
-showResult res = case res of
-    (Left e@(Parser _), _) -> show e ++ "\n"
-    (Left err, s) -> show err ++ "\n" ++ show s
-    (Right v, _)  -> show v
-
 showResultIO :: (Either LispErr Val, EvalState) -> IO String
-showResultIO (Left e@(Parser _), _) = pure $ show e ++ "\n"
-showResultIO (Left e, _s) =
-    pure $ show e ++ "\nTemporarily unable to show the stack."
-showResultIO (Right v, _) = showValIO v
+showResultIO res = case res of
+    (Left e@(Parser _), _) -> pure $ show e ++ "\n"
+    (Left err, s) -> diffLines <$> showErrIO err <*> showEvalState s
+    (Right v, _)  -> showValIO v
+  where diffLines s r = s ++ "\n" ++ r
 
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
 evaluate label initEnv opts input = execEM initEnv opts $

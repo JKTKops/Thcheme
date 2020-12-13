@@ -12,20 +12,19 @@ module Types
     , Macro (..)
     , Val (..), PairObj (..), IPairObj (..)
     , Ref, ConstRef (ConstRef)
-    , truthy
     , LispErr (..)
     , ThrowsError
     , IOThrowsError
-    , trapError
+   -- , trapError
     , extractValue
     , isTerminationError
     , liftEither
-    , runIOThrows
+   -- , runIOThrows
     , EM (..)
     , EvalState (..)
     , StepReason (..)
     , Opts
-    , TraceType
+   -- , TraceType
     , liftIOThrows
     ) where
 
@@ -107,53 +106,6 @@ data Val
 data PairObj = PairObj !(IORef Val) !(IORef Val)
 data IPairObj = IPairObj !(ConstRef Val) !(ConstRef Val)
 
--- TODO: [r7rs]
--- Defined here because it's used in `showEs` 12/6/2020.
--- If stack changes in the future (perhaps to be properly tail-recursive)
--- and this can be moved to Val.hs, do so.
--- | Is this 'Val' truthy?
-truthy :: Val -> Bool
-truthy (Bool False) = False
-truthy _ = True
-
-instance Eq Val where (==) = eqVal
-
-instance Show Val where
-    showsPrec _ v s = showVal v s
-
-data LispErr = NumArgs Integer [Val]
-             | TypeMismatch String Val
-             | Parser ParseError
-             | BadSpecialForm String Val
-             | NotFunction String Val
-             | UnboundVar String String
-             | EvaluateDuringInit String 
-             | SetImmutable String -- type name
-             | CircularList
-             | EmptyBody
-             | Default String
-             | Quit
-    deriving (Eq)
-
-instance Show LispErr where show = ("Error: " ++ ) . showErr
-
-type ThrowsError = Either LispErr
-
-trapError :: ThrowsError String -> ThrowsError String
-trapError action = catchError action (return . show)
-
-extractValue :: ThrowsError a -> a
-extractValue (Right val) = val
-
-isTerminationError :: LispErr -> Bool
-isTerminationError Quit = True
-isTerminationError _    = False
-
-type IOThrowsError = ExceptT LispErr IO
-
-runIOThrows :: IOThrowsError String -> IO String
-runIOThrows action = extractValue . trapError <$> runExceptT action
-
 eqVal :: Val -> Val -> Bool
 eqVal (Atom s) (Atom s') = s == s'
 eqVal (Number n) (Number n') = n == n'
@@ -187,79 +139,47 @@ eqVal p@IPairPtr{} q@IPairPtr{} =
     first f (a, b) = (f a, b)
 eqVal _ _ = False
 
-showVal :: Val -> ShowS
-showVal (Atom s) = showString s
-showVal (Number n) = shows n
-showVal (String s) = shows s
-showVal (Char c)   = showString "#\\" . showString (case c of
-    ' '  -> "space"
-    '\t' -> "tab"
-    '\n' -> "newline"
-    '\r' -> "carriage-return"
-    _    -> [c])
-showVal (Bool True) = showString "#t"
-showVal (Bool False) = showString "#f"
-showVal (Vector v) = showChar '#' . showParen True (unwordsList (elems v))
-showVal Port{} = showString "#<port>"
-showVal Undefined = showString "#<undefined>"
-showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
-showVal Continuation{} = showString "#<cont>"
-showVal (Closure args varargs body env name) = 
-    showParen True $
-        displayName . showChar ' '
-      . showParen True (displayArgs . displayVarargs)
-      . showString " ..."
-  where
-    displayName = showString $ fromMaybe "lambda" name
-    displayArgs = showString $ unwords args
-    displayVarargs = case varargs of
-        Nothing  -> id
-        Just arg -> showString " . " . showString arg
-showVal (PrimMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
-showVal PairPtr{} = showString "<can't show mutable pair>"
-showVal p@IPairPtr{} = showParen True $ showDList $ fromList p
-  where
-    fromList :: Val -> ([Val], Val)
-    fromList (IPairPtr (ConstRef (IPairObj (ConstRef c) (ConstRef d)))) =
-      first (c:) $ fromList d
-    fromList obj = ([], obj)
-    
-    first f (a, b) = (f a, b)
+-- Eq Val is defined here so that 'LispErr' can derive 'Eq'.
+-- But it might be more sane to just not allow pure comparisons of
+-- 'Val's or 'LispErr's. I think (?) it's only useful in tests.
 
-    showDList (vs, v) = unwordsList vs . case v of
-        Nil -> id
-        obj -> showString " . " . shows obj
+-- | Compares closures by shape rather than only by name/location tag.
+-- Can't compare continuations (because they currently aren't tagged).
+-- Can't compare mutable pairs (use 'valsSameShape' instead).
+instance Eq Val where (==) = eqVal
 
-showVal Nil = showString "()"
+data LispErr = NumArgs Integer [Val]
+             | TypeMismatch String Val
+             | Parser ParseError
+             | BadSpecialForm String Val
+             | NotFunction String Val
+             | UnboundVar String String
+             | EvaluateDuringInit String 
+             | SetImmutable String -- type name
+             | CircularList
+             | EmptyBody
+             | Default String
+             | Quit
+    deriving (Eq)
 
-showErr :: LispErr -> String
-showErr (UnboundVar message varname)  = message ++ ": " ++ varname
-showErr (EvaluateDuringInit name) = name ++ " referred to itself during initialization"
-showErr (SetImmutable tyname) = "can't set immutable " ++ tyname
-showErr (BadSpecialForm message form) = message ++ ": " ++ show form
-showErr (NotFunction message func)    = message ++ ": " ++ show func
-showErr (NumArgs expected found)      = "expected " ++ show expected
-    ++ " arg" ++ (if expected == 1
-        then ""
-        else "s")
-    ++ "; found values " ++ show found
-showErr (TypeMismatch expected found) = "invalid type: expected " ++ expected
-    ++ ", found " ++ show found
-showErr CircularList                  = "circular list"
-showErr EmptyBody                     = "attempt to define function with no body"
-showErr (Parser parseErr)             = "parse error at " ++ show parseErr
-showErr (Default message)             = message
-showErr Quit                          = "quit invoked"
+type ThrowsError = Either LispErr
 
--- I just snagged this from a different project
-intercalateS :: String -> [ShowS] -> ShowS
-intercalateS sep = go
-  where go []     = id
-        go [s]    = s
-        go (s:ss) = s . showString sep . go ss
+--trapError :: ThrowsError String -> ThrowsError String
+--trapError action = catchError action (return . show)
 
-unwordsList :: [Val] -> ShowS
-unwordsList = intercalateS " " . map shows
+extractValue :: ThrowsError a -> a
+extractValue (Right val) = val
+
+isTerminationError :: LispErr -> Bool
+isTerminationError Quit = True
+isTerminationError _    = False
+
+type IOThrowsError = ExceptT LispErr IO
+
+--runIOThrows :: IOThrowsError String -> IO String
+--runIOThrows action = extractValue . trapError <$> runExceptT action
+
+
 
 {- Note: [EM return types]
 Ideally, we'd like EM to be able to return any type, instead of just 'Val'.
@@ -343,6 +263,10 @@ instance MonadIO EM where
 instance MonadFail EM where
     fail s = throwError . Default $ s ++ "\nAn error occurred, please report a bug."
 
+instance HasOpts EM where
+    getOpts = gets options
+    setOpts opts = modify $ \s -> s { options = opts }
+
 liftIOThrows :: IOThrowsError a -> EM a
 liftIOThrows = liftEither <=< liftIO . runExceptT
 
@@ -354,36 +278,3 @@ data EvalState = ES { stack      :: [(StepReason, Val)]
                     , symEnv     :: [Env]
                     , options    :: Opts
                     }
-
-instance Show EvalState where show = showEs
-
-instance HasOpts EM where
-    getOpts = gets options
-    setOpts opts = modify $ \s -> s { options = opts }
-
-data TraceType = CallOnly | FullHistory deriving (Eq, Show, Read, Enum)
-showEs :: EvalState -> String
-showEs es = "Stack trace:\n" ++ numberedLines
-  where numberedLines :: String
-        numberedLines = unlines $ zipWith (<+>) numbers exprs
-        numbers = map (\i -> show i ++ ";") [1..]
-
-        fstOpt :: TraceType
-        fstOpt = if checkOpt FullStackTrace (options es)
-                 then FullHistory
-                 else CallOnly
-
-        exprs = if fstOpt == CallOnly
-                then map (show . snd) . filter ((`elem` [Call, Expand]) . fst) $ stack es
-                else map (\(s, v) ->
-                         let buffer = case s of
-                                 Call -> "    "
-                                 Reduce -> "  "
-                                 Expand -> "  "
-                         in show s ++ ":" ++ buffer ++ show v)
-                     $ stack es
-
-(<+>) :: String -> String -> String
-"" <+> s  = s
-s  <+> "" = s
-s1 <+> s2 = s1 ++ " " ++ s2

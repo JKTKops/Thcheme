@@ -33,9 +33,11 @@ module Val
   , valsSameShape
 
     -- * Showing 'Val' in IO
-  , showValIO
+  , showValIO, showErrIO
+  , showEvalState
   ) where
 
+import Options (checkOpt, Opt(FullStackTrace))
 import Types
 import EvaluationMonad
 import Control.Monad (join, when)
@@ -45,9 +47,102 @@ import Data.IORef (readIORef) -- for show in IO
 import Data.Foldable (foldrM)
 
 import qualified Data.Array as A
+import Data.Maybe (fromMaybe)
 
 makePrimitive :: Primitive -> Val
 makePrimitive (Prim name arity func) = Primitive arity func name
+
+-- | Is this 'Val' truthy?
+truthy :: Val -> Bool
+truthy (Bool False) = False
+truthy _ = True
+
+-------------------------------------------------------------------------------
+--
+-- Pure 'Val' instances. You probably don't want to use these, but they are
+-- ocassionally useful in the test suite etc. Be careful!
+--
+-------------------------------------------------------------------------------
+
+
+showVal :: Val -> ShowS
+showVal (Atom s) = showString s
+showVal (Number n) = shows n
+showVal (String s) = shows s
+showVal (Char c)   = showString "#\\" . showString (case c of
+    ' '  -> "space"
+    '\t' -> "tab"
+    '\n' -> "newline"
+    '\r' -> "carriage-return"
+    _    -> [c])
+showVal (Bool True) = showString "#t"
+showVal (Bool False) = showString "#f"
+showVal (Vector v) = showChar '#' . showParen True (unwordsList (A.elems v))
+showVal Port{} = showString "#<port>"
+showVal Undefined = showString "#<undefined>"
+showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
+showVal Continuation{} = showString "#<cont>"
+showVal (Closure args varargs body env name) = 
+    showParen True $
+        displayName . showChar ' '
+      . showParen True (displayArgs . displayVarargs)
+      . showString " ..."
+  where
+    displayName = showString $ fromMaybe "lambda" name
+    displayArgs = showString $ unwords args
+    displayVarargs = case varargs of
+        Nothing  -> id
+        Just arg -> showString " . " . showString arg
+showVal (PrimMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
+showVal PairPtr{} = showString "<can't show mutable pair>"
+showVal p@IPairPtr{} = showParen True $ showDList $ fromList p
+  where
+    fromList :: Val -> ([Val], Val)
+    fromList (IPairPtr (ConstRef (IPairObj (ConstRef c) (ConstRef d)))) =
+      first (c:) $ fromList d
+    fromList obj = ([], obj)
+    
+    first f (a, b) = (f a, b)
+
+    showDList (vs, v) = unwordsList vs . case v of
+        Nil -> id
+        obj -> showString " . " . shows obj
+
+showVal Nil = showString "()"
+
+-- | Can't show mutable pairs.
+instance Show Val where
+    showsPrec _ v s = showVal v s
+
+showErr :: LispErr -> String
+showErr (UnboundVar message varname)  = message ++ ": " ++ varname
+showErr (EvaluateDuringInit name) = name ++ " referred to itself during initialization"
+showErr (SetImmutable tyname) = "can't set immutable " ++ tyname
+showErr (BadSpecialForm message form) = message ++ ": " ++ show form
+showErr (NotFunction message func)    = message ++ ": " ++ show func
+showErr (NumArgs expected found)      = "expected " ++ show expected
+    ++ " arg" ++ (if expected == 1
+        then ""
+        else "s")
+    ++ "; found values " ++ show found
+showErr (TypeMismatch expected found) = "invalid type: expected " ++ expected
+    ++ ", found " ++ show found
+showErr CircularList                  = "circular list"
+showErr EmptyBody                     = "attempt to define function with no body"
+showErr (Parser parseErr)             = "parse error at " ++ show parseErr
+showErr (Default message)             = message
+showErr Quit                          = "quit invoked"
+
+instance Show LispErr where show = ("Error: " ++ ) . showErr
+
+intercalateS :: String -> [ShowS] -> ShowS
+intercalateS sep = go
+  where go []     = id
+        go [s]    = s
+        go (s:ss) = s . showString sep . go ss
+
+unwordsList :: [Val] -> ShowS
+unwordsList = intercalateS " " . map shows
 
 {- Note: [List Operation Efficiency]
 There's some low-hanging fruit here for optimizing list operations.
@@ -424,9 +519,8 @@ pairEqual r1 r2 =
 -- because we can 't do the linting that we want to do
 -- since we aren't in EM. This is mostly just a temporary
 -- (12/10/2020) thing so that we can look at values until
--- write-simple/write-shared are implemented. Once we have
--- those, it's easy enough to implement
--- 'unsafeEMtoIO :: EM a -> IO a' using 'execAnyEM'.
+-- write-simple/write-shared are implemented (in 'MonadIO',
+-- preferably).
 showValIO :: Val -> IO String
 showValIO = fmap ($ "") . showsValIO
 
@@ -458,3 +552,69 @@ showsListIO1 p@PairPtr{} = (showString " " .) <$> showsListIO p
 showsListIO1 p@IPairPtr{} = (showString " " .) <$> showsListIO p
 showsListIO1 Nil = pure id
 showsListIO1 dot = (showString " . " .) <$> showsValIO dot
+
+-- | Show a 'LispErr' in IO. 'IO' is used to call 'showValIO',
+-- but nothing else.
+showErrIO :: LispErr -> IO String
+showErrIO = fmap (prefix ++) . mkMsgFor
+  where
+    prefix = "Error: "
+    mkMsgFor (UnboundVar msg name) = pure $ msg `colonAnd` name
+    mkMsgFor (EvaluateDuringInit name) = pure $
+      name ++ " referred to itself during initialization"
+    mkMsgFor (SetImmutable tyname) = pure $ "can't set immutable " ++ tyname
+    mkMsgFor (BadSpecialForm msg form) =
+      (msg `colonAnd`) <$> showValIO form
+    mkMsgFor (NotFunction msg form) =
+      (msg `colonAnd`) <$> showValIO form
+    mkMsgFor (NumArgs exp act) = 
+      ((expectedMsg exp ++ ", found values") ++) . concat
+      <$> mapM (fmap (' ':) . showValIO) act
+      where expectedMsg 1 = "expected 1 arg"
+            expectedMsg n = "expected " ++ show n ++ " args"
+    mkMsgFor (TypeMismatch exp act) = (expectedMsg exp ++) <$> showValIO act
+      where expectedMsg s =
+              "invalid type: expected " ++ s ++ ", found "
+    mkMsgFor CircularList = pure "circular list"
+    mkMsgFor EmptyBody = pure "attempt to define function with no body"
+    mkMsgFor (Parser parseErr) = pure $ "parser error at " ++ show parseErr
+    mkMsgFor (Default msg) = pure msg
+    mkMsgFor Quit = pure "quit invoked"
+
+    colonAnd s r = s ++ ": " ++ r
+
+-- I really don't know a better way to organize this. I wish it was in
+-- EvaluationMonad.hs, but this module imports that module, and this stuff
+-- needs showValIO, which is defined here.
+-- And I'd rather that this be here than have _all of it_ in Types.
+data TraceType = CallOnly | FullHistory deriving (Eq, Show, Read, Enum)
+showEvalState :: EvalState -> IO String
+showEvalState es = ("Stack trace:\n" ++) <$> numberedLines
+  where numberedLines :: IO String
+        -- unlines puts an extra newline at the end, which we
+        -- actually want because it looks better.
+        numberedLines = unlines . zipWith (<+>) numbers <$> exprs
+        numbers = map (\i -> show i ++ ";") [1..]
+
+        fstOpt :: TraceType
+        fstOpt = if checkOpt FullStackTrace (options es)
+                 then FullHistory
+                 else CallOnly
+
+        exprs = if fstOpt == CallOnly
+                then mapM (showValIO . snd) 
+                      . filter ((`elem` [Call, Expand]) . fst) 
+                      $ stack es
+                else mapM (\(s, v) ->
+                         let buffer = case s of
+                                 Call -> "    "
+                                 Reduce -> "  "
+                                 Expand -> "  "
+                         in ((show s ++ ":" ++ buffer) ++)
+                            <$> showValIO v)
+                     $ stack es
+
+(<+>) :: String -> String -> String
+"" <+> s  = s
+s  <+> "" = s
+s1 <+> s2 = s1 ++ " " ++ s2

@@ -1,12 +1,10 @@
 module Main (main) where
 
 import System.Environment
-import Control.Monad.Except
 
 import Val
-import Parsers (readExpr)
-import Evaluation (evaluateExpr)
-import Environment (Env, bindVar)
+import Evaluation (evaluateExpr, showResultIO)
+import Environment (bindVar)
 import Bootstrap (primitiveBindings)
 import Options (noOpts)
 import Repl
@@ -25,5 +23,6 @@ runOne (filename : args) = do
     result <- evaluateExpr env' noOpts $
         makeImmutableList [Atom "load", String filename]
     case result of
-        (Left err, s) -> print err >> print s
+        (Left{},_) -> 
+            showResultIO result >>= putStrLn
         _             -> return ()
