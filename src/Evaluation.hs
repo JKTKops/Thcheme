@@ -20,6 +20,8 @@ import Parsers
 import Val
 import EvaluationMonad
 import qualified Environment as Env
+import Options (checkOpt, Opt(FullStackTrace))
+import Primitives.WriteLib (writeSharedSH, showErrIO)
 
 eval :: Val -> EM Val
 eval v = do
@@ -149,13 +151,6 @@ apply notFunc _ = throwError $ NotFunction "Not a function" notFunc
 num :: [a] -> Integer
 num = toInteger . length
 
-showResultIO :: (Either LispErr Val, EvalState) -> IO String
-showResultIO res = case res of
-    (Left e@(Parser _), _) -> pure $ show e ++ "\n"
-    (Left err, s) -> diffLines <$> showErrIO err <*> showEvalState s
-    (Right v, _)  -> showValIO v
-  where diffLines s r = s ++ "\n" ++ r
-
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
 evaluate label initEnv opts input = execEM initEnv opts $
   liftEither (labeledReadExpr label input) >>= eval
@@ -166,3 +161,61 @@ evaluateExpr env opts v = execEM env opts $ eval v
 -- | Provided for backwards compatibility.
 runTest :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
 runTest = execEM
+
+showResultIO :: (Either LispErr Val, EvalState) -> IO String
+showResultIO res = case res of
+    (Left e@(Parser _), _) -> pure $ show e ++ "\n"
+    (Left err, s) -> diffLines <$> showErrIO err <*> showEvalState s
+    (Right v, _)  -> writeSharedSH v
+  where diffLines s r = s ++ "\n" ++ r
+
+-- I'd rather this was in EvaluationMonad, but this is almost as good.
+-- In all honestly, there's a real argument that it belongs in Repl.
+-- If Thcheme ever becomes a compiler, this does need to be bundled with
+-- main to display any errors that the program raises and doesn't catch.
+-- If that ever happens, then it stops really mattering, because all of
+-- Thcheme would need to be in the Thcheme library, right? Maybe that's not
+-- right. Hmm.
+data TraceType = CallOnly | FullHistory deriving (Eq, Show, Read, Enum)
+showEvalState :: EvalState -> IO String
+showEvalState es = ("Stack trace:\n" ++) <$> numberedLines
+  where numberedLines :: IO String
+        -- unlines puts an extra newline at the end, which we
+        -- actually want because it looks better.
+        numberedLines = unlines . zipWith (<+>) numbers <$> exprs
+        numbers = map (\i -> show i ++ ";") [1..]
+
+        fstOpt :: TraceType
+        fstOpt = if checkOpt FullStackTrace (options es)
+                 then FullHistory
+                 else CallOnly
+
+        -- Note that we use write-shared here. It's possible that the error
+        -- was raised because we tried to 'eval' a cyclic list. If we don't
+        -- use write-shared, that will make the program hang.
+        --
+        -- Optimally, we would probably get information from showResultIO
+        -- about whether or not we need to worry about that; the error itself
+        -- is always displayed using write-shared for values it contains.
+        -- However, we still need to be careful! Trying to evaluate cyclic
+        -- _data_ won't crash (in fact, the program it represents could even
+        -- be a correct, terminating program). Attempting to write-simple
+        -- cyclic data will still hang, and write-shared is actually more
+        -- efficient than write!
+        exprs = if fstOpt == CallOnly
+                then mapM (writeSharedSH . snd) 
+                      . filter ((`elem` [Call, Expand]) . fst) 
+                      $ stack es
+                else mapM (\(s, v) ->
+                         let buffer = case s of
+                                 Call -> "    "
+                                 Reduce -> "  "
+                                 Expand -> "  "
+                         in ((show s ++ ":" ++ buffer) ++)
+                            <$> writeSharedSH v)
+                     $ stack es
+
+(<+>) :: String -> String -> String
+"" <+> s  = s
+s  <+> "" = s
+s1 <+> s2 = s1 ++ " " ++ s2

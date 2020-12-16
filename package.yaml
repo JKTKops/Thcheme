@@ -23,16 +23,20 @@ default-extensions:
 - FlexibleContexts
 - LambdaCase
 
+# At some point, we should specify which dependencies
+# are being used where.
 dependencies:
 - base >= 4.7 && < 5
 - array
 - containers
+- hashtables
 - haskeline
 - monad-loops
 - mtl
 - parsec
-- tardis # let's have some fun :D
+- random
 - transformers
+- union-find
 - unordered-containers
 
 library:

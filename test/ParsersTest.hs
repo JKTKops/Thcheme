@@ -16,7 +16,8 @@ import Parsers
 import Parsers.Internal
 import Data.ConstRef
 import Val
-import LispValTest
+import LispValTest ()
+import EvaluationTest ((?=))
 
 pattern IList xs <- (fromList -> Just xs)
   where IList xs = makeImmutableList xs
@@ -233,7 +234,9 @@ testParseExpr testBuilder =
             let val = fromRight undefined parse
 
             step "Verifying parse"
-            val @?= fromJust (expectedContents testBuilder)
+            -- TODO: we should also verify that the result is
+            -- appropriately mutable/immutable.
+            Right val ?= Right (fromJust $ expectedContents testBuilder)
         else do
             step "Verifying failure"
             isLeft parse @? "Parse succeeded on: " ++ pInput

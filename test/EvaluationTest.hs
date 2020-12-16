@@ -9,6 +9,7 @@ import Test.Tasty.HUnit
 
 import Text.ParserCombinators.Parsec
 import Control.Monad.Except
+import Control.Monad.Loops (allM)
 import Data.Either
 import Data.Array
 
@@ -19,6 +20,8 @@ import Bootstrap
 import Evaluation
 import EvaluationMonad (EM, unsafeEMtoIO)
 import Options (noOpts)
+import Primitives.Comparison (equalSSH)
+import Primitives.WriteLib (showErrIO, writeSharedSH)
 
 mkExpectedVal :: EM Val -> IO (Either a Val)
 mkExpectedVal em = Right <$> unsafeEMtoIO em
@@ -402,12 +405,26 @@ infix 1 ?=
 
 outputEquals :: Either LispErr Val -> Either LispErr Val -> IO Bool
 outputEquals e1@Left{} e2@Left{} = pure $ e1 == e2
-outputEquals (Right e) (Right a) = unsafeEMtoIO (valsSameShape e a)
+outputEquals (Right e) (Right a) = valsSameShape e a
 outputEquals _ _ = pure False
+
+-- | This is a wrapper on equalSSH that overwrites the behavior on primitives
+-- and closures. Note that if a value /contains/ a primitive or closure,
+-- then the sense of equalSSH will be used to compare those internal values.
+-- However this is plenty sufficient for testing, where we (usually) just
+-- want to check that we evaluated to the primitive or closure with the right
+-- name.
+valsSameShape :: Val -> Val -> IO Bool
+valsSameShape (Primitive _ _ n) (Primitive _ _ n') = return $ n == n'
+valsSameShape (Closure p v b _ n) (Closure p' v' b' _ n') =
+  if p == p' && v == v' && n == n'
+    then allM id $ zipWith valsSameShape b b'
+    else pure False
+valsSameShape x y = equalSSH x y
 
 showOutput :: Either LispErr Val -> IO String
 showOutput (Left e)  = showErrIO e
-showOutput (Right v) = showValIO v
+showOutput (Right v) = writeSharedSH v
 
 buildExpected :: EvalTest -> IO (Either LispErr Val)
 buildExpected iet@ImpureEvalTest{} = impureExpected iet

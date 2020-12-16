@@ -46,9 +46,7 @@ bool (Bool _) = Bool True
 bool _        = Bool False
 
 pair :: Val -> Val
-pair Pair{}  = Bool True
-pair IPair{} = Bool True
-pair _ = Bool False
+pair = Bool . pairSH
 
 vector :: Val -> Val
 vector (Vector _) = Bool True
