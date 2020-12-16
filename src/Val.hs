@@ -23,7 +23,7 @@ module Val
   , FrozenList (..), freezeList, lintFrozenList
 
     -- * Direct handling of pairs
-  , carPR, carPC, cdrPR, cdrPC, carPS, cdrPS
+  , carPR, cdrPR, carPS, cdrPS
   , setCarSSS, setCdrSSS, pairSH
 
     -- * Vectors
@@ -97,7 +97,7 @@ showVal Pair{} = showString "<can't show mutable pair>"
 showVal p@IPair{} = showParen True $ showDList $ fromList p
   where
     fromList :: Val -> ([Val], Val)
-    fromList (IPair (ConstRef c) (ConstRef d)) =
+    fromList (IPair c d) =
       first (c:) $ fromList d
     fromList obj = ([], obj)
     
@@ -356,32 +356,24 @@ consSSS car cdr = Pair <$> newRef car <*> newRef cdr
 --
 -- Unless you're working on the parser, you really shouldn't use this function!
 immutableCons :: Val -> Val -> Val
-immutableCons car cdr = IPair (ConstRef car) (ConstRef cdr)
+immutableCons = IPair
 
 carPR :: Val -> Ref Val
 carPR (Pair c _d) = c
 carPR _ = panic "carPR: not a mutable pair"
 
-carPC :: Val -> ConstRef Val
-carPC (IPair c _d) = c
-carPC _ = panic "carPC: not an immutable pair"
-
 cdrPR :: Val -> Ref Val
 cdrPR (Pair _c d) = d
 cdrPR _ = panic "cdrPR: not a mutable pair"
 
-cdrPC :: Val -> ConstRef Val
-cdrPC (IPair _c d) = d
-cdrPC _ = panic "cdrPC: not an immutable pair"
-
 carPS :: MonadIO m => Val -> m Val
 carPS p@Pair{} = liftIO $ readIORef $ carPR p
-carPS (IPair (ConstRef car) _) = pure car
+carPS (IPair car _) = pure car
 carPS _ = panic "carPS: not a pair"
 
 cdrPS :: MonadIO m => Val -> m Val
 cdrPS p@Pair{} = liftIO $ readIORef $ cdrPR p
-cdrPS (IPair _ (ConstRef cdr)) = pure cdr
+cdrPS (IPair _ cdr) = pure cdr
 cdrPS _ = panic "cdrPS: not a pair"
 
 setCarSSS :: Val -> Val -> EM Val
@@ -443,6 +435,8 @@ vectorSH _ = False
 -- (12/10/2020) thing so that we can look at values until
 -- write-simple/write-shared are implemented (in 'MonadIO',
 -- preferably).
+--
+-- TODO: it should be good to get rid of this now.
 showValIO :: Val -> IO String
 showValIO = fmap ($ "") . showsValIO
 
@@ -459,7 +453,7 @@ showsListIO (Pair c d) = do
   showsCar <- showsValIO car
   (showsCar .) <$> (readIORef d >>= showsListIO1)
 -- we're in IO, so have to forego linting here.
-showsListIO (IPair (ConstRef car) (ConstRef cdr)) = do
+showsListIO (IPair car cdr) = do
     showsCar <- showsValIO car
     (showsCar .) <$> showsListIO1 cdr
 

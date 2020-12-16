@@ -14,7 +14,6 @@ import Control.Arrow (first)
 
 import Parsers
 import Parsers.Internal
-import Data.ConstRef
 import Val
 import LispValTest ()
 import EvaluationTest ((?=))
@@ -543,21 +542,21 @@ prop_QuoteParser = testProperty "tick always results in quote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" ('\'' : show (input :: Val))
         in isRight result ==> case result of
-            Right (IPair (ConstRef (Atom "quote")) _) -> True
+            Right (IPair (Atom "quote") _) -> True
             _ -> False
 
 prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" ('`' : show (input :: Val))
         in isRight result ==> case result of
-            Right (IPair (ConstRef (Atom "quasiquote")) _)  -> True
+            Right (IPair (Atom "quasiquote") _)  -> True
             _ -> False
 
 prop_UnquoteParser = testProperty "comma always results in unquote" $
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" (',' : clean (show (input :: Val)))
         in isRight result ==> case result of
-            Right (IPair (ConstRef (Atom "unquote")) _)  -> True
+            Right (IPair (Atom "unquote") _)  -> True
             _ -> False
   -- if we don't do this, a LispString/Atom that starts with '@' will turn it into
   -- an unquote splicing, which happened in a test at least once.
@@ -567,7 +566,7 @@ prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-spli
     withMaxSuccess 50 $ \input ->
         let result = parse parseQuoted "" (",@" ++ show (input :: Val))
         in isRight result ==> case result of
-            Right (IPair (ConstRef (Atom "unquote-splicing")) _)  -> True
+            Right (IPair (Atom "unquote-splicing") _)  -> True
             _ -> False
 
 -- HELPER
@@ -658,13 +657,13 @@ fromChar (Char c) = Just c
 fromChar _        = Nothing
 
 fromList :: Val -> Maybe [Val]
-fromList (IPair (ConstRef c) (ConstRef d)) =
+fromList (IPair c d) =
     (c:) <$> fromList d
 fromList Nil = Just []
 fromList _ = Nothing
 
 fromDList :: Val -> Maybe ([Val], Val)
-fromDList (IPair (ConstRef c) (ConstRef d)) =
+fromDList (IPair c d) =
     first (c:) <$> fromDList d
 fromDList Nil = Nothing -- not dotted
 fromDList obj = Just ([], obj)

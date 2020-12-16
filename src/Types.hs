@@ -11,7 +11,7 @@ module Types
     , Primitive (..)
     , Macro (..)
     , Val (..)
-    , Ref, ConstRef (ConstRef)
+    , Ref
     , LispErr (..)
     , ThrowsError
     , IOThrowsError
@@ -29,7 +29,6 @@ module Types
 
 import Text.ParserCombinators.Parsec (ParseError)
 import Data.HashMap.Strict (HashMap)
-import Data.ConstRef
 import Data.IORef
 import Data.Array
 import Control.Monad.Cont
@@ -98,12 +97,8 @@ data Val
   | Undefined
 
   | Nil
-  | Pair  !(IORef Val)    !(IORef Val)
-  | IPair !(ConstRef Val) !(ConstRef Val)
-
--- all the strictness annotations on various Ref types are necessary.
--- Otherwise, we could run into issues when we use 'StableName's to hash
--- refs in equal? and write-shared.
+  | Pair !(IORef Val) !(IORef Val)
+  | IPair Val Val
 
 eqVal :: Val -> Val -> Bool
 eqVal (Atom s) (Atom s') = s == s'
@@ -131,7 +126,7 @@ eqVal p@IPair{} q@IPair{} =
     fromList p == fromList q
   where
     fromList :: Val -> ([Val], Val)
-    fromList (IPair (ConstRef c) (ConstRef d)) =
+    fromList (IPair c d) =
       first (c:) $ fromList d
     fromList obj = ([], obj)
     
