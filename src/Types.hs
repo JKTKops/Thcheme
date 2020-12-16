@@ -72,10 +72,9 @@ data Macro = Macro Arity Builtin
 --
 -- Some Scheme values can be either mutable or immutable. These are strings,
 -- lists, and vectors. The immutable variant begins with I, where applicable.
--- The mutable variant of both IList and IDottedList is Pair.
 --
--- Invariant: All objects contained in an IPairObj or IVector are immutable.
---   note that this is implicitly transitive.
+-- Invariant: All objects contained in an IPair or IVector are immutable.
+--   Note that this is implicitly transitive.
 data Val
   = Atom String
   | Vector (Array Integer Val)
@@ -145,7 +144,7 @@ instance Eq Val where (==) = eqVal
 data LispErr = NumArgs Integer [Val]
              | TypeMismatch String Val
              | Parser ParseError
-             | BadSpecialForm String Val
+             | BadSpecialForm Val
              | NotFunction String Val
              | UnboundVar String String
              | EvaluateDuringInit String 

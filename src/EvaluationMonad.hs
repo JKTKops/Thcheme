@@ -158,7 +158,7 @@ getVar var = do
     stack <- symEnv <$> get
     l <- liftIO $ rights <$> mapM (\env -> runExceptT $ Env.getVar env var) stack
     case l of
-        []  -> throwError $ UnboundVar "[Get] unbound symbol" var
+        []  -> throwError $ UnboundVar "[Get]" var
         Undefined : _ -> throwError $ EvaluateDuringInit var
         v:_ -> return v
 
@@ -174,11 +174,12 @@ setVar var val = do
             Right v <- liftIO . runExceptT $ Env.defineVar e var val
             return v
 
--- Assumes the first element of args is an Atom; finds it and updates it with given func
+-- Assumes the first element of args is an Atom;
+-- finds it and updates it with given func
 updateWith :: ([Val] -> EM Val) -> [Val] -> EM Val
 updateWith updater (Atom var : rest) = do
     envRef <- search var
-    when (isNothing envRef) $ throwError $ UnboundVar "[Set] unbound symbol" var
+    when (isNothing envRef) $ throwError $ UnboundVar "[Set]" var
     env <- liftIO . readIORef $ fromJust envRef
     let ref = fromJust $ Map.lookup var env
     val <- liftIO $ readIORef ref

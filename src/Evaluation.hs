@@ -38,7 +38,7 @@ evalExpr expr = do
         FList [] -> return Nil -- see Note: [Freezing Nil] in Val.hs
         FNotList obj -> handleSimpleDatum obj
         FDottedList{} ->
-            throwError $ BadSpecialForm "" expr -- TODO NEXT: push string of BSF error into the show instance
+            throwError $ BadSpecialForm expr
 
 handleSimpleDatum :: Val -> EM Val
 handleSimpleDatum obj = case obj of

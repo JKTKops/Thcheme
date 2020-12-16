@@ -35,12 +35,12 @@ showErrIO :: LispErr -> IO String
 showErrIO = fmap (prefix ++) . mkMsgFor
   where
     prefix = "Error: "
-    mkMsgFor (UnboundVar msg name) = pure $ msg `colonAnd` name
+    mkMsgFor (UnboundVar msg name) = pure $ msg ++ " unbound symbol" `colonAnd` name
     mkMsgFor (EvaluateDuringInit name) = pure $
       name ++ " referred to itself during initialization"
     mkMsgFor (SetImmutable tyname) = pure $ "can't set immutable " ++ tyname
-    mkMsgFor (BadSpecialForm msg form) =
-      (msg `colonAnd`) <$> writeSharedSH form
+    mkMsgFor (BadSpecialForm form) =
+      ("bad form" `colonAnd`) <$> writeSharedSH form
     mkMsgFor (NotFunction msg form) =
       (msg `colonAnd`) <$> writeSharedSH form
     mkMsgFor (NumArgs exp act) = 

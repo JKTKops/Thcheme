@@ -117,7 +117,7 @@ showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ ": " ++ varname
 showErr (EvaluateDuringInit name) = name ++ " referred to itself during initialization"
 showErr (SetImmutable tyname) = "can't set immutable " ++ tyname
-showErr (BadSpecialForm message form) = message ++ ": " ++ show form
+showErr (BadSpecialForm form) = "bad form: " ++ show form
 showErr (NotFunction message func)    = message ++ ": " ++ show func
 showErr (NumArgs expected found)      = "expected " ++ show expected
     ++ " arg" ++ (if expected == 1
