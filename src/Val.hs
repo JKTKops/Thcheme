@@ -114,7 +114,7 @@ instance Show Val where
     showsPrec _ v s = showVal v s
 
 showErr :: LispErr -> String
-showErr (UnboundVar message varname)  = message ++ ": " ++ varname
+showErr (UnboundVar message varname)  = message ++ " unbound symbol: " ++ varname
 showErr (EvaluateDuringInit name) = name ++ " referred to itself during initialization"
 showErr (SetImmutable tyname) = "can't set immutable " ++ tyname
 showErr (BadSpecialForm form) = "bad form: " ++ show form

@@ -3,6 +3,7 @@ module EvaluationMonad
     -- * re-exported from Types
       EM (..)
     , EvalState (..)
+    , StackFrame (..)
     , StepReason (..)
     , Env
     , Opts
@@ -17,10 +18,7 @@ module EvaluationMonad
     , execEM, execAnyEM, unsafeEMtoIO
 
       -- * Adjusting the evaluation environment
-    , pushEnv, withNewScope, popEnv, envSnapshot
-
-      -- * Adjusting the debug stack
-    , pushExpr, popExpr, modifyStackTop, modifyTopReason
+    , envSnapshot, pushFrame, popFrame
 
       -- * using options
     , enableOpt, disableOpt, lintAssert, noOpts
@@ -39,6 +37,7 @@ module EvaluationMonad
 import Data.IORef
 import Data.Maybe
 import Data.Either
+import Data.Functor ((<&>))
 import qualified Data.HashMap.Strict as Map
 
 import Control.Arrow (first)
@@ -55,7 +54,7 @@ import qualified Environment as Env
 
 execEM :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
 execEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
-                                ES [] [initEnv] opts
+                                ES initEnv [] opts
 
 -- | Useful for testing etc.
 execAnyEM :: Env -> Opts -> EM a -> IO (Either LispErr a)
@@ -85,58 +84,22 @@ unsafeEMtoIO em = do
   Right a <- execAnyEM ne (setOpt Lint noOpts) em
   return a
 
--- | Push an expr to the call stack
-pushExpr :: StepReason -> Val -> EM ()
-pushExpr r val = do
-    s <- get
-    put $ s { stack = (r, val) : stack s }
-
--- | Remove the top item from the call stack
-popExpr :: EM ()
-popExpr = modify $ \s -> s { stack = case stack s of
-    []     -> error "popExpr: empty stack"
-    (_:tl) -> tl
-  }
-
--- | Push an environment to the top of the sEnv stack
---   The environment becomes the topmost scope of evaluation.
-pushEnv :: Env -> EM ()
-pushEnv e = modify $ \s -> s { symEnv = e : symEnv s }
-
--- | Push a new empty scope to the sEnv stack.
-pushEmptyEnv :: EM ()
-pushEmptyEnv = do
-    e <- liftIO $ newIORef Map.empty
-    pushEnv e
-
--- | Evaluate an EM action in an empty local scope.
-withNewScope :: EM a -> EM a
-withNewScope m = pushEmptyEnv *> m <* popEnv
-
--- | Remove the topmost scope from the sEnv stack.
-popEnv :: EM ()
-popEnv = do
-    s <- get
-    let stack = symEnv s
-    put $ s { symEnv = case stack of
-                [] -> error "popEnv: empty env stack"
-                (_:tl) -> tl
-            }
-
 envSnapshot :: EM Env
 envSnapshot = do
-    symEnvStack <- gets symEnv
-    liftIO $ flatten symEnvStack >>= newIORef
+    theStack <- gets stack
+    liftIO $ flatten (envsInStack theStack) >>= newIORef
   where
     flatten = fmap mconcat . mapM readIORef
 
-modifyStackTop :: ((StepReason, Val) -> (StepReason, Val)) -> EM ()
-modifyStackTop f = modify $ \s ->
-    let top : tail = stack s in
-    s { stack = f top : tail }
+envsInStack :: [StackFrame] -> [Env]
+envsInStack = mapMaybe envOfFrame
+  where envOfFrame (StackFrame _ env) = env
 
-modifyTopReason :: (StepReason -> StepReason) -> EM ()
-modifyTopReason f = modifyStackTop $ first f
+pushFrame :: StackFrame -> EM ()
+pushFrame f = modify $ \s -> s { stack = f : stack s }
+
+popFrame :: EM ()
+popFrame = modify $ \s -> s { stack = tail $ stack s }
 
 -- | If linting is enabled, assert that a predicate is true.
 -- If the assertion fails, the runtime will panic with the given message.
@@ -155,12 +118,20 @@ panic msg = error $ "Panic! The \"impossible\" happened.\n" ++ msg
 -- | Searches the environment stack top-down for a symbol
 getVar :: String -> EM Val
 getVar var = do
-    stack <- symEnv <$> get
-    l <- liftIO $ rights <$> mapM (\env -> runExceptT $ Env.getVar env var) stack
-    case l of
-        []  -> throwError $ UnboundVar "[Get]" var
-        Undefined : _ -> throwError $ EvaluateDuringInit var
-        v:_ -> return v
+    stack <- gets stack
+    gbl   <- gets globalEnv
+    v <- loop gbl $ envsInStack stack
+    crashUndefined v
+  where
+    loop gbl [] = liftIOThrows $ Env.getVar gbl var
+    loop gbl (env:envs) = do
+      ev <- liftIO $ runExceptT $ Env.getVar env var
+      case ev of
+        Left _  -> loop gbl envs
+        Right v -> return v
+    
+    crashUndefined Undefined = throwError $ EvaluateDuringInit var
+    crashUndefined v = return v
 
 -- | Search the environment top-down for a symbol
 --   If it's found, bind it to the given Val
@@ -176,6 +147,7 @@ setVar var val = do
 
 -- Assumes the first element of args is an Atom;
 -- finds it and updates it with given func
+-- TODO: trash this when vector-set! is implemented properly
 updateWith :: ([Val] -> EM Val) -> [Val] -> EM Val
 updateWith updater (Atom var : rest) = do
     envRef <- search var
@@ -189,25 +161,44 @@ updateWith updater (Atom var : rest) = do
 
 search :: String -> EM (Maybe Env)
 search var = do
-    stack <- symEnv <$> get
-    l <- liftIO $ catMaybes <$> mapM
-         (\env -> do
-                 e <- runExceptT $ Env.getVar env var
-                 return $ if isRight e then Just env else Nothing
-         ) stack
-    return $ case l of
-        []  -> Nothing
-        e:_ -> Just e
+    stack <- gets stack
+    let envs = envsInStack stack
+    me <- loop envs
+    case me of
+      Nothing -> tryGbl
+      Just e -> return me
+  where
+    loop [] = return Nothing
+    loop (env:envs) = do
+      e <- liftIO $ runExceptT $ Env.getVar env var
+      if isRight e then return $ Just env else loop envs
+    
+    tryGbl = do
+      gbl <- gets globalEnv
+      liftIO $ runExceptT (Env.getVar gbl var) <&> \case
+        Right _ -> Just gbl
+        Left _  -> Nothing
 
--- | Define a var in the top-level environment in preparation for
+-- | Define a var in the innermost environment in preparation for
 -- a function being 'define'd to capture itself.
 setVarForCapture :: String -> EM ()
 setVarForCapture name = void $
   defineVar name Undefined
 
+-- | Define a var in the innermost environment.
+--
+-- Panics if the innermost stackframe doesn't have an environment.
+-- If the stackframe doesn't have an environment, then we must be trying
+-- to define a var inside a primitive, which is a mistake.
+-- Use 'setVar' to set a var that might not be from the innermost
+-- environment.
 defineVar :: String -> Val -> EM Val
 defineVar var val = do
-    env <- head . symEnv <$> get
+    stack <- gets stack
+    env <- case stack of
+      [StackFrame _ Nothing] -> panic "defineVar: no env in frame"
+      [StackFrame _ (Just e)] -> pure e
+      [] -> gets globalEnv
     liftIOThrows $ Env.defineVar env var val
 
 newRef :: a -> EM (IORef a)

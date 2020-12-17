@@ -18,7 +18,7 @@ import Parsers
 import Parsers.Internal
 import Bootstrap
 import Evaluation
-import EvaluationMonad (EM, unsafeEMtoIO)
+import EvaluationMonad (EM, stack, unsafeEMtoIO)
 import Options (noOpts)
 import Primitives.Comparison (equalSSH)
 import Primitives.WriteLib (showErrIO, writeSharedSH)
@@ -40,8 +40,10 @@ unitTests :: TestTree
 unitTests = testGroup "Unit Tests"
     [ evalTests
     , applyTests
+    , facConstantSpace
     ]
 
+evalTests :: TestTree
 evalTests = testGroup "eval" $ map mkEvalTest
     [ EvalTest
         { testName = "Simple string"
@@ -77,7 +79,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Unbound symbol"
         , input = "x"
-        , expected = Left $ UnboundVar "[Get] unbound symbol" "x"
+        , expected = Left $ UnboundVar "[Get]" "x"
         }
     , EvalTest
         { testName = "Bound symbol" -- primEnv doesn't have consts yet so making one
@@ -336,7 +338,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Eval x fails in primEnv"
         , input = "x"
-        , expected = Left $ UnboundVar "[Get] unbound symbol" "x"
+        , expected = Left $ UnboundVar "[Get]" "x"
         }
     , EvalTest
         { testName = "Define rejects empty-bodied functions"
@@ -534,3 +536,20 @@ mkApplyTest tb = testCase (testNameA tb) $ do
     (Right func) <- fst <$> evaluateExpr primEnv noOpts funcP
     res <- runTest primEnv noOpts $ apply func (args tb)
     fst res ?= expectedA tb
+
+facConstantSpace :: TestTree
+facConstantSpace = testCase "factorial executes in constant space" $ do
+    let Right defFac = readExpr $ unlines 
+          [ "(define (fac n)"
+          , "  (define (go acc n)"
+          , "    (if (= n 0)"
+          , "        (error acc)"
+          , "        (go (* n acc) (- n 1))))"
+          , "  (go 1 n))"
+          ]
+        Right exec = readExpr "(fac 10)"
+    primEnv <- primitiveBindings 
+    evaluateExpr primEnv noOpts defFac
+    (r, s) <- evaluateExpr primEnv noOpts exec
+    r @?= Left (Default "3628800")
+    assertBool "stack is too big" $ length (stack s) < 5

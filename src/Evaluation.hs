@@ -24,11 +24,7 @@ import Options (checkOpt, Opt(FullStackTrace))
 import Primitives.WriteLib (writeSharedSH, showErrIO)
 
 eval :: Val -> EM Val
-eval v = do
-    pushExpr Call v
-    res <- evalExpr v
-    popExpr
-    return res
+eval = evalExpr -- historical, TODO
 
 evalExpr :: Val -> EM Val
 evalExpr expr = do
@@ -78,18 +74,11 @@ handleApp form function args = do
   where evalCall func = do
             argVals <- mapM eval args
             let reduced = func `isReduced` function || args /= argVals
-            when reduced $ do
-                modifyTopReason $ const Reduce
-                pushExpr Call form
-            v <- apply func argVals
-            when reduced popExpr
-            return v
-        evalPMacro pmacro = do
-            modifyTopReason $ const Expand
-            apply pmacro args
+            apply func argVals
+        evalPMacro pmacro = apply pmacro args
         evalMacro macro = do
-            modifyTopReason $ const Expand
             expansion <- apply macro args
+            -- for TCO; pop here if evaluating tail position
             eval expansion
 
         isReduced :: Val -> Val -> Bool
@@ -112,7 +101,7 @@ apply (Continuation func) [arg] = func arg
 apply Continuation{} badArgs = throwError $ NumArgs 1 badArgs
 
 -- Applications of user-defined functions
-apply (Closure params varargs body cloEnv _name) args =
+apply f@(Closure params varargs body cloEnv _name) args =
     case num args `compare` num params of
         -- Throw error if too many args and no varargs
         GT -> if isNothing varargs
@@ -124,13 +113,21 @@ apply (Closure params varargs body cloEnv _name) args =
 
   where evaluate = do env <- makeBindings params
                       env' <- bindVarargs varargs env
-                      pushEnv env'
-                      -- if we just use the captured scope, local defines will
-                      -- see the outer-defined IORefs and overwrite them, so
-                      -- we need to layer a fresh scope on top of the captured
-                      -- one.
-                      result <- withNewScope evalBody
-                      popEnv
+                      let frame = StackFrame (makeImmutableList (f:args)) 
+                                             (Just env')
+                      pushFrame frame
+                      result <- evalBody
+                      popFrame -- TODO: This is not correct handling of TCO.
+                      -- This is correct for a non-tail call. However, a tail
+                      -- call should simply replace the top frame instead of
+                      -- doing a push and then a pop.
+                      -- I think the right think to do is to remove the 'pop'
+                      -- call from 'apply' entirely. Instead, we should have
+                      -- a 'call' function and a 'tailCall' function.
+                      -- 'call' pops after calling 'apply', and 'tailCall'
+                      -- pops before. Then 'eval' needs to know if the form
+                      -- it's evaluating is in tail position so that it knows
+                      -- if it should 'call' or 'tailCall'.
                       return result
 
         makeBindings :: [String] -> EM Env
@@ -176,7 +173,6 @@ showResultIO res = case res of
 -- If that ever happens, then it stops really mattering, because all of
 -- Thcheme would need to be in the Thcheme library, right? Maybe that's not
 -- right. Hmm.
-data TraceType = CallOnly | FullHistory deriving (Eq, Show, Read, Enum)
 showEvalState :: EvalState -> IO String
 showEvalState es = ("Stack trace:\n" ++) <$> numberedLines
   where numberedLines :: IO String
@@ -184,11 +180,6 @@ showEvalState es = ("Stack trace:\n" ++) <$> numberedLines
         -- actually want because it looks better.
         numberedLines = unlines . zipWith (<+>) numbers <$> exprs
         numbers = map (\i -> show i ++ ";") [1..]
-
-        fstOpt :: TraceType
-        fstOpt = if checkOpt FullStackTrace (options es)
-                 then FullHistory
-                 else CallOnly
 
         -- Note that we use write-shared here. It's possible that the error
         -- was raised because we tried to 'eval' a cyclic list. If we don't
@@ -202,18 +193,7 @@ showEvalState es = ("Stack trace:\n" ++) <$> numberedLines
         -- be a correct, terminating program). Attempting to write-simple
         -- cyclic data will still hang, and write-shared is actually more
         -- efficient than write!
-        exprs = if fstOpt == CallOnly
-                then mapM (writeSharedSH . snd) 
-                      . filter ((`elem` [Call, Expand]) . fst) 
-                      $ stack es
-                else mapM (\(s, v) ->
-                         let buffer = case s of
-                                 Call -> "    "
-                                 Reduce -> "  "
-                                 Expand -> "  "
-                         in ((show s ++ ":" ++ buffer) ++)
-                            <$> writeSharedSH v)
-                     $ stack es
+        exprs = forM (stack es) $ \(StackFrame form _) -> writeSharedSH form
 
 (<+>) :: String -> String -> String
 "" <+> s  = s

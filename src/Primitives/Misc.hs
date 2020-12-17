@@ -231,7 +231,6 @@ quasiquote = Macro 1 $ \case
         qqTerms :: [Val] -> ReaderT Int EM [Val]
         qqTerms [] = return []
         qqTerms (t:ts) = do
-          lift $ pushExpr Expand t
           frozenT <- lift $ freezeList t
           terms <- case frozenT of
             FList [Atom "unquote-splicing", form] -> do
@@ -241,7 +240,6 @@ quasiquote = Macro 1 $ \case
                      else local (subtract 1) $ qq form
               lift $ getListOrError val
             _ -> (:[]) <$> qq t
-          lift popExpr
           (terms ++) <$> qqTerms ts
         
         qqImproper :: [Val] -> Val -> ReaderT Int EM Val

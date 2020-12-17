@@ -29,14 +29,14 @@ isBound envRef var = isJust . Map.lookup var <$> readIORef envRef
 getVar :: Env -> String -> IOThrowsError Val
 getVar envRef var = do
     env <- liftIO $ readIORef envRef
-    maybe (throwError $ UnboundVar "[Get] unbound symbol" var)
+    maybe (throwError $ UnboundVar "[Get]" var)
           (liftIO . readIORef)
           (Map.lookup var env)
 
 setVar :: Env -> String -> Val -> IOThrowsError Val
 setVar envRef var value = do
     env <- liftIO $ readIORef envRef
-    maybe (throwError $ UnboundVar "[Set] unbound symbol" var)
+    maybe (throwError $ UnboundVar "[Set]" var)
           (liftIO . flip writeIORef value)
           (Map.lookup var env)
     return value

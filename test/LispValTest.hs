@@ -42,7 +42,7 @@ instance Serial IO LispErr where
     series = cons2 NumArgs
                 \/ cons2 TypeMismatch
                 -- Parser ParseError left off for now
-                \/ cons2 BadSpecialForm
+                \/ cons1 BadSpecialForm
                 \/ cons2 NotFunction
                 \/ cons2 UnboundVar
                 \/ cons1 EvaluateDuringInit
@@ -81,7 +81,7 @@ instance Arbitrary LispErr where
     arbitrary = oneof [ do n <- choose (0, 3)
                            liftM2 NumArgs (return $ toInteger n) (vectorOf n arbitrary)
                       , liftM2 TypeMismatch arbitrary arbitrary
-                      , liftM2 BadSpecialForm arbitrary arbitrary
+                      , BadSpecialForm <$> arbitrary
                       , liftM2 NotFunction arbitrary arbitrary
                       , liftM2 UnboundVar arbitrary arbitrary
                       , EvaluateDuringInit <$> arbitrary

@@ -21,6 +21,7 @@ module Types
    -- , runIOThrows
     , EM (..)
     , EvalState (..)
+    , StackFrame (..)
     , StepReason (..)
     , Opts
    -- , TraceType
@@ -267,7 +268,11 @@ liftIOThrows = liftEither <=< liftIO . runExceptT
 data StepReason = Call | Reduce | Expand deriving (Eq, Show, Read, Enum)
 
 -- | The current state of evaluation
-data EvalState = ES { stack      :: [(StepReason, Val)]
-                    , symEnv     :: [Env]
+data EvalState = ES { --stack      :: [(StepReason, Val)]
+                    --, symEnv     :: [Env]
+                      globalEnv  :: Env
+                    , stack      :: [StackFrame]
                     , options    :: Opts
                     }
+
+data StackFrame = StackFrame Val (Maybe Env)

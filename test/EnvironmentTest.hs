@@ -49,13 +49,13 @@ testGetVar = testGroup "getVar"
         getRes <- runExceptT $ getVar primEnv "dne"
         isLeft getRes @? "Found 'dne' in primEnv"
         let Left e = getRes
-        e @?= UnboundVar "[Get] unbound symbol" "dne"
+        e @?= UnboundVar "[Get]" "dne"
     , testCase "Get from null env" $ do
         nullEnv <- nullEnv
         getRes <- runExceptT $ getVar nullEnv "fail"
         isLeft getRes @? "Found 'fail' in nullEnv"
         let Left f = getRes
-        f @?= UnboundVar "[Get] unbound symbol" "fail"
+        f @?= UnboundVar "[Get]" "fail"
     ]
 
 testSetVar :: TestTree
@@ -75,13 +75,13 @@ testSetVar = testGroup "setVar"
         getRes <- runExceptT $ setVar primEnv "x" $ Char 'a'
         isLeft getRes @? "Succeeded setting x in primEnv"
         let Left e = getRes
-        e @?= UnboundVar "[Set] unbound symbol" "x"
+        e @?= UnboundVar "[Set]" "x"
     , testCase "Set x in nullEnv" $ do
         nullEnv <- nullEnv
         res <- runExceptT $ setVar nullEnv "x" $ String "test"
         isLeft res @? "Succeeded setting x in nullEnv"
         let Left e = res
-        e @?= UnboundVar "[Set] unbound symbol" "x"
+        e @?= UnboundVar "[Set]" "x"
     ]
 
 testDefineVar :: TestTree

@@ -79,7 +79,7 @@ primBuilders = [ PrimBuilder makeNumPrim
                  -> Primitive
         makePrim tyname isNum primGen (opName, op) = primGen primName op
           where primName = tyname ++ opName ++ suffix
-                suffix | isNum = "?"
+                suffix | not isNum = "?"
                        | otherwise = ""
 
         makeNumPrim = makePrim "" True numBoolBinop
