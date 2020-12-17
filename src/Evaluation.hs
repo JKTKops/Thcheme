@@ -80,7 +80,8 @@ handleApp tail form function args = do
 
         -- TODO: It's not clear what to do here when in tail position.
         -- My best idea is that PrimMacros need to take an extra arg
-        -- that indicates if they are in tail position?
+        -- that indicates if they are in tail position. This is what's
+        -- done here, but it still feels weird.
         -- For user-defined macros, it Just Works (tm) as long as we
         -- correctly eval/tailEval, because the macro will expand into
         -- the current environment and then the expansion should be evaluated
