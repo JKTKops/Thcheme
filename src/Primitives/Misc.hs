@@ -45,37 +45,37 @@ callWithCurrentContinuation = Prim "call-with-current-continuation" 1 callcc
   where
     callcc :: [Val] -> EM Val
     callcc [func] = callCC $ \k ->
-        apply func [Continuation k]
+        tailCall func [Continuation k]
     callcc badArgs = throwError $ NumArgs 1 badArgs
 
 -- compose?
 
 quote :: Macro
-quote = Macro 1 $ \case
+quote = Macro 1 $ \_ -> \case
     [form]  -> return form
     badArgs -> throwError $ NumArgs 1 badArgs
 
 ifMacro :: Macro
-ifMacro = Macro 2 $ \case
+ifMacro = Macro 2 $ \tail -> \case
     (pred : conseq : alts) -> do
-        p <- eval pred
+        p <- evalBody pred
         if truthy p
-        then eval conseq
+        then eval tail conseq
         else case alts of
             [] -> return Nil -- r7rs says unspecified
-            xs -> last <$> mapM eval xs
+            xs -> evalSeq tail xs
     badArgs -> throwError $ Default $ "Expected at least 2 args; found " ++ show badArgs
 
 set :: Macro
-set = Macro 2 $ \case
-    [Atom var, form] -> eval form >>= setVar var
+set = Macro 2 $ \_ -> \case
+    [Atom var, form] -> evalBody form >>= setVar var
     [notAtom, _]     -> throwError $ TypeMismatch "symbol" notAtom
     badArgs          -> throwError $ NumArgs 2 badArgs
 
 setOpt :: Macro
-setOpt = Macro 2 $ \case
+setOpt = Macro 2 $ \_ -> \case
     [Atom optName, form] -> do
-        val <- eval form
+        val <- evalBody form
         let mopt = readMaybe optName
         case mopt of
           Nothing -> pure ()
@@ -94,7 +94,7 @@ defineBuiltin (x:xs) = do
     defineBuiltinFrozen :: FrozenList -> [Val] -> EM Val
     defineBuiltinFrozen (FNotList (Atom var)) [form] = do -- todo: NumArgs (Exact 2) when app.
       setVarForCapture var
-      val <- eval form
+      val <- evalBody form
       let renamed = case val of
             Closure{} -> val { name = Just var }
             _ -> val
@@ -121,8 +121,8 @@ defineBuiltin (x:xs) = do
 -- arities are AtLeast 1 so that we can throw a nicer error than just
 -- "expects at least 2 arguments" in the case of defining a function.
 define, lambda :: Macro
-define = Macro 1 defineBuiltin
-lambda = Macro 1 mkLambda
+define = Macro 1 $ const defineBuiltin
+lambda = Macro 1 $ const mkLambda
 
 mkLambda :: [Val] -> EM Val
 -- arity is AtLeast 1 so can't be called with no args
@@ -159,20 +159,20 @@ makeFuncVarargs :: Val -> [Val] -> [Val] -> Maybe String -> EM Val
 makeFuncVarargs = makeFunc . Just . show
 
 defmacro :: Macro
-defmacro = Macro 3 $ \case
+defmacro = Macro 3 $ const $ \case
     (Atom name : ps : body) -> do
         lam <- mkLambda (ps : body)
         macro <- makeImproperMutableList [Atom "macro"] lam
         defineVar name macro
 
 begin :: Macro
-begin = Macro 1 $ \case
+begin = Macro 1 $ \tail -> \case
     []    -> throwError $ NumArgs 1 []
-    stmts -> last <$> mapM eval stmts
+    stmts -> evalSeq tail stmts
 
 evalPrim :: Primitive
 evalPrim = Prim "eval" 1 $ \case
-    [form]  -> eval form
+    [form]  -> evalTail form
     badArgs -> throwError $ NumArgs 1 badArgs
 
 -- TODO: [r7rs]
@@ -181,9 +181,9 @@ applyFunc = Prim "apply" 1 $ \case
     [func, form] -> do
       frozenForm <- freezeList form
       case frozenForm of
-        FList args -> apply func args
+        FList args -> tailCall func args
         _bad -> throwError $ TypeMismatch "list" form
-    (func : args) -> apply func args
+    (func : args) -> tailCall func args
     [] -> throwError $ Default "Expected at least 1 arg; found []"
 
 loadPrim :: Primitive
@@ -192,14 +192,18 @@ loadPrim = Prim "load" 1 $ \case
         file <- liftIO . runExceptT $ load filename
         case file of
             Left e   -> throwError e
-            Right ls -> last <$> mapM eval ls
+            Right ls -> do
+              state <- get
+              -- put (interaction-environment)
+              put $ ES (globalEnv state) [] (options state)
+              r <- evalBodySeq ls
+              put state
+              return r
     [notString] -> throwError $ TypeMismatch "string" notString
     badArgs     -> throwError $ NumArgs 1 badArgs
 
--- TODO: [r7rs]
--- the lists that quasiquote _outputs_ need to be mutable!
 quasiquote :: Macro
-quasiquote = Macro 1 $ \case
+quasiquote = Macro 1 $ \_ -> \case
     [form]  -> runReaderT (qq form) 0
     badArgs -> throwError $ NumArgs 1 badArgs
 
@@ -211,7 +215,7 @@ quasiquote = Macro 1 $ \case
           FList [Atom "unquote", form] -> do
             depth <- ask
             if depth == 0
-            then lift $ eval form
+            then lift $ evalBody form
             else local (subtract 1) $ do
               inner <- qq form
               lift $ makeMutableList [Atom "unquote", inner]
@@ -236,7 +240,7 @@ quasiquote = Macro 1 $ \case
             FList [Atom "unquote-splicing", form] -> do
               depth <- ask
               val <- if depth == 0
-                     then lift $ eval form
+                     then lift $ evalBody form
                      else local (subtract 1) $ qq form
               lift $ getListOrError val
             _ -> (:[]) <$> qq t

@@ -5,7 +5,7 @@ import Data.Array
 import Control.Monad.Except
 
 import Types
-import Evaluation (eval)
+import Evaluation (evalBody)
 import EvaluationMonad (updateWith)
 
 rawPrimitives :: [(String, RawPrimitive)]
@@ -47,13 +47,13 @@ vectorRef = RPrim 2 $ \case
     badArgs -> throwError $ NumArgs 2 badArgs
 
 vectorSet :: Macro
-vectorSet = Macro 3 $ \case
+vectorSet = Macro 3 $ \_ -> \case
     args@(Atom _ : _) -> updateWith helper args
     args -> helper args
   where helper :: [Val] -> EM Val
         helper args = do
             let head : tail = args
-            argVals <- mapM eval tail
+            argVals <- mapM evalBody tail
             case head : argVals of
                 [Vector arr, Number i, val]
                     | i `elem` [0.. snd (bounds arr)] ->

@@ -4,7 +4,6 @@ module EvaluationMonad
       EM (..)
     , EvalState (..)
     , StackFrame (..)
-    , StepReason (..)
     , Env
     , Opts
 
@@ -196,8 +195,8 @@ defineVar :: String -> Val -> EM Val
 defineVar var val = do
     stack <- gets stack
     env <- case stack of
-      [StackFrame _ Nothing] -> panic "defineVar: no env in frame"
-      [StackFrame _ (Just e)] -> pure e
+      (StackFrame _ Nothing : _)  -> panic "no env in frame"
+      (StackFrame _ (Just e) : _) -> pure e
       [] -> gets globalEnv
     liftIOThrows $ Env.defineVar env var val
 

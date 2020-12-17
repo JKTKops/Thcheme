@@ -79,7 +79,7 @@ instance Arbitrary Val where
 
 instance Arbitrary LispErr where
     arbitrary = oneof [ do n <- choose (0, 3)
-                           liftM2 NumArgs (return $ toInteger n) (vectorOf n arbitrary)
+                           liftM2 NumArgs (return n) (vectorOf n arbitrary)
                       , liftM2 TypeMismatch arbitrary arbitrary
                       , BadSpecialForm <$> arbitrary
                       , liftM2 NotFunction arbitrary arbitrary

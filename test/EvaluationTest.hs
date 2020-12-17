@@ -387,10 +387,10 @@ assertEqualIOWith
   :: HasCallStack
   => (a -> a -> IO Bool) -- ^ equality test
   -> (a -> IO String)    -- ^ show values
-  -> a                   -- ^ expected
   -> a                   -- ^ actual
+  -> a                   -- ^ expected
   -> Assertion
-assertEqualIOWith test display expected actual = do
+assertEqualIOWith test display actual expected = do
     b <- test expected actual
     unless b $ mkMsg >>= assertFailure
   where
@@ -534,7 +534,7 @@ mkApplyTest tb = testCase (testNameA tb) $ do
     let Right funcP = parse parseExpr "" $ funcIn tb
     primEnv <- primitiveBindings
     (Right func) <- fst <$> evaluateExpr primEnv noOpts funcP
-    res <- runTest primEnv noOpts $ apply func (args tb)
+    res <- runTest primEnv noOpts $ call func (args tb)
     fst res ?= expectedA tb
 
 facConstantSpace :: TestTree

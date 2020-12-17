@@ -4,12 +4,12 @@ module Evaluation
       -- | evaluate a given expression
     , evaluateExpr
       -- | evaluate inside EM monad
-    , eval
+    , eval, evalBody, evalTail, evalSeq, evalBodySeq, evalTailSeq
     , runTest
       -- | Convert the evaluation output into a meaningful string
     , showResultIO
       -- | Function application, not sure why this is here rn
-    , apply
+    , call, tailCall
     ) where
 
 import Data.Maybe
@@ -20,21 +20,19 @@ import Parsers
 import Val
 import EvaluationMonad
 import qualified Environment as Env
-import Options (checkOpt, Opt(FullStackTrace))
+import Options (checkOpt, ifOpt, Opt(FullStackTrace))
 import Primitives.WriteLib (writeSharedSH, showErrIO)
 
-eval :: Val -> EM Val
-eval = evalExpr -- historical, TODO
-
-evalExpr :: Val -> EM Val
-evalExpr expr = do
-    fexpr <- freezeList expr
-    case fexpr of
-        FList (function : args) -> handleApp expr function args
-        FList [] -> return Nil -- see Note: [Freezing Nil] in Val.hs
-        FNotList obj -> handleSimpleDatum obj
-        FDottedList{} ->
-            throwError $ BadSpecialForm expr
+eval :: InTail -- ^ Is this form in tail position of a body?
+     -> Val    -- ^ The form to evaluate
+     -> EM Val
+eval tail expr = do
+  fexpr <- freezeList expr
+  case fexpr of
+    FList (function : args) -> handleApp tail expr function args
+    FList []      -> return Nil -- see Note: [Freezing Nil] in Val.hs
+    FNotList obj  -> handleSimpleDatum obj
+    FDottedList{} -> throwError $ BadSpecialForm expr
 
 handleSimpleDatum :: Val -> EM Val
 handleSimpleDatum obj = case obj of
@@ -47,15 +45,17 @@ handleSimpleDatum obj = case obj of
     Nil          -> return Nil
     _other -> panic "handleSimpleDatum: datum is not simple!"
 
-handleApp :: Val -- ^ the original unfrozen Val, to put on the stack
+handleApp :: InTail -- ^ Is this application in tail position?
+          -> Val    -- ^ the original unfrozen Val, to put on the stack
           -> Val -> [Val] -> EM Val
-handleApp form function args = do
+handleApp tail form function args = do
     func <- case function of
         Primitive{}    -> return function
         Continuation{} -> return function
         Closure{}      -> return function
         PrimMacro{}    -> return function
-        _              -> eval function
+        _              -> evalBody function -- note evalBody, evaluating the
+                          -- head of an application can't be a tail eval
     case func of
         Primitive{}    -> evalCall func
         Continuation{} -> evalCall func
@@ -72,88 +72,119 @@ handleApp form function args = do
         _              -> evalCall func
 
   where evalCall func = do
-            argVals <- mapM eval args
-            let reduced = func `isReduced` function || args /= argVals
-            apply func argVals
-        evalPMacro pmacro = apply pmacro args
+            argVals <- mapM evalBody args
+                       -- evaluating args also can't be a tail eval
+            if tail
+            then tailCall func argVals
+            else call func argVals
+
+        -- TODO: It's not clear what to do here when in tail position.
+        -- My best idea is that PrimMacros need to take an extra arg
+        -- that indicates if they are in tail position?
+        -- For user-defined macros, it Just Works (tm) as long as we
+        -- correctly eval/tailEval, because the macro will expand into
+        -- the current environment and then the expansion should be evaluated
+        -- as though the macro was never there.
+        evalPMacro pmacro = apply tail pmacro args
         evalMacro macro = do
-            expansion <- apply macro args
-            -- for TCO; pop here if evaluating tail position
-            eval expansion
+            expansion <- call macro args
+            eval tail expansion
 
-        isReduced :: Val -> Val -> Bool
-        isReduced _ (Atom _) = False
-        isReduced new old    = new /= old
+evalBody, evalTail :: Val -> EM Val
+evalBody = eval False
+evalTail = eval True
 
-apply :: Val -> [Val] -> EM Val
+evalSeq :: InTail -> [Val] -> EM Val
+evalSeq tail = go
+  where go [form] = eval tail form
+        go (s:ss) = evalBody s >> go ss
 
+-- | Evaluate a sequence in either tail or non-tail position.
+-- I'm not sure if 'evalBodySeq' actually has any application,
+-- it seems that usually the control of 'evalSeq' is needed.
+evalBodySeq, evalTailSeq :: [Val] -> EM Val
+evalBodySeq = evalSeq False
+evalTailSeq = evalSeq True
+
+call :: Val -> [Val] -> EM Val
+call f args = do
+  makeStackFrame f args >>= pushFrame
+  v <- apply False f args
+  popFrame
+  return v
+
+tailCall :: Val -> [Val] -> EM Val
+tailCall f args =
+  ifOpt FullStackTrace
+    (call f args) -- don't do TCO if FullStackTrace is set
+    $ do popFrame
+         makeStackFrame f args >>= pushFrame
+         apply True f args
+
+apply :: InTail -> Val -> [Val] -> EM Val
 -- Applications of primitive functions
-apply (Primitive arity func _) args
-   | num args >= arity = func args
-   | otherwise         = throwError $ NumArgs arity args
+apply _ (Primitive arity func _) args
+   | length args >= arity
+   = func args
+   | otherwise
+   = throwError $ NumArgs arity args
 
-apply (PrimMacro arity func _) args
-   | num args >= arity = func args
-   | otherwise         = throwError $ NumArgs arity args
+apply tail (PrimMacro arity func _) args
+   | length args >= arity
+   = func tail args
+   | otherwise
+   = throwError $ NumArgs arity args
 
 -- Application of continuation
-apply (Continuation func) [arg] = func arg
-apply Continuation{} badArgs = throwError $ NumArgs 1 badArgs
+apply _ (Continuation func) [arg] = func arg
+apply _ Continuation{} badArgs = throwError $ NumArgs 1 badArgs
 
 -- Applications of user-defined functions
-apply f@(Closure params varargs body cloEnv _name) args =
-    case num args `compare` num params of
-        -- Throw error if too many args and no varargs
-        GT -> if isNothing varargs
-              then throwError $ NumArgs (num params) args
-        -- otherwise bind parameters in this closure, bind the varargs, and evaluate
-              else evaluate
-        EQ -> evaluate
-        LT -> throwError $ NumArgs (num params) args
+-- We check arity here instead of in 'makeStackFrame' so that this
+-- application will be visible on the stack if an error is raised,
+-- which makes it look like closures are responsible for checking their
+-- own arity.
+apply _ f@(Closure formals mvarg body cloEnv _name) args = do
+  case length args `compare` length formals of
+    GT -> if isNothing mvarg
+          then throwError $ NumArgs (length formals) args
+          else pure ()
+    EQ -> pure ()
+    LT -> throwError $ NumArgs (length formals) args
+  evalTailSeq body
 
-  where evaluate = do env <- makeBindings params
-                      env' <- bindVarargs varargs env
-                      let frame = StackFrame (makeImmutableList (f:args)) 
-                                             (Just env')
-                      pushFrame frame
-                      result <- evalBody
-                      popFrame -- TODO: This is not correct handling of TCO.
-                      -- This is correct for a non-tail call. However, a tail
-                      -- call should simply replace the top frame instead of
-                      -- doing a push and then a pop.
-                      -- I think the right think to do is to remove the 'pop'
-                      -- call from 'apply' entirely. Instead, we should have
-                      -- a 'call' function and a 'tailCall' function.
-                      -- 'call' pops after calling 'apply', and 'tailCall'
-                      -- pops before. Then 'eval' needs to know if the form
-                      -- it's evaluating is in tail position so that it knows
-                      -- if it should 'call' or 'tailCall'.
-                      return result
+apply _ notFunc _ = throwError $ NotFunction "Not a function" notFunc
 
-        makeBindings :: [String] -> EM Env
-        makeBindings vars = liftIO . Env.bindVars cloEnv . Map.fromList $ zip vars args
+makeStackFrame :: Val -> [Val] -> EM StackFrame
+makeStackFrame f@(Closure formals mvarg _body cloEnv mname) args = do
+  env  <- bindFormals cloEnv
+  env' <- bindVararg env
+  return $ buildFrame name args $ Just env'
+  where
+    bindFormals env = liftIO $ Env.bindVars env 
+                             $ Map.fromList 
+                             $ zip formals args
+    bindVararg env = case mvarg of
+      Nothing -> return env
+      Just name -> do
+        varargList <- makeMutableList $ drop (length formals) args
+        liftIO $ Env.bindVar env name varargList
+    name = fromMaybe "#<closure>" mname
+makeStackFrame (Primitive _ _ name) args = pure $ buildFrame name args Nothing
+makeStackFrame (PrimMacro _ _ name) args = pure $ buildFrame name args Nothing
+makeStackFrame Continuation{} args = pure $ buildFrame "#<cont>" args Nothing
+makeStackFrame head args = 
+  pure $ StackFrame (makeImmutableList (head:args)) Nothing
 
-        remainingArgs = drop (length params) args
-        -- evaluate every expression in body, return value of the last one
-        evalBody = last <$> mapM eval body
-        -- binds extra arguments to vararg in GT case
-        bindVarargs arg env = case arg of
-          Just argName -> do
-              remainingArgsMutable <- makeMutableList remainingArgs
-              liftIO . Env.bindVars env $ Map.fromList [(argName, remainingArgsMutable)]
-          Nothing -> return env
-
-apply notFunc _ = throwError $ NotFunction "Not a function" notFunc
-
-num :: [a] -> Integer
-num = toInteger . length
+buildFrame :: String -> [Val] -> Maybe Env -> StackFrame
+buildFrame name args = StackFrame (makeImmutableList (Atom name : args))
 
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
 evaluate label initEnv opts input = execEM initEnv opts $
-  liftEither (labeledReadExpr label input) >>= eval
+  liftEither (labeledReadExpr label input) >>= evalBody
 
 evaluateExpr :: Env -> Opts -> Val -> IO (Either LispErr Val, EvalState)
-evaluateExpr env opts v = execEM env opts $ eval v
+evaluateExpr env opts v = execEM env opts $ evalBody v
 
 -- | Provided for backwards compatibility.
 runTest :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)

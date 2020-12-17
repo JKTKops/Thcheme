@@ -4,9 +4,7 @@ module Val
   , LispErr (..), isTerminationError
   , Primitive (..)
   , Macro (..)
-  , Builtin
-  -- Don't export ConstRef, because we want consumers to go through
-  -- the functions that do linting.
+  , Builtin, InTail --, Arity (..)
 
     -- * Manipulating pure 'Val's
   , truthy

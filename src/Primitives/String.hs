@@ -36,13 +36,13 @@ primStringRef = RPrim 2 $ \case
     badArgs     -> throwError $ NumArgs 2 badArgs
 
 primStringSet :: Macro
-primStringSet = Macro 3 $ \case
+primStringSet = Macro 3 $ \_ -> \case
     args@(Atom _ : _) -> updateWith helper args
     args              -> helper args
   where helper :: [Val] -> EM Val
         helper args = do
             let (head : tail) = args
-            argVals <- mapM eval tail
+            argVals <- mapM evalBody tail
             case head : argVals of
                 [String s, Number i, Char c] -> case fromIntegral i of
                     n | n `elem` [0..length s - 1] ->

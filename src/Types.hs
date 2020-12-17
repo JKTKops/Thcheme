@@ -3,6 +3,7 @@
 module Types
     ( Env
     , Arity
+    , InTail
     , RBuiltin
     , IBuiltin
     , Builtin
@@ -22,7 +23,6 @@ module Types
     , EM (..)
     , EvalState (..)
     , StackFrame (..)
-    , StepReason (..)
     , Opts
    -- , TraceType
     , liftIOThrows
@@ -58,14 +58,19 @@ type Env = IORef (HashMap String (IORef Val))
 type Ref = IORef
 
 -- * Function types and components
-type Arity = Integer
+type Arity = Int
+type InTail = Bool
 type RBuiltin = [Val] -> ThrowsError Val
 data RawPrimitive = RPrim Arity RBuiltin
 type IBuiltin = [Val] -> IOThrowsError Val
 data IOPrimitive = IPrim Arity IBuiltin
 type Builtin = [Val] -> EM Val
 data Primitive = Prim String Arity Builtin
-data Macro = Macro Arity Builtin
+-- The additional 'InTail' flag is necessary for macros like 'begin'
+-- and 'if' which need to use a different 'eval' behavior if they are
+-- in tail position. We do global CPS anyway (EM monad) but this information
+-- is needed to maintain the debug stack.
+data Macro = Macro Arity (InTail -> Builtin)
 
 
 -- TODO maybe R5RS numeric tower, or just some sort of float at least
@@ -84,7 +89,7 @@ data Val
   | Char Char
   | Bool Bool
   | Primitive Arity Builtin String
-  | PrimMacro Arity Builtin String
+  | PrimMacro Arity (InTail -> Builtin) String
   | Continuation (Val -> EM Val)
   | Closure
      { params :: [String]
@@ -142,7 +147,7 @@ eqVal _ _ = False
 -- Can't compare mutable pairs (use 'valsSameShape' instead).
 instance Eq Val where (==) = eqVal
 
-data LispErr = NumArgs Integer [Val]
+data LispErr = NumArgs Int [Val]
              | TypeMismatch String Val
              | Parser ParseError
              | BadSpecialForm Val
@@ -264,13 +269,8 @@ instance HasOpts EM where
 liftIOThrows :: IOThrowsError a -> EM a
 liftIOThrows = liftEither <=< liftIO . runExceptT
 
--- | Reasons a step was performed
-data StepReason = Call | Reduce | Expand deriving (Eq, Show, Read, Enum)
-
 -- | The current state of evaluation
-data EvalState = ES { --stack      :: [(StepReason, Val)]
-                    --, symEnv     :: [Env]
-                      globalEnv  :: Env
+data EvalState = ES { globalEnv  :: Env
                     , stack      :: [StackFrame]
                     , options    :: Opts
                     }
