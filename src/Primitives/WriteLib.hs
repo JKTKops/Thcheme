@@ -15,6 +15,8 @@ import Control.Monad.Reader
 import Control.Monad.State
 import qualified Data.HashSet as S
 import qualified Data.HashMap.Strict as M
+import GHC.Show (showLitChar)
+import Data.Char (isPrint)
 
 writeSH :: Val -> IO String
 writeSH v = do
@@ -134,6 +136,7 @@ writeShowS :: Val -> Write ShowS
 writeShowS v
   | pairSH v = writePair v
   | vectorSH v = writeVector v
+writeShowS (String s) = pure $ ushowString s
 writeShowS v = pure $ shows v
 
 writePair :: Val -> Write ShowS
@@ -214,3 +217,21 @@ defineLabel n = modify $ S.insert n
 
 askLabel :: StableName Val -> Write (Maybe Int)
 askLabel name = asks $ M.lookup name
+
+-- | So this is funny.
+--
+-- Haskell's 'Show' instance for 'Char' defines 'showList', this is what
+-- is used to 'show' Strings. If you chase the source a bit, you'll find that
+-- it calls 'showLitChar' - a function that does not propogate Unicode
+-- characters! Which is pretty silly. This leads to the awkward situation where
+-- we print #\λ correctly, but not (list->string '(#\λ)).
+-- This function corrects the case that escapes Unicode code points.
+ushowString :: String -> ShowS
+ushowString s = showChar '\"' . showLitString s . showChar '\"'
+  where 
+    showLitString [] s = s
+    showLitString (c:cs) s = ushowLitChar c (showLitString cs s)
+
+    ushowLitChar c s
+      | c > '\DEL' && isPrint c = showChar c s
+      | otherwise = showLitChar c s

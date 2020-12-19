@@ -108,7 +108,7 @@ showVal Vector{} = showString "<can't show mutable vector>"
 showVal (IVector v) = showChar '#' . showParen True (unwordsList (V.toList v))
 showVal Nil = showString "()"
 
--- | Can't show mutable pairs.
+-- | Can't show mutable things.
 instance Show Val where
     showsPrec _ v s = showVal v s
 
