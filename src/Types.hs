@@ -31,7 +31,8 @@ module Types
 import Text.ParserCombinators.Parsec (ParseError)
 import Data.HashMap.Strict (HashMap)
 import Data.IORef
-import Data.Array
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as V
 import Control.Monad.Cont
 import Control.Monad.Except
 import Control.Monad.Fail
@@ -83,7 +84,6 @@ data Macro = Macro Arity (InTail -> Builtin)
 --   Note that this is implicitly transitive.
 data Val
   = Atom String
-  | Vector (Array Integer Val)
   | Number Integer
   | String String
   | Char Char
@@ -104,6 +104,8 @@ data Val
   | Nil
   | Pair !(IORef Val) !(IORef Val)
   | IPair Val Val
+  | Vector  !(V.IOVector Val)
+  | IVector !(V.Vector Val)
 
 eqVal :: Val -> Val -> Bool
 eqVal (Atom s) (Atom s') = s == s'
@@ -111,15 +113,14 @@ eqVal (Number n) (Number n') = n == n'
 eqVal (String s) (String s') = s == s'
 eqVal (Char c) (Char c') = c == c'
 eqVal (Bool b) (Bool b') = b == b'
-eqVal (Vector v) (Vector v') = v == v'
+eqVal (IVector v) (IVector v') = v == v'
 eqVal (Port p) (Port p') = p == p'
 eqVal (Primitive _ _ n) (Primitive _ _ n') = n == n'
 eqVal Continuation{} _ = False -- perhaps it's possible to give continuations
 eqVal _ Continuation{} = False -- unique identifiers to make this work.
-                               -- The state would have to have an IORef holding
-                               -- the counter to preserve it between repl
-                               -- steps / continuation invocations. Invoking a
-                               -- continuation needs to preserve the count.
+                               -- However... why? 'eq?' works fine by just
+                               -- comparing their StableNames and anything we
+                               -- might want to test can be tested with 'eq?'.
 eqVal (Closure p v b _ n) (Closure p' v' b' _ n') = 
     and [ p == p'
         , v == v'

@@ -7,7 +7,7 @@ import Text.ParserCombinators.Parsec hiding (spaces)
 import qualified Text.Parsec.Token as Tok
 
 import Data.Char (digitToInt)
-import Data.Array (listArray)
+import Data.Vector (fromList)
 import Control.Monad.Except (throwError)
 
 import Types (ThrowsError)
@@ -136,7 +136,7 @@ parseVector :: Parser Val
 parseVector = lexeme $ do
     char '#'
     exprs <- parens $ many parseExpr
-    return . Vector . listArray (0, fromIntegral $ length exprs - 1) $ exprs
+    return . IVector $ fromList exprs
 
 parseListlike :: Parser Val
 parseListlike = do

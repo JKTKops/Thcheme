@@ -4,6 +4,7 @@
 module Primitives.WriteLib where
 
 import Val
+import Primitives.Vector (vectorElemsPH)
 
 import Control.Monad.IO.Class (MonadIO(..))
 import System.Mem.StableName (StableName, makeStableName)
@@ -70,8 +71,10 @@ labelDatum s v = fpmToLabeling <$>
   execStateT (labelDatumWorker s v) M.empty
 
 labelDatumWorker :: Sharing -> Val -> FirstPass
-labelDatumWorker s p | pairSH p = labelPair s p
-labelDatumWorker _s _notPair = pure ()
+labelDatumWorker s p 
+  | pairSH p = labelPair s p
+  | vectorSH p = labelVector s p
+labelDatumWorker _s _notNested = pure ()
 
 -- | Calling this on a non-pair will panic!
 labelPair :: Sharing -> Val -> FirstPass
@@ -88,11 +91,31 @@ labelPair sharing pair = do
     labelDatumWorker sharing cdr
     case sharing of
       FullSharing -> pure ()
-      CyclicOnly -> modify $ M.alter deleteUnused name
+      CyclicOnly -> modify $ deleteUnused name
+
+-- | See 'labelPair'.
+labelVector :: Sharing -> Val -> FirstPass
+labelVector sharing vec = do
+  name <- lift $ makeStableName vec
+  keepGoing <- state $ \m -> case M.lookup name m of
+    Just False -> (False, M.adjust (const True) name m)
+    Just True  -> (False, m)
+    Nothing    -> (True, M.insert name False m)
+  when keepGoing $ do
+    vecElems <- vectorElemsPH vec
+    mapM_ (labelDatumWorker sharing) vecElems
+    case sharing of
+      FullSharing -> pure ()
+      CyclicOnly  -> modify $ deleteUnused name
+
+deleteUnused :: StableName Val -> FirstPassMap -> FirstPassMap
+deleteUnused = M.alter f
   where
-    deleteUnused Nothing = Nothing
-    deleteUnused (Just False) = Nothing
-    deleteUnused (Just True)  = Just True
+    f Nothing = Nothing
+    f (Just False) = Nothing
+    f (Just True)  = Just True
+
+
 
 fpmToLabeling :: FirstPassMap -> Labeling
 fpmToLabeling fpm = evalState (M.traverseWithKey go used) 0
@@ -108,7 +131,9 @@ runWrite lbls m =
   flip evalStateT S.empty $ runReaderT m lbls
 
 writeShowS :: Val -> Write ShowS
-writeShowS p | pairSH p = writePair p
+writeShowS v
+  | pairSH v = writePair v
+  | vectorSH v = writeVector v
 writeShowS v = pure $ shows v
 
 writePair :: Val -> Write ShowS
@@ -119,19 +144,38 @@ writePair p = do
     Nothing -> showParen True <$> writeList p
     Just lbl -> writeLabeledPair lbl name p
 
+writeVector :: Val -> Write ShowS
+writeVector v = do
+  name <- liftIO $ makeStableName v
+  elems <- vectorElemsPH v
+  mlbl <- askLabel name
+  case mlbl of
+    Nothing -> (showChar '#' .) . showParen True <$> writeVectorElems elems
+    Just lbl -> writeLabeledVector lbl name elems
+
 writeLabeledPair :: Int -> StableName Val -> Val -> Write ShowS
 writeLabeledPair lbl name p = do
   defined <- labelDefined name
   if defined
-    then return $ showChar '#'
-                . shows lbl
-                . showChar '#'
+    then return $ showLabelUse lbl
     else do
       defineLabel name -- mark defined
-      let pre = showChar '#'
-              . shows lbl
-              . showChar '='
+      let pre = showLabelDef lbl
       (pre .) . showParen True <$> writeList p
+
+writeLabeledVector :: Int -> StableName Val -> [Val] -> Write ShowS
+writeLabeledVector lbl name p = do
+  defined <- labelDefined name
+  if defined
+    then return $ showLabelUse lbl
+    else do
+      defineLabel name
+      let pre = showLabelDef lbl . showChar '#'
+      (pre .) . showParen True <$> writeVectorElems p
+
+showLabelUse, showLabelDef :: Int -> ShowS
+showLabelUse lbl = showChar '#' . shows lbl . showChar '#'
+showLabelDef lbl = showChar '#' . shows lbl . showChar '='
 
 -- we have to be careful here to correctly handle the case where the
 -- cdr needs to be labeled. If the cdr needs to be labeled, we have
@@ -154,6 +198,13 @@ writeList1 p | pairSH p = do
       writeLabeledPair lbl name p
 writeList1 Nil = pure id
 writeList1 dot = (showString " . " .) <$> writeShowS dot
+
+writeVectorElems :: [Val] -> Write ShowS
+writeVectorElems [] = pure id
+writeVectorElems [val] = writeShowS val
+writeVectorElems (v:vs) = spaceSep <$> writeShowS v <*> writeVectorElems vs
+  where
+    spaceSep s1 s2 = s1 . showChar ' ' . s2
 
 labelDefined :: StableName Val -> Write Bool
 labelDefined n = gets $ S.member n

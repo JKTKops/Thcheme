@@ -27,7 +27,6 @@ default-extensions:
 # are being used where.
 dependencies:
 - base >= 4.7 && < 5
-- array
 - containers
 - hashtables
 - haskeline
@@ -38,6 +37,7 @@ dependencies:
 - transformers
 - union-find
 - unordered-containers
+- vector
 
 library:
   source-dirs: src

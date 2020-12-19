@@ -42,7 +42,7 @@ import Control.Monad.Trans.Maybe (MaybeT(..))
 import Data.IORef (readIORef) -- for show in IO
 import Data.Foldable (foldrM)
 
-import qualified Data.Array as A
+import qualified Data.Vector as V
 import Data.Maybe (fromMaybe)
 import System.Mem.StableName (makeStableName)
 
@@ -74,7 +74,6 @@ showVal (Char c)   = showString "#\\" . showString (case c of
     _    -> [c])
 showVal (Bool True) = showString "#t"
 showVal (Bool False) = showString "#f"
-showVal (Vector v) = showChar '#' . showParen True (unwordsList (A.elems v))
 showVal Port{} = showString "#<port>"
 showVal Undefined = showString "#<undefined>"
 showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
@@ -105,6 +104,8 @@ showVal p@IPair{} = showParen True $ showDList $ fromList p
         Nil -> id
         obj -> showString " . " . shows obj
 
+showVal Vector{} = showString "<can't show mutable vector>"
+showVal (IVector v) = showChar '#' . showParen True (unwordsList (V.toList v))
 showVal Nil = showString "()"
 
 -- | Can't show mutable pairs.
@@ -410,10 +411,11 @@ isImmutablePair _ = False
 -- by the parser. That means the type is not a reference, or its constructor's
 -- name starts with I.
 --
--- Most objects qualify; 'PairPtr', 'VecPtr', 'U8VecPtr', and 'StringPtr' do
+-- Most objects qualify; 'Pair', 'Vector', 'U8Vector', and 'String' do
 -- not.
 isImmutable :: Val -> Bool
 isImmutable Pair{} = False
+isImmutable Vector{} = False
 isImmutable _ = True
 
 pairSH :: Val -> Bool
@@ -423,6 +425,7 @@ pairSH _ = False
 
 vectorSH :: Val -> Bool
 vectorSH Vector{} = True
+vectorSH IVector{} = True
 vectorSH _ = False
 
 -- | Show a 'Val' in IO. This function loops forever

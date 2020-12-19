@@ -11,7 +11,7 @@ import Text.ParserCombinators.Parsec
 import Control.Monad.Except
 import Control.Monad.Loops (allM)
 import Data.Either
-import Data.Array
+import Data.Vector (fromList)
 
 import Val
 import Parsers
@@ -73,8 +73,8 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Simple vector"
         , input = "#(1 2 \"test\")"
-        , expected = Right $ Vector (listArray (0, 2)
-            [Number 1, Number 2, String "test"])
+        , expected = Right $ IVector $ fromList
+            [Number 1, Number 2, String "test"]
         }
     , EvalTest
         { testName = "Unbound symbol"
@@ -552,4 +552,7 @@ facConstantSpace = testCase "factorial executes in constant space" $ do
     evaluateExpr primEnv noOpts defFac
     (r, s) <- evaluateExpr primEnv noOpts exec
     r @?= Left (Default "3628800")
-    assertBool "stack is too big" $ length (stack s) < 5
+    assertBool "stack is too big" $ length (stack s) == 1
+    -- every call is a tail call
+    -- (fac tail-calls go, tail-calls go..., tail-calls error)
+    -- so at the end, only error should be on the stack.

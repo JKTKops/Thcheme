@@ -50,6 +50,8 @@ import Options
 import Types
 import qualified Environment as Env
 
+import GHC.Stack (HasCallStack) -- for panic
+
 
 execEM :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
 execEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
@@ -111,7 +113,7 @@ lintAssert msg test = whenOpt Lint $ test >>= \b ->
 --
 -- Calling this function throws a synchronous Haskell exception, printing
 -- the given message along with a note about "the impossible" happening.
-panic :: String -> a
+panic :: HasCallStack => String -> a
 panic msg = error $ "Panic! The \"impossible\" happened.\n" ++ msg
 
 -- | Searches the environment stack top-down for a symbol

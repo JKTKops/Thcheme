@@ -15,6 +15,7 @@ import Val
 import EvaluationMonad (EM)
 import Primitives.Bool (boolBinop)
 import Primitives.Unwrappers
+import Primitives.Vector hiding (primitives)
 
 -- Used to implement 'equals?'
 import Data.Functor ((<&>))
@@ -23,7 +24,8 @@ import qualified Data.HashTable.IO as H
 import System.Mem.StableName (StableName, makeStableName)
 import System.Random (randomRIO)
 
-import qualified Data.Array as A -- todo: get rid of this one with vectors lmao
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as V
 
 primitives :: [Primitive]
 primitives = [eqP, eqvP, equalP] ++ typeSpecific
@@ -206,18 +208,18 @@ pre x y k = do
        True  -> Just k
        False -> Nothing
 
--- TODO: once we do vector stuff, put vectorLengthPS in
--- Primitives/Vector.hs and then use it here.
--- similarly, its probably a good idea to move all the pair stuff
--- in Val.hs into Primitives/Pair.hs   
+-- | Only call this with two vectors, or else it'll panic.
 vector :: ([Val] -> [Val] -> Int -> IO (Maybe Int))
           -- ^ call on the vector elems if they are the same length 
        -> Val -> Val -> Int -> IO (Maybe Int)
-vector goodToGo x@(Vector v1) y@(Vector v2) k =
-  let n1 = A.bounds v1
-      n2 = A.bounds v2
+vector goodToGo x y k =
+  let n1 = vectorLengthPH x
+      n2 = vectorLengthPH y
   in if n1 /= n2 then return Nothing
-  else goodToGo (A.elems v1) (A.elems v2) k
+  else do
+    elemsX <- vectorElemsPH x
+    elemsY <- vectorElemsPH y
+    goodToGo elemsX elemsY k
 
 vectorLoop :: Bool -- ^ decrement k before passing in?
            -> (Val -> Val -> Int -> IO (Maybe Int))

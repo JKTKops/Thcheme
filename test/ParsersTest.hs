@@ -8,7 +8,7 @@ import Test.Tasty.QuickCheck
 import Text.ParserCombinators.Parsec
 import Data.Maybe
 import Data.Either
-import Data.Array
+import qualified Data.Vector as V
 
 import Control.Arrow (first)
 
@@ -170,13 +170,13 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
     , mkE2Etest
         { testName = "Empty vector"
         , input = "#()"
-        , expectedContents = Just $ Vector (listArray (0, -1) [])
+        , expectedContents = Just $ IVector V.empty
         }
     , mkE2Etest
         { testName = "regular vector"
         , input = "#(\"test\" 0 atom)"
-        , expectedContents = Just $ Vector (listArray (0, 2)
-            [String "test", Number 0, Atom "atom"])
+        , expectedContents = Just $ IVector $ V.fromList
+            [String "test", Number 0, Atom "atom"]
         }
     , mkE2Etest
         { testName = "Irregular spacing"
@@ -489,6 +489,7 @@ charParserTests = testGroup "Parsing Chars" $ map testCharParser
         }
     ]
 
+listParserTests :: TestTree
 listParserTests = testGroup "Parsing Lists"
     [ testCase "\"5 #a #\\a\"" $ do
         let p = parse parseList "" "5 #a #\\a"
@@ -501,6 +502,7 @@ listParserTests = testGroup "Parsing Lists"
         correct @? "Contents of the list are wrong: " ++ show (fromJust val)
     ]
 
+dotListParserTests :: TestTree
 dotListParserTests = testGroup "Parsing Dotted Lists"
     [ testCase "\"5 #a . #\\a\"" $ do
         let p = parse parseDottedList "" "5 #a . #\\a"
@@ -514,22 +516,23 @@ dotListParserTests = testGroup "Parsing Dotted Lists"
         correct @? "Contents of the dotted list are wrong: " ++ show val
     ]
 
+vectorParserTests :: TestTree
 vectorParserTests = testGroup "Parsing vectors"
     [ testCase "\"#(1 #\\x ())\"" $ do
         let p = run parseVector "#(1 #\\x ())"
         val <- verify p
-        fromJust val @?= listArray (0, 2) [Number 1, Char 'x', Nil]
+        fromJust val @?= V.fromList [Number 1, Char 'x', Nil]
     , testCase "\"#()\"" $ do
         let p = run parseVector "#()"
         val <- verify p
-        fromJust val @?= listArray (0, -1) []
+        fromJust val @?= V.empty
     ]
   where verify p = do
             isRight p @? "Parse failed."
             let val = case fromRight undefined p of
-                    Vector arr -> Just arr
+                    IVector v -> Just v
                     _ -> Nothing
-            isJust val @? "Parse did not return a Vector."
+            isJust val @? "Parse did not return an IVector."
             return val
 
 -- PROPERTY TESTS

@@ -2,7 +2,8 @@
 module Primitives.TypeTransformers (primitives) where
 
 import Data.Char (chr, ord)
-import Data.Array
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as V
 import Control.Monad.Except (throwError)
 
 import Val
@@ -49,7 +50,7 @@ listToString v = do
 listToVector :: Val -> EM Val
 listToVector v = do
     vals <- getListOrError v
-    return . Vector $ listArray (0, fromIntegral $ length vals - 1) vals
+    liftIO $ Vector <$> V.thaw (V.fromList vals)
 
 numberToChar :: Val -> EM Val
 numberToChar (Number n) = return . Char . chr $ fromIntegral n
@@ -99,5 +100,8 @@ stringToNumber (String s) = let parsed = reads s in
 stringToNumber notStr     = throwError $ TypeMismatch "string" notStr
 
 vectorToList :: Val -> EM Val
-vectorToList (Vector arr) = makeMutableList $ elems arr
+vectorToList (IVector v) = makeMutableList $ V.toList v
+vectorToList (Vector v) = do
+    imm <- liftIO $ V.freeze v
+    makeMutableList $ V.toList imm
 vectorToList notVec = throwError $ TypeMismatch "vector" notVec

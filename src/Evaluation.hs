@@ -36,13 +36,14 @@ eval tail expr = do
 
 handleSimpleDatum :: Val -> EM Val
 handleSimpleDatum obj = case obj of
-    val@String{} -> return val
-    val@Char{}   -> return val
-    val@Number{} -> return val
-    val@Bool{}   -> return val
-    val@Vector{} -> return val
-    (Atom id)    -> getVar id
-    Nil          -> return Nil
+    val@String{}  -> return val
+    val@Char{}    -> return val
+    val@Number{}  -> return val
+    val@Bool{}    -> return val
+    val@Vector{}  -> return val
+    val@IVector{} -> return val
+    (Atom id)     -> getVar id
+    Nil           -> return Nil
     _other -> panic "handleSimpleDatum: datum is not simple!"
 
 handleApp :: InTail -- ^ Is this application in tail position?

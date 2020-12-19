@@ -9,17 +9,18 @@ import Test.SmallCheck.Series
 
 import Data.List (isPrefixOf)
 import Data.IORef
-import Data.Array
+import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as Map
 import Control.Monad (liftM2, (>=>))
 import Control.Monad.Trans (lift)
 import System.IO (stdout)
 
 import Val
-import EvaluationMonad (unsafeEMtoIO)
+import EvaluationMonad (unsafeEMtoIO, liftIO)
 import System.IO.Unsafe (unsafePerformIO) -- be careful! for arbitrary instance
 import Types (extractValue) -- these functions can probably be removed entirely.
 import Primitives
+import Primitives.WriteLib (writeSharedSH)
 
 instance Serial IO Val where
     series = cons1 Atom
@@ -30,7 +31,7 @@ instance Serial IO Val where
                 \/ cons1 Char
                 \/ cons1 Bool
                 \/ cons0 Undefined
-                -- vector?
+                \/ (series >>= lift . fmap Vector . V.thaw . V.fromList)
                 -- \/ cons3 Primitive
                 -- Primitive function types left off for now
                 -- \/ cons5 Closure
@@ -57,6 +58,10 @@ instance Arbitrary Val where
                                  unsafePerformIO 
                                     . unsafeEMtoIO 
                                     . makeMutableList 
+                                  <$> vectorOf num subval
+                            , do num <- choose (0, n)
+                                 unsafePerformIO
+                                   . fmap Vector . V.thaw . V.fromList
                                   <$> vectorOf num subval
             -- TODO: there's quite a conundrum here. I'm not _super_
             -- concerned about being able to test immutable data. After
@@ -153,17 +158,7 @@ prop_TerminationErrors = QC.testProperty "Only Quit is a termination error" $
 prop_ShowVal :: TestTree
 prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
     \input -> QC.ioProperty $
-        (==) <$> unsafeEMtoIO (referenceShowV input) <*> showValIO input
-            --Atom _        -> testShowAtom input
-            --Number _      -> testShowNumber input
-            --String _      -> testShowString input
-            --Char _        -> testShowChar input
-            --Bool _        -> testShowBool input
-            --IList _        -> testShowList input
-            --IDottedList {} -> testShowDottedList input
-            --Nil -> ("()" == ) <$> showValIO input
-            --Vector _      -> testShowVector input
-            --_             -> True
+        (==) <$> unsafeEMtoIO (referenceShowV input) <*> writeSharedSH input
   where referenceShowV = freezeList >=> referenceShow
       
         referenceShow (FNotList (Atom s)) = pure s
@@ -177,9 +172,9 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
             _    -> "#\\" ++ [c]
         referenceShow (FNotList (Bool b)) = pure $
             if b then "#t" else "#f"
-        referenceShow (FNotList (Vector arr)) =
+        referenceShow (FNotList (Vector v)) =
             (\es -> "#(" ++ unwords es ++ ")") 
-            <$> mapM referenceShowV (elems arr)
+            <$> (liftIO (V.freeze v) >>= mapM referenceShowV . V.toList)
 
         referenceShow (FList vs) = (\es -> "(" ++ unwords es ++ ")") 
             <$> mapM referenceShowV vs
@@ -187,26 +182,6 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
             (\es e -> "(" ++ unwords es ++ ". " ++ e ++ ")")
             <$> mapM referenceShowV vs <*> referenceShowV v
         --    "(" ++ unwords (map show vs) ++ " . " ++ show v ++ ")"
-      
-        testShowAtom atomVal = show atomVal == let Atom s = atomVal in s
-        testShowNumber nVal = show nVal == let Number n = nVal in show n
-        testShowString sVal = show sVal == let String s = sVal in show s
-        testShowChar charVal = show charVal == let Char c = charVal in case c of
-            ' '  -> "#\\space"
-            '\t' -> "#\\tab"
-            '\n' -> "#\\newline"
-            '\r' -> "#\\carriage-return"
-            _    -> "#\\" ++ [c]
-        testShowBool boolVal = show boolVal == let Bool b = boolVal in
-            if b
-            then "#t"
-            else "#f"
-        --testShowList listVal = show listVal == let IList ls = listVal in
-        --    "(" ++ unwords (map show ls) ++ ")"
-        --testShowDottedList dListVal = show dListVal == let IDottedList ls l = dListVal in
-        --    "(" ++ unwords (map show ls) ++ " . " ++ show l ++ ")"
-        testShowVector vecVal = show vecVal == let Vector arr = vecVal in
-            "#(" ++ unwords (map show $ elems arr) ++ ")"
 
 prop_ShowErrPrefix :: TestTree
 prop_ShowErrPrefix = SC.testProperty "Showing LispErr is prefixed with 'Error:'" $
