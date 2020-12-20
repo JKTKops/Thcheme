@@ -16,6 +16,7 @@ import EvaluationMonad (EM)
 import Primitives.Bool (boolBinop)
 import Primitives.Unwrappers
 import Primitives.Vector hiding (primitives)
+import Primitives.String hiding (primitives)
 
 -- Used to implement 'equals?'
 import Data.Functor ((<&>))
@@ -110,10 +111,12 @@ eqvSSH :: MonadIO m => Val -> Val -> m Bool
 eqvSSH (Bool x)   (Bool y)   = return $ x == y
 eqvSSH (Number x) (Number y) = return $ x == y
 eqvSSH (Char x)   (Char y)   = return $ x == y
-eqvSSH (String s) (String t) = return $ s == t
 eqvSSH (Atom x)   (Atom y)   = return $ x == y
 eqvSSH (Port p)   (Port q)   = return $ p == q
 eqvSSH Nil        Nil        = return True
+eqvSSH str1 str2
+  | stringSH str1, stringSH str2 =
+    (==) <$> unwrapStringPH str1 <*> unwrapStringPH str2
 eqvSSH v1         v2         = eqSSH v1 v2
 
 -- TODO: instead of defining coercers, we should just import TypeTransformers

@@ -61,11 +61,15 @@ truthy _ = True
 --
 -------------------------------------------------------------------------------
 
-
+-- | 'show' a 'Val'. This almost certainly isn't what you want;
+-- it's a good escape hatch if you need a pure way to display a 'Val'
+-- but it doesn't display unicode characters in strings properly,
+-- can't display anything mutable, and loops on cyclic immutable data.
 showVal :: Val -> ShowS
 showVal (Atom s) = showString s
 showVal (Number n) = shows n
-showVal (String s) = shows s
+showVal (String s) = showString "<can't show mutable string>"
+showVal (IString s) = shows s
 showVal (Char c)   = showString "#\\" . showString (case c of
     ' '  -> "space"
     '\t' -> "tab"
@@ -188,8 +192,9 @@ getListOrError v = do
 -- for example the first thing `eval` does is freeze its input.
 --
 -- Invariants:
+--
 --  (1) The Haskell lists in FrozenLists are always finite (unchecked)
---  (2) FNotList never contains Nil, a PairPtr, or an IPairPtr.
+--  (2) FNotList never contains 'Nil', a 'Pair', or an 'IPair'.
 --      See Note: [Freezing Nil].
 data FrozenList
   = FList [Val]
@@ -414,8 +419,9 @@ isImmutablePair _ = False
 -- Most objects qualify; 'Pair', 'Vector', 'U8Vector', and 'String' do
 -- not.
 isImmutable :: Val -> Bool
-isImmutable Pair{} = False
+isImmutable Pair{}   = False
 isImmutable Vector{} = False
+isImmutable String{} = False
 isImmutable _ = True
 
 pairSH :: Val -> Bool

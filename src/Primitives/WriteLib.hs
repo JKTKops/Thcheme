@@ -5,6 +5,7 @@ module Primitives.WriteLib where
 
 import Val
 import Primitives.Vector (vectorElemsPH)
+import Primitives.String (stringSH, unwrapStringPH)
 
 import Control.Monad.IO.Class (MonadIO(..))
 import System.Mem.StableName (StableName, makeStableName)
@@ -136,7 +137,7 @@ writeShowS :: Val -> Write ShowS
 writeShowS v
   | pairSH v = writePair v
   | vectorSH v = writeVector v
-writeShowS (String s) = pure $ ushowString s
+  | stringSH v = ushowString <$> unwrapStringPH v
 writeShowS v = pure $ shows v
 
 writePair :: Val -> Write ShowS

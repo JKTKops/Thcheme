@@ -9,6 +9,9 @@ import Parsers (load)
 import Val
 import Evaluation
 import EvaluationMonad
+import Primitives.String (stringSH, unwrapStringPH)
+-- r7rs errors probably don't need this
+import Primitives.WriteLib (writeSharedSH)
 import Control.Monad.Reader -- for qq
 
 -- TODO NEXT: this module is broken right now because of Pairs
@@ -188,19 +191,21 @@ applyFunc = Prim "apply" 1 $ \case
 
 loadPrim :: Primitive
 loadPrim = Prim "load" 1 $ \case
-    [String filename] -> do
-        file <- liftIO . runExceptT $ load filename
-        case file of
-            Left e   -> throwError e
-            Right ls -> do
-              state <- get
-              -- put (interaction-environment)
-              put $ ES (globalEnv state) [] (options state)
-              r <- evalBodySeq ls
-              put state
-              return r
-    [notString] -> throwError $ TypeMismatch "string" notString
-    badArgs     -> throwError $ NumArgs 1 badArgs
+  [val] 
+    | stringSH val -> do
+      filename <- unwrapStringPH val
+      file <- liftIO . runExceptT $ load filename
+      case file of
+          Left e   -> throwError e
+          Right ls -> do
+            state <- get
+            -- put (interaction-environment)
+            put $ ES (globalEnv state) [] (options state)
+            r <- evalBodySeq ls
+            put state
+            return r
+    | otherwise -> throwError $ TypeMismatch "string" val
+  badArgs     -> throwError $ NumArgs 1 badArgs
 
 quasiquote :: Macro
 quasiquote = Macro 1 $ \_ -> \case
@@ -257,6 +262,7 @@ quit = Prim "quit" 0 $ \_ -> throwError Quit
 
 errorFunc :: Primitive
 errorFunc = Prim "error" 1 $ \case
-    [String s] -> throwError $ Default s
-    [notStr]   -> throwError . Default $ show notStr
-    badArgs    -> throwError $ NumArgs 1 badArgs
+  [val] 
+    | stringSH val -> unwrapStringPH val >>= throwError . Default
+    | otherwise -> liftIO (writeSharedSH val) >>= throwError . Default
+  badArgs -> throwError $ NumArgs 1 badArgs

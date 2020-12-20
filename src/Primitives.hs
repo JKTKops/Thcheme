@@ -23,7 +23,6 @@ import Types
 primitives :: HashMap String Val
 primitives = foldr1 Map.union
                 [ primitivesMap
-                , Map.mapWithKey makeRPrimitive rawPrimitives
                 , Map.mapWithKey makeMacroPrimitive macros
                 ]
   where
@@ -33,6 +32,7 @@ primitives = foldr1 Map.union
       , CharOps.primitives
       , Comparison.primitives
       , List.primitives
+      , String.primitives
       , Vector.primitives
       , TypeCheck.primitives
       , TypeCast.primitives
@@ -45,19 +45,8 @@ primitives = foldr1 Map.union
       | prim@(Prim name _ _) <- primitivesList
       ]
 
-rawPrimitives :: HashMap String RawPrimitive
-rawPrimitives = Map.fromList String.rawPrimitives
-
 macros :: HashMap String Macro
-macros = Map.fromList $ String.macros ++
-                        Misc.macros
-
-makePrimitive :: String -> Arity -> Builtin -> Val
-makePrimitive name arity f = Primitive arity f name
-
-makeRPrimitive :: String -> RawPrimitive -> Val
-makeRPrimitive name (RPrim arity func) =
-    Primitives.makePrimitive name arity (liftEither . func)
+macros = Map.fromList Misc.macros
 
 makeMacroPrimitive :: String -> Macro -> Val
 makeMacroPrimitive name (Macro arity func) = PrimMacro arity func name

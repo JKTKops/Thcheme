@@ -85,7 +85,8 @@ data Macro = Macro Arity (InTail -> Builtin)
 data Val
   = Atom String
   | Number Integer
-  | String String
+  | String !(Ref String)
+  | IString String
   | Char Char
   | Bool Bool
   | Primitive Arity Builtin String
@@ -102,15 +103,20 @@ data Val
   | Undefined
 
   | Nil
-  | Pair !(IORef Val) !(IORef Val)
+  | Pair !(Ref Val) !(Ref Val)
   | IPair Val Val
   | Vector  !(V.IOVector Val)
   | IVector !(V.Vector Val)
 
+-- | Doesn't compare mutable things; most likely you want
+--
+-- (1) 'eqSSH':    referential equality
+-- (2) 'eqvSSH':   value equality for atoms, otherwise referential
+-- (3) 'equalSSH': structural equality
 eqVal :: Val -> Val -> Bool
 eqVal (Atom s) (Atom s') = s == s'
 eqVal (Number n) (Number n') = n == n'
-eqVal (String s) (String s') = s == s'
+eqVal (IString s) (IString s') = s == s'
 eqVal (Char c) (Char c') = c == c'
 eqVal (Bool b) (Bool b') = b == b'
 eqVal (IVector v) (IVector v') = v == v'

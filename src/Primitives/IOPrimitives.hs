@@ -6,8 +6,9 @@ import System.IO ( IOMode (..)
                  , getLine, stdin, stdout)
 
 import Val
-import EvaluationMonad (liftEither, MonadIO (liftIO), MonadError (throwError))
+import EvaluationMonad
 import Parsers (readExpr, load)
+import Primitives.String (stringSH, unwrapStringPH)
 
 primitives :: [Primitive]
 primitives = [ openInputFile
@@ -23,9 +24,12 @@ primitives = [ openInputFile
 
 makePort :: String -> IOMode -> Primitive
 makePort name mode = Prim name 1 $ \case
-    [String filename] -> Port <$> liftIO (openFile filename mode)
-    [badArg]          -> throwError $ TypeMismatch "string" badArg
-    badArgs           -> throwError $ NumArgs 1 badArgs
+  [val]
+    | stringSH val -> do
+      filename <- unwrapStringPH val
+      Port <$> liftIO (openFile filename mode)
+    | otherwise -> throwError $ TypeMismatch "string" val
+  badArgs -> throwError $ NumArgs 1 badArgs
 
 openInputFile, openOutputFile :: Primitive
 openInputFile  = makePort "open-input-file" ReadMode
@@ -47,7 +51,7 @@ readProc = Prim "read" 0 read
 
 readLineProc :: Primitive
 readLineProc = Prim "read-line" 0 $ \case
-    []      -> String <$> liftIO getLine
+    []      -> liftIO getLine >>= fmap String . newRef
     badArgs -> throwError $ NumArgs 0 badArgs
 
 {- TODO: [r7rs]
@@ -67,6 +71,7 @@ writeProc = Prim "write" 1 write
 writeToPort :: Primitive
 writeToPort = Prim "write-port" 2 write
 
+-- TODO: lmao this is mega broken, need to use writeSH not show
 write :: Builtin
 write [obj]           = write [obj, Port stdout]
 write [obj, Port hdl] = liftIO $ hPutStr hdl (show obj) >> return (Bool True)
@@ -75,12 +80,18 @@ write badArgs         = throwError $ NumArgs 1 badArgs
 
 readContents :: Primitive
 readContents = Prim "read-contents" 1 $ \case
-    [String filename] -> String <$> liftIO (readFile filename)
-    [badArg]          -> throwError $ TypeMismatch "string" badArg
-    badArgs           -> throwError $ NumArgs 1 badArgs
+  [val]
+    | stringSH val -> do
+      filename <- unwrapStringPH val
+      contents <- liftIO (readFile filename)
+      String <$> newRef contents
+    | otherwise -> throwError $ TypeMismatch "string" val
+  badArgs -> throwError $ NumArgs 1 badArgs
 
 readAll :: Primitive
 readAll = Prim "read-all" 1 $ \case
-    [String filename] -> load filename >>= makeMutableList
-    [badArg]          -> throwError $ TypeMismatch "string" badArg
-    badArgs           -> throwError $ NumArgs 1 badArgs
+  [val] | stringSH val -> do
+          filename <- unwrapStringPH val
+          load filename >>= makeMutableList
+        | otherwise -> throwError $ TypeMismatch "string" val
+  badArgs -> throwError $ NumArgs 1 badArgs

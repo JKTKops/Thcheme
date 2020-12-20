@@ -8,6 +8,7 @@ import Control.Monad.Except (throwError)
 
 import Val
 import EvaluationMonad
+import Primitives.String hiding (primitives)
 
 primitives :: [Primitive]
 primitives = [ typeTransformer name transform 
@@ -35,13 +36,13 @@ charToNumber (Char c) = return . Number . fromIntegral $ ord c
 charToNumber notChar  = throwError $ TypeMismatch "char" notChar
 
 charToString :: Val -> EM Val
-charToString (Char c) = return $ String [c]
+charToString (Char c) = String <$> newRef [c]
 charToString notChar  = throwError $ TypeMismatch "char" notChar
 
 listToString :: Val -> EM Val
 listToString v = do
     lst <- getListOrError v
-    String <$> mapchars lst
+    fmap String $ mapchars lst >>= newRef
   where
     mapchars []              = return []
     mapchars (Char c : cs) = (c :) <$> mapchars cs
@@ -56,8 +57,10 @@ numberToChar :: Val -> EM Val
 numberToChar (Number n) = return . Char . chr $ fromIntegral n
 numberToChar notNum     = throwError $ TypeMismatch "number" notNum
 
+-- R7RS is unclear if these strings should be mutable. I'm guessing that in
+-- the absence of an explicit suggestion, we should make them mutable.
 numberToString :: Val -> EM Val
-numberToString (Number n) = return . String $ show n
+numberToString (Number n) = String <$> newRef (show n)
 numberToString notNum     = throwError $ TypeMismatch "number" notNum
 
 -- TODO: the 'start' and 'end' arguments should probably be added here,
@@ -65,39 +68,25 @@ numberToString notNum     = throwError $ TypeMismatch "number" notNum
 -- obvious problems with that; the procedure should be efficient for a
 -- large string if '(- end start)' is small.
 
--- perhaps a reasonable way to manage stuff like that would be to use a
--- new naming convention for all these confusing functions flying around.
--- an H means the type is a Haskell type, i.e. Integer or PairObj.
--- an S means the type is a scheme object (aka 'Val').
---   S is more distinct than V.
--- an R means the type is 'Ref H' for some H type.
--- a  P must be alone, and means the type of the function is 'Builtin'.
---
--- xyzSS is a function from a scheme object to another scheme object.
---   i.e. stringCopyHHSS :: Int -> Int -> Val -> EM Val
--- xyzSH is a function from a scheme object to a haskell object.
---   i.e. unwrapNumSH :: Val -> EM Integer
--- xyzSR is a function from a scheme object to a reference to a haskell object
---   where we use "haskell object" to mean PairObj, StringObj etc.;
---   that is, the versions of Scheme objects that would be found after chasing
---   all the indirections from the object itself.
---   i.e. stringCopySR :: Val -> EM (Ref StringObj)
---
--- then we implement stringCopyHHRH and use that to implement all of
+-- We can implement stringCopyHHRH and use that to implement all of
 -- stringCopyP, substringP, stringToListP, etc. Knowing that stringCopyHHRH
 -- doesn't allocate a fresh (scheme) string guarantees that the implementation
 -- of stringToListP will allocate a fresh list without allocating an
 -- intermediate string.
 stringToList :: Val -> EM Val
-stringToList (String s) = makeMutableList $ map Char s
-stringToList notStr     = throwError $ TypeMismatch "string" notStr
+stringToList val
+  | stringSH val = unwrapStringPH val >>= makeMutableList . map Char
+  | otherwise = throwError $ TypeMismatch "string" val
 
 stringToNumber :: Val -> EM Val
-stringToNumber (String s) = let parsed = reads s in
+stringToNumber str
+  | stringSH str = do
+    s <- unwrapStringPH str
+    let parsed = reads s
     if null parsed || snd (head parsed) /= ""
-    then return $ Bool False
-    else return . Number . fst $ head parsed
-stringToNumber notStr     = throwError $ TypeMismatch "string" notStr
+      then return $ Bool False
+      else return . Number . fst $ head parsed
+  | otherwise = throwError $ TypeMismatch "string" str
 
 vectorToList :: Val -> EM Val
 vectorToList (IVector v) = makeMutableList $ V.toList v

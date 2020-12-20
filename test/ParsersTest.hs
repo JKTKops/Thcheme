@@ -96,7 +96,7 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
     , mkE2Etest
         { testName = "Simple string"
         , input = "\"string\""
-        , expectedContents = Just $ String "string"
+        , expectedContents = Just $ IString "string"
         }
     , mkE2Etest
         { testName = "Quoted atom"
@@ -129,7 +129,7 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         { testName = "Nested List"
         , input = "(f \"x\" #\\5 (+ 3))"
         , expectedContents = Just $
-            IList [Atom "f", String "x", Char '5', IList
+            IList [Atom "f", IString "x", Char '5', IList
                   [Atom "+", Number 3]
             ]
         }
@@ -150,7 +150,7 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         , input = "(f 5 #\\$ . (1 2 \"test\"))"
         , expectedContents = Just $
             IList [Atom "f", Number 5, Char '$'
-                  , Number 1, Number 2, String "test"]
+                  , Number 1, Number 2, IString "test"]
         }
     , mkE2Etest
         { testName = "Dotted with nil"
@@ -176,7 +176,7 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         { testName = "regular vector"
         , input = "#(\"test\" 0 atom)"
         , expectedContents = Just $ IVector $ V.fromList
-            [String "test", Number 0, Atom "atom"]
+            [IString "test", Number 0, Atom "atom"]
         }
     , mkE2Etest
         { testName = "Irregular spacing"
@@ -644,7 +644,7 @@ testParser testBuilder decons = let
             isLeft parse @? "Parse succeeded on: " ++ input testBuilder
 
 fromString :: Val -> Maybe String
-fromString (String s) = Just s
+fromString (IString s) = Just s
 fromString _          = Nothing
 
 fromAtom :: Val -> Maybe String

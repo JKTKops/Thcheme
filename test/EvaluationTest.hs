@@ -48,7 +48,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
     [ EvalTest
         { testName = "Simple string"
         , input = "\"test string\""
-        , expected = Right $ String "test string"
+        , expected = Right $ IString "test string"
         }
     , EvalTest
         { testName = "Simple char"
@@ -74,7 +74,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         { testName = "Simple vector"
         , input = "#(1 2 \"test\")"
         , expected = Right $ IVector $ fromList
-            [Number 1, Number 2, String "test"]
+            [Number 1, Number 2, IString "test"]
         }
     , EvalTest
         { testName = "Unbound symbol"
@@ -104,7 +104,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "if with no alt (pred true)"
         , input = "(define p #t)\n(if p \"success\")"
-        , expected = Right $ String "success"
+        , expected = Right $ IString "success"
         }
     , EvalTest
         { testName = "if with no alt (pred false)"
@@ -474,8 +474,8 @@ applyTests = testGroup "Apply" $ map mkApplyTest
     , ApplyTB
         { testNameA = "Fully apply IOPrimitive"
         , funcIn = "read-contents"
-        , args = [String "test/test-text"]
-        , expectedA = Right $ String "Some random text"
+        , args = [IString "test/test-text"]
+        , expectedA = Right $ IString "Some random text"
         }
     , ApplyTB
         { testNameA = "Empty apply IOPrimitive"
@@ -504,8 +504,8 @@ applyTests = testGroup "Apply" $ map mkApplyTest
     , ApplyTB
         { testNameA = "Under apply func"
         , funcIn = "(define (test x y) y)"
-        , args = [String ""]
-        , expectedA = Left $ NumArgs 2 [String ""]
+        , args = [IString ""]
+        , expectedA = Left $ NumArgs 2 [IString ""]
         }
     , ApplyTB
         { testNameA = "Min apply vararg func"

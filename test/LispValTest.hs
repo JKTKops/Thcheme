@@ -20,14 +20,15 @@ import EvaluationMonad (unsafeEMtoIO, liftIO)
 import System.IO.Unsafe (unsafePerformIO) -- be careful! for arbitrary instance
 import Types (extractValue) -- these functions can probably be removed entirely.
 import Primitives
-import Primitives.WriteLib (writeSharedSH)
+import Primitives.WriteLib (writeSharedSH, ushowString)
 
 instance Serial IO Val where
     series = cons1 Atom
                 \/ (series >>= lift . unsafeEMtoIO . makeMutableList)
                 \/ (makeImmutableList <$> series)
                 \/ cons1 Number
-                \/ cons1 String
+                \/ cons1 IString
+                \/ (series >>= lift . fmap String . newIORef)
                 \/ cons1 Char
                 \/ cons1 Bool
                 \/ cons0 Undefined
@@ -77,7 +78,7 @@ instance Arbitrary Val where
               where subval = lispval' $ n `div` 2
             simpleCons = [ Atom <$> arbitrary
                          , Number <$> arbitrary
-                         , String <$> arbitrary
+                         , IString <$> arbitrary
                          , Char <$> arbitrary
                          , Bool <$> arbitrary
                          ]
@@ -119,9 +120,11 @@ scTests = testGroup "(SmallCheck)"
     ]
 
 -- UNIT TESTS
+testShowPort :: TestTree
 testShowPort = testCase "Ports show correctly" $
     show (Port stdout) @?= "#<port>"
 
+testShowPrimitives :: TestTree
 testShowPrimitives = testCase "Primitives show correctly" $
     mapM_
         (\(key, func) -> let pType = case func of
@@ -163,7 +166,7 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
       
         referenceShow (FNotList (Atom s)) = pure s
         referenceShow (FNotList (Number n)) = pure $ show n
-        referenceShow (FNotList (String s)) = pure $ show s
+        referenceShow (FNotList (IString s)) = pure $ ushowString s ""
         referenceShow (FNotList (Char c)) = pure $ case c of
             ' '  -> "#\\space"
             '\t' -> "#\\tab"

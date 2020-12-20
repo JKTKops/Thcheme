@@ -78,7 +78,7 @@ testSetVar = testGroup "setVar"
         e @?= UnboundVar "[Set]" "x"
     , testCase "Set x in nullEnv" $ do
         nullEnv <- nullEnv
-        res <- runExceptT $ setVar nullEnv "x" $ String "test"
+        res <- runExceptT $ setVar nullEnv "x" $ IString "test"
         isLeft res @? "Succeeded setting x in nullEnv"
         let Left e = res
         e @?= UnboundVar "[Set]" "x"

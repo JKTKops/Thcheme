@@ -79,7 +79,7 @@ delim :: Parser ()
 delim = notFollowedBy $ alphaNum <|> symbol
 
 parseString :: Parser Val
-parseString = String <$> stringLiteral
+parseString = IString <$> stringLiteral
 
 parseAtom :: Parser Val
 parseAtom = do

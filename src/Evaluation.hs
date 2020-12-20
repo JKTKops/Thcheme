@@ -37,6 +37,7 @@ eval tail expr = do
 handleSimpleDatum :: Val -> EM Val
 handleSimpleDatum obj = case obj of
     val@String{}  -> return val
+    val@IString{} -> return val
     val@Char{}    -> return val
     val@Number{}  -> return val
     val@Bool{}    -> return val
