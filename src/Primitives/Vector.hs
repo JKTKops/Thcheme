@@ -20,7 +20,8 @@ primitives :: [Primitive]
 primitives = [vectorP, makeVectorP, vectorLengthP, vectorRefP, vectorSetP]
 
 vectorP :: Primitive
-vectorP = Prim "vector" 1 $ liftIO . fmap Vector . V.thaw . V.fromList
+vectorP = Prim "vector" (AtLeast 0) $ 
+  liftIO . fmap Vector . V.thaw . V.fromList
 
 makeVectorB :: Builtin
 makeVectorB [val] = makeVectorB [val, Number 0]
@@ -30,46 +31,44 @@ makeVectorB [Number k, val]
     "can't make vector bigger than " ++ show (maxBound :: Int)
   | otherwise = liftIO $ Vector <$> MV.replicate (fromInteger k) val
 makeVectorB [notNum, _] = throwError $ TypeMismatch "number" notNum
-makeVectorB badArgs = throwError $ NumArgs 1 badArgs
 
 makeVectorP :: Primitive
-makeVectorP = Prim "make-vector" 1 makeVectorB
+makeVectorP = Prim "make-vector" (Between 1 2) makeVectorB
 
 vectorLengthP :: Primitive
-vectorLengthP = Prim "vector-length" 1 $ \case
-    [val] | vectorSH val -> return $ Number $ toInteger $ vectorLengthPH val
-          | otherwise -> throwError $ TypeMismatch "vector" val
-    badArgs -> throwError $ NumArgs 1 badArgs
+vectorLengthP = Prim "vector-length" (Exactly 1) $ \case
+  [val] | vectorSH val -> return $ Number $ toInteger $ vectorLengthPH val
+        | otherwise -> throwError $ TypeMismatch "vector" val
 
 vectorRefP :: Primitive
-vectorRefP = Prim "vector-ref" 2 $ \case
-    [vec, num]
-      | vectorSH vec 
-      , Number k <- num 
-      -> vectorRefPHS vec (fromInteger k)
-      | not $ vectorSH vec 
-      -> throwError $ TypeMismatch "vector" vec
-      | otherwise
-      -> throwError $ TypeMismatch "number" num
-    badArgs       -> throwError $ NumArgs 2 badArgs
+vectorRefP = Prim "vector-ref" (Exactly 2) $ \case
+  [vec, num]
+    | vectorSH vec 
+    , Number k <- num 
+    -> vectorRefPHS vec (fromInteger k)
+
+    | not $ vectorSH vec 
+    -> throwError $ TypeMismatch "vector" vec
+
+    | otherwise
+    -> throwError $ TypeMismatch "number" num
 
 vectorRefPHS :: Val -> Int -> EM Val
 vectorRefPHS v i = do
-    if i < 0 || i >= vectorLengthPH v 
-      then throwError $ Default $ "vector index out of bounds: " ++ show i
-      else case v of
-        Vector mv  -> liftIO $ MV.read mv i
-        IVector iv -> return $ iv V.! i
+  if i < 0 || i >= vectorLengthPH v 
+    then throwError $ Default $ "vector index out of bounds: " ++ show i
+    else case v of
+      Vector mv  -> liftIO $ MV.read mv i
+      IVector iv -> return $ iv V.! i
 
 vectorSetP :: Primitive
-vectorSetP = Prim "vector-set!" 3 vectorSetB
+vectorSetP = Prim "vector-set!" (Exactly 3) vectorSetB
 
 vectorSetB :: Builtin
 vectorSetB [Vector v, Number k, obj] = vectorSetHHSS v (fromInteger k) obj
 vectorSetB [IVector{}, _, _] = throwError $ SetImmutable "vector"
 vectorSetB [notVec, Number{}, _] = throwError $ TypeMismatch "vector" notVec
 vectorSetB [_, notNum, _] = throwError $ TypeMismatch "number" notNum
-vectorSetB badArgs = throwError $ NumArgs 3 badArgs
 
 vectorSetHHSS :: MV.IOVector Val -> Int -> Val -> EM Val
 vectorSetHHSS v i obj = do

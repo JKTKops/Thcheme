@@ -25,7 +25,6 @@ primitives = [ makeCharPrim name Bool f
               ]
 
 makeCharPrim :: String -> (a -> Val) -> (Char -> a) -> Primitive
-makeCharPrim name constr func = Prim name 1 $ \case
-    [Char c] -> return . constr $ func c
-    [badArg] -> throwError $ TypeMismatch "char" badArg
-    badArgs  -> throwError $ NumArgs 1 badArgs
+makeCharPrim name constr func = Prim name (Exactly 1) $ \case
+  [Char c] -> return . constr $ func c
+  [badArg] -> throwError $ TypeMismatch "char" badArg

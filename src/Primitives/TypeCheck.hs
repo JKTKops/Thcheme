@@ -21,9 +21,8 @@ primitives = [ typePred name func
              ]
 
 typePred :: String -> (Val -> Val) -> Primitive
-typePred tyname func = Prim (tyname ++ "?") 1 $ \case
+typePred tyname func = Prim (tyname ++ "?") (Exactly 1) $ \case
   [x] -> return $ func x
-  badArgs -> throwError $ NumArgs 1 badArgs
 
 symbol :: Val -> Val
 symbol (Atom _) = Bool True

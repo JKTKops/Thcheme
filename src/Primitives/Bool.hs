@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
 module Primitives.Bool (primitives, predicate, boolBinop) where
 
 import Control.Monad.Except (throwError)
@@ -20,9 +19,8 @@ predicate :: String            -- ^ name of resulting 'Primitive'
           -> (Val -> EM a) -- ^ impure projection
           -> (a -> Bool)       -- ^ pure predicate
           -> Primitive
-predicate name unwrapper p = Prim name 1 $ \case
-    [val] -> Bool . p <$> unwrapper val
-    badArgs -> throwError $ NumArgs 1 badArgs
+predicate name unwrapper p = Prim name (Exactly 1) $
+  \ [val] -> Bool . p <$> unwrapper val
 
 boolNot :: Primitive
 boolNot = predicate "not" unwrapBool not
@@ -32,12 +30,11 @@ boolBinop :: String            -- ^ name of resulting 'Primitive'
           -> (Val -> EM a) -- ^ impure projection
           -> (a -> a -> Bool)  -- ^ pure binary boolean operation
           -> Primitive
-boolBinop name unwrapper op = Prim name 2 $ \case
-    [left, right] -> do
-        left'  <- unwrapper left
-        right' <- unwrapper right
-        return $ Bool $ left' `op` right'
-    badArgs       -> throwError $ NumArgs 2 badArgs
+boolBinop name unwrapper op = Prim name (Exactly 2) $
+  \[left, right] -> do
+    left'  <- unwrapper left
+    right' <- unwrapper right
+    return $ Bool $ left' `op` right'
 
 -- TODO: [r7rs]
 -- neither of these functions are defined (surprinsgly?) in the r7rs report.

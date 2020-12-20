@@ -24,33 +24,33 @@ numericBinop :: String
              -> (Integer -> Integer -> Integer)
              -> Integer
              -> Primitive
-numericBinop name op start = Prim name 0 $ fmap (Number . foldl op start) . mapM unwrapNum
+numericBinop name op start = Prim name (AtLeast 0) $ 
+  fmap (Number . foldl op start) . mapM unwrapNum
 
 -- | Same as numericBinop, except at least one arg must be given.
 numericBinop1 :: String
               -> (Integer -> Integer -> Integer)
               -> Primitive
-numericBinop1 name op = Prim name 1 $ fmap (Number . foldl1 op) . mapM unwrapNum
+numericBinop1 name op = Prim name (AtLeast 1) $ 
+  fmap (Number . foldl1 op) . mapM unwrapNum
 
 guardDivZero :: Primitive -> Primitive
 guardDivZero (Prim name arity f) = Prim name arity $ \args ->
-    if Number 0 `elem` tail args
-    then throwError $ Default "divide by zero"
-    else f args
+  if Number 0 `elem` tail args
+  then throwError $ Default "divide by zero"
+  else f args
 
 -- | See the r7rs standard.
 --
 -- (- n) evaluates to -n, but (- x y z) evaluates to ((x - y) - z).
 subP :: Primitive
-subP = Prim "-" 1 $ \case
-    [x]      -> Number . negate <$> unwrapNum x
-    as@(_:_) -> Number . foldl1 (-) <$> mapM unwrapNum as
-    []       -> throwError $ NumArgs 1 []
+subP = Prim "-" (AtLeast 1) $ \case
+  [x]      -> Number . negate <$> unwrapNum x
+  as@(_:_) -> Number . foldl1 (-) <$> mapM unwrapNum as
 
 negateP :: Primitive
-negateP = Prim "negate" 1 $ \case
-    [x]     -> Number . negate <$> unwrapNum x
-    badArgs -> throwError $ NumArgs 1 badArgs
+negateP = Prim "negate" (Exactly 1) $ 
+  \[x] -> Number . negate <$> unwrapNum x
 
 numericPredicate :: String -> (Integer -> Bool) -> Primitive
 numericPredicate name = predicate name unwrapNum

@@ -39,53 +39,46 @@ macros = [ ("quote", quote)
          ]
 
 identityFunction :: Primitive
-identityFunction = Prim "id" 1 $ \case
-    [arg]   -> return arg
-    badArgs -> throwError $ NumArgs 1 badArgs
+identityFunction = Prim "id" (Exactly 1) $ \[arg] -> return arg
 
 callWithCurrentContinuation :: Primitive
-callWithCurrentContinuation = Prim "call-with-current-continuation" 1 callcc
+callWithCurrentContinuation = 
+  Prim "call-with-current-continuation" (Exactly 1) callcc
   where
     callcc :: [Val] -> EM Val
     callcc [func] = callCC $ \k ->
         tailCall func [Continuation k]
-    callcc badArgs = throwError $ NumArgs 1 badArgs
 
 -- compose?
 
 quote :: Macro
-quote = Macro 1 $ \_ -> \case
-    [form]  -> return form
-    badArgs -> throwError $ NumArgs 1 badArgs
+quote = Macro (Exactly 1) $ \_ [form]  -> return form
 
 ifMacro :: Macro
-ifMacro = Macro 2 $ \tail -> \case
-    (pred : conseq : alts) -> do
-        p <- evalBody pred
-        if truthy p
-        then eval tail conseq
-        else case alts of
-            [] -> return Nil -- r7rs says unspecified
-            xs -> evalSeq tail xs
-    badArgs -> throwError $ Default $ "Expected at least 2 args; found " ++ show badArgs
+ifMacro = Macro (AtLeast 2) $ 
+  \tail (pred : conseq : alts) -> do
+    p <- evalBody pred
+    if truthy p
+    then eval tail conseq
+    else case alts of
+      [] -> return Nil -- r7rs says unspecified
+      xs -> evalSeq tail xs
 
 set :: Macro
-set = Macro 2 $ \_ -> \case
-    [Atom var, form] -> evalBody form >>= setVar var
-    [notAtom, _]     -> throwError $ TypeMismatch "symbol" notAtom
-    badArgs          -> throwError $ NumArgs 2 badArgs
+set = Macro (Exactly 2) $ \_ -> \case
+  [Atom var, form] -> evalBody form >>= setVar var
+  [notAtom, _]     -> throwError $ TypeMismatch "symbol" notAtom
 
 setOpt :: Macro
-setOpt = Macro 2 $ \_ -> \case
-    [Atom optName, form] -> do
-        val <- evalBody form
-        let mopt = readMaybe optName
-        case mopt of
-          Nothing -> pure ()
-          Just opt -> if truthy val then enableOpt opt else disableOpt opt
-        return val
-    [notAtom, _] -> throwError $ TypeMismatch "symbol" notAtom
-    badArgs      -> throwError $ NumArgs 2 badArgs
+setOpt = Macro (Exactly 2) $ \_ -> \case
+  [Atom optName, form] -> do
+    val <- evalBody form
+    let mopt = readMaybe optName
+    case mopt of
+      Nothing -> pure ()
+      Just opt -> if truthy val then enableOpt opt else disableOpt opt
+    return val
+  [notAtom, _] -> throwError $ TypeMismatch "symbol" notAtom
 
 defineBuiltin :: Builtin
 -- arity is AtLeast 1 so can't be called with no args
@@ -95,13 +88,15 @@ defineBuiltin (x:xs) = do
 
   where
     defineBuiltinFrozen :: FrozenList -> [Val] -> EM Val
-    defineBuiltinFrozen (FNotList (Atom var)) [form] = do -- todo: NumArgs (Exact 2) when app.
+    defineBuiltinFrozen (FNotList (Atom var)) [form] = do
       setVarForCapture var
       val <- evalBody form
       let renamed = case val of
             Closure{} -> val { name = Just var }
             _ -> val
       defineVar var renamed
+    defineBuiltinFrozen (FNotList (Atom var)) badForms =
+      throwError $ NumArgs (Exactly 2) (Atom var : badForms)
     
     defineBuiltinFrozen (FList (Atom name : params)) body = case body of
       [] -> throwError emptyBodyError
@@ -123,9 +118,11 @@ defineBuiltin (x:xs) = do
 
 -- arities are AtLeast 1 so that we can throw a nicer error than just
 -- "expects at least 2 arguments" in the case of defining a function.
+-- 'define's builtin throws the regular Exactly 2 error if it isn't defining
+-- a function.
 define, lambda :: Macro
-define = Macro 1 $ const defineBuiltin
-lambda = Macro 1 $ const mkLambda
+define = Macro (AtLeast 1) $ const defineBuiltin
+lambda = Macro (AtLeast 1) $ const mkLambda
 
 mkLambda :: [Val] -> EM Val
 -- arity is AtLeast 1 so can't be called with no args
@@ -162,107 +159,97 @@ makeFuncVarargs :: Val -> [Val] -> [Val] -> Maybe String -> EM Val
 makeFuncVarargs = makeFunc . Just . show
 
 defmacro :: Macro
-defmacro = Macro 3 $ const $ \case
-    (Atom name : ps : body) -> do
-        lam <- mkLambda (ps : body)
-        macro <- makeImproperMutableList [Atom "macro"] lam
-        defineVar name macro
+defmacro = Macro (AtLeast 2) $ const $
+  \(Atom name : ps : body) -> do
+    lam <- mkLambda (ps : body)
+    macro <- makeImproperMutableList [Atom "macro"] lam
+    defineVar name macro
 
 begin :: Macro
-begin = Macro 1 $ \tail -> \case
-    []    -> throwError $ NumArgs 1 []
-    stmts -> evalSeq tail stmts
+begin = Macro (AtLeast 1) $ \tail stmts -> evalSeq tail stmts
 
 evalPrim :: Primitive
-evalPrim = Prim "eval" 1 $ \case
-    [form]  -> evalTail form
-    badArgs -> throwError $ NumArgs 1 badArgs
+evalPrim = Prim "eval" (Exactly 1) $ \[form] -> evalTail form
 
 -- TODO: [r7rs]
 applyFunc :: Primitive
-applyFunc = Prim "apply" 1 $ \case
-    [func, form] -> do
-      frozenForm <- freezeList form
-      case frozenForm of
-        FList args -> tailCall func args
-        _bad -> throwError $ TypeMismatch "list" form
-    (func : args) -> tailCall func args
-    [] -> throwError $ Default "Expected at least 1 arg; found []"
+applyFunc = Prim "apply" (AtLeast 1) $ \case
+  [func, form] -> do
+    frozenForm <- freezeList form
+    case frozenForm of
+      FList args -> tailCall func args
+      _bad -> throwError $ TypeMismatch "list" form
+  (func : args) -> tailCall func args
 
 loadPrim :: Primitive
-loadPrim = Prim "load" 1 $ \case
-  [val] 
-    | stringSH val -> do
-      filename <- unwrapStringPH val
-      file <- liftIO . runExceptT $ load filename
-      case file of
-          Left e   -> throwError e
-          Right ls -> do
-            state <- get
-            -- put (interaction-environment)
-            put $ ES (globalEnv state) [] (options state)
-            r <- evalBodySeq ls
-            put state
-            return r
-    | otherwise -> throwError $ TypeMismatch "string" val
-  badArgs     -> throwError $ NumArgs 1 badArgs
+loadPrim = Prim "load" (Exactly 1) $ \case
+  [val] | stringSH val -> do
+          filename <- unwrapStringPH val
+          file <- liftIO . runExceptT $ load filename
+          case file of
+            Left e   -> throwError e
+            Right ls -> do
+              state <- get
+              -- put (interaction-environment)
+              put $ ES (globalEnv state) [] (options state)
+              r <- evalBodySeq ls
+              put state
+              return r
+        | otherwise -> throwError $ TypeMismatch "string" val
 
 quasiquote :: Macro
-quasiquote = Macro 1 $ \_ -> \case
-    [form]  -> runReaderT (qq form) 0
-    badArgs -> throwError $ NumArgs 1 badArgs
+quasiquote = Macro (Exactly 1) $ \_ [form]-> runReaderT (qq form) 0
+  where 
+    qq :: Val -> ReaderT Int EM Val
+    qq term = lift (freezeList term) >>= \case
+      FList [Atom "quasiquote", form] -> local (+ 1) $ do
+        inner <- qq form
+        lift $ makeMutableList [Atom "quasiquote", inner]
+      FList [Atom "unquote", form] -> do
+        depth <- ask
+        if depth == 0
+        then lift $ evalBody form
+        else local (subtract 1) $ do
+          inner <- qq form
+          lift $ makeMutableList [Atom "unquote", inner]
+      FList forms
+          -- this can happen because the parser is smart enough to rewrite
+          -- `(0 . ,lst) as IList [Number 0, Atom unquote, Atom lst]
+          -- however whenever this happens, ',lst' will definitely be of size 2
+        | Atom "unquote" `elem` forms
+        , (list, dot) <- break (== Atom "unquote") forms
+        , [_,_] <- dot
+        -> do lift (makeMutableList dot) >>= qqImproper list
+        | otherwise
+        -> qqTerms forms >>= lift . makeMutableList
+      FDottedList forms form -> qqImproper forms form
+      _other -> return term
 
-  where qq :: Val -> ReaderT Int EM Val
-        qq term = lift (freezeList term) >>= \case
-          FList [Atom "quasiquote", form] -> local (+ 1) $ do
-            inner <- qq form
-            lift $ makeMutableList [Atom "quasiquote", inner]
-          FList [Atom "unquote", form] -> do
-            depth <- ask
-            if depth == 0
-            then lift $ evalBody form
-            else local (subtract 1) $ do
-              inner <- qq form
-              lift $ makeMutableList [Atom "unquote", inner]
-          FList forms
-              -- this can happen because the parser is smart enough to rewrite
-              -- `(0 . ,lst) as IList [Number 0, Atom unquote, Atom lst]
-              -- however whenever this happens, ',lst' will definitely be of size 2
-            | Atom "unquote" `elem` forms
-            , (list, dot) <- break (== Atom "unquote") forms
-            , [_,_] <- dot
-            -> do lift (makeMutableList dot) >>= qqImproper list
-            | otherwise
-            -> qqTerms forms >>= lift . makeMutableList
-          FDottedList forms form -> qqImproper forms form
-          _other -> return term
-
-        qqTerms :: [Val] -> ReaderT Int EM [Val]
-        qqTerms [] = return []
-        qqTerms (t:ts) = do
-          frozenT <- lift $ freezeList t
-          terms <- case frozenT of
-            FList [Atom "unquote-splicing", form] -> do
-              depth <- ask
-              val <- if depth == 0
-                     then lift $ evalBody form
-                     else local (subtract 1) $ qq form
-              lift $ getListOrError val
-            _ -> (:[]) <$> qq t
-          (terms ++) <$> qqTerms ts
-        
-        qqImproper :: [Val] -> Val -> ReaderT Int EM Val
-        qqImproper prop improp = do
-          qqprop <- qqTerms prop
-          qqimprop <- qq improp
-          lift $ makeImproperMutableList qqprop qqimprop
+    qqTerms :: [Val] -> ReaderT Int EM [Val]
+    qqTerms [] = return []
+    qqTerms (t:ts) = do
+      frozenT <- lift $ freezeList t
+      terms <- case frozenT of
+        FList [Atom "unquote-splicing", form] -> do
+          depth <- ask
+          val <- if depth == 0
+                 then lift $ evalBody form
+                 else local (subtract 1) $ qq form
+          lift $ getListOrError val
+        _ -> (:[]) <$> qq t
+      (terms ++) <$> qqTerms ts
+    
+    qqImproper :: [Val] -> Val -> ReaderT Int EM Val
+    qqImproper prop improp = do
+      qqprop <- qqTerms prop
+      qqimprop <- qq improp
+      lift $ makeImproperMutableList qqprop qqimprop
 
 quit :: Primitive
-quit = Prim "quit" 0 $ \_ -> throwError Quit
+quit = Prim "quit" (Exactly 0) $ \_ -> throwError Quit
 
 errorFunc :: Primitive
-errorFunc = Prim "error" 1 $ \case
+errorFunc = Prim "error" (Exactly 1) $ \case
   [val] 
     | stringSH val -> unwrapStringPH val >>= throwError . Default
     | otherwise -> liftIO (writeSharedSH val) >>= throwError . Default
-  badArgs -> throwError $ NumArgs 1 badArgs

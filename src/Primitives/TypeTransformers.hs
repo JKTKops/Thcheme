@@ -27,9 +27,8 @@ primitives = [ typeTransformer name transform
 
 typeTransformer :: String -> (Val -> EM Val) -- transformer
                 -> Primitive
-typeTransformer name t = Prim name 1 $ \case
-    [x]     -> t x
-    badArgs -> throwError $ NumArgs 1 badArgs
+typeTransformer name t = Prim name (Exactly 1) $
+  \[x] -> t x
 
 charToNumber :: Val -> EM Val
 charToNumber (Char c) = return . Number . fromIntegral $ ord c

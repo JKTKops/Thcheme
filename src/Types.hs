@@ -2,13 +2,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Types
     ( Env
-    , Arity
+    , Arity (..)
     , InTail
-    , RBuiltin
-    , IBuiltin
     , Builtin
-    , RawPrimitive (..)
-    , IOPrimitive (..)
     , Primitive (..)
     , Macro (..)
     , Val (..)
@@ -59,12 +55,13 @@ type Env = IORef (HashMap String (IORef Val))
 type Ref = IORef
 
 -- * Function types and components
-type Arity = Int
+--type Arity = Int
+data Arity 
+  = Exactly Int 
+  | AtLeast Int 
+  | Between Int Int
+  deriving (Eq, Ord)
 type InTail = Bool
-type RBuiltin = [Val] -> ThrowsError Val
-data RawPrimitive = RPrim Arity RBuiltin
-type IBuiltin = [Val] -> IOThrowsError Val
-data IOPrimitive = IPrim Arity IBuiltin
 type Builtin = [Val] -> EM Val
 data Primitive = Prim String Arity Builtin
 -- The additional 'InTail' flag is necessary for macros like 'begin'
@@ -147,14 +144,15 @@ eqVal _ _ = False
 
 -- Eq Val is defined here so that 'LispErr' can derive 'Eq'.
 -- But it might be more sane to just not allow pure comparisons of
--- 'Val's or 'LispErr's. I think (?) it's only useful in tests.
+-- 'Val's or 'LispErr's. I think (?) it's only useful in tests
+-- (and I'm not even sure that the tests use it anymore).
 
 -- | Compares closures by shape rather than only by name/location tag.
 -- Can't compare continuations (because they currently aren't tagged).
 -- Can't compare mutable pairs (use 'valsSameShape' instead).
 instance Eq Val where (==) = eqVal
 
-data LispErr = NumArgs Int [Val]
+data LispErr = NumArgs Arity [Val]
              | TypeMismatch String Val
              | Parser ParseError
              | BadSpecialForm Val

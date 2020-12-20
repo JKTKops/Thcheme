@@ -32,14 +32,13 @@ primitives :: [Primitive]
 primitives = [eqP, eqvP, equalP] ++ typeSpecific
 
 eqP, eqvP, equalP :: Primitive
-eqP    = Prim "eq?" 2 eqB
-eqvP   = Prim "eqv?" 2 eqvB
-equalP = Prim "equal?" 2 equalB
+eqP    = Prim "eq?" (Exactly 2) eqB
+eqvP   = Prim "eqv?" (Exactly 2) eqvB
+equalP = Prim "equal?" (Exactly 2) equalB
 
 eqB, eqvB, equalB :: Builtin
 equalityBuiltin :: (Val -> Val -> EM Bool) -> Builtin
 equalityBuiltin e [x1,x2] = Bool <$> e x1 x2
-equalityBuiltin _ badArgs = throwError $ NumArgs 2 badArgs
 
 eqB    = equalityBuiltin eqSSH
 eqvB   = equalityBuiltin eqvSSH

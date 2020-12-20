@@ -26,7 +26,7 @@ primitives = [stringP, stringLengthP, stringRefP, stringSetP]
 -- a fixed length. Unclear. Perhaps you want to try them and benchmark?
 
 stringP :: Primitive
-stringP = Prim "string" 0 stringB
+stringP = Prim "string" (AtLeast 0) stringB
 
 stringB :: Builtin
 stringB [] = String <$> newRef "" -- fast track empty list
@@ -40,13 +40,12 @@ stringB cs = checkChars cs >> String <$> newRef (extract cs)
     extract (Char c : cs) = c : extract cs
 
 stringLengthP :: Primitive
-stringLengthP = Prim "string-length" 1 $ \case
+stringLengthP = Prim "string-length" (Exactly 1) $ \case
   [val] | stringSH val -> Number . toInteger . length <$> unwrapStringPH val
         | otherwise -> throwError $ TypeMismatch "string" val
-  badArgs -> throwError $ NumArgs 1 badArgs
 
 stringRefP :: Primitive
-stringRefP = Prim "string-ref" 2 $ \case
+stringRefP = Prim "string-ref" (Exactly 2) $ \case
   [string, num]
     | stringSH string, Number k <- num
     -> do str <- unwrapStringPH string
@@ -58,10 +57,9 @@ stringRefP = Prim "string-ref" 2 $ \case
 
     | stringSH string -> throwError $ TypeMismatch "integer" num
     | otherwise -> throwError $ TypeMismatch "string" string
-  badArgs -> throwError $ NumArgs 2 badArgs
 
 stringSetP :: Primitive
-stringSetP = Prim "string-set!" 3 $ \case
+stringSetP = Prim "string-set!" (Exactly 3) $ \case
   [String ref, Number k, Char c] -> do
     str <- readRef ref
     let len = toInteger $ length str
@@ -78,7 +76,6 @@ stringSetP = Prim "string-set!" 3 $ \case
     -- otherwise one of the above patterns would've matched.
     | Number _ <- num -> throwError $ TypeMismatch "character" char
     | otherwise       -> throwError $ TypeMismatch "integer" num
-  badArgs -> throwError $ NumArgs 3 badArgs
 
 -------------------------------------------------------
 -- Haskell-level utilities

@@ -126,21 +126,17 @@ tailCall f args =
 
 apply :: InTail -> Val -> [Val] -> EM Val
 -- Applications of primitive functions
-apply _ (Primitive arity func _) args
-   | length args >= arity
-   = func args
-   | otherwise
-   = throwError $ NumArgs arity args
+apply _ (Primitive arity func _) args = do
+  testArity arity args
+  func args
 
-apply tail (PrimMacro arity func _) args
-   | length args >= arity
-   = func tail args
-   | otherwise
-   = throwError $ NumArgs arity args
+apply tail (PrimMacro arity func _) args = do
+  testArity arity args
+  func tail args
 
 -- Application of continuation
 apply _ (Continuation func) [arg] = func arg
-apply _ Continuation{} badArgs = throwError $ NumArgs 1 badArgs
+apply _ Continuation{} badArgs = throwError $ NumArgs (Exactly 1) badArgs
 
 -- Applications of user-defined functions
 -- We check arity here instead of in 'makeStackFrame' so that this
@@ -148,12 +144,10 @@ apply _ Continuation{} badArgs = throwError $ NumArgs 1 badArgs
 -- which makes it look like closures are responsible for checking their
 -- own arity.
 apply _ f@(Closure formals mvarg body cloEnv _name) args = do
-  case length args `compare` length formals of
-    GT -> if isNothing mvarg
-          then throwError $ NumArgs (length formals) args
-          else pure ()
-    EQ -> pure ()
-    LT -> throwError $ NumArgs (length formals) args
+  let arity = case mvarg of
+        Nothing -> Exactly $ length formals
+        Just{}  -> AtLeast $ length formals
+  testArity arity args
   evalTailSeq body
 
 apply _ notFunc _ = throwError $ NotFunction "Not a function" notFunc

@@ -4,13 +4,12 @@ module Val
   , LispErr (..), isTerminationError
   , Primitive (..)
   , Macro (..)
-  , Builtin, InTail --, Arity (..)
+  , Builtin, InTail, Arity (..)
 
-    -- * Manipulating pure 'Val's
+    -- * Utilities for 'Val's
   , truthy
-
-    -- * Constructing primitive functions
   , makePrimitive
+  , showArity, usePluralForArity, testArity
 
     -- * Basic handling and construction of lists
   , getList, getListOrError, testCircularList
@@ -122,11 +121,9 @@ showErr (EvaluateDuringInit name) = name ++ " referred to itself during initiali
 showErr (SetImmutable tyname) = "can't set immutable " ++ tyname
 showErr (BadSpecialForm form) = "bad form: " ++ show form
 showErr (NotFunction message func)    = message ++ ": " ++ show func
-showErr (NumArgs expected found)      = "expected " ++ show expected
-    ++ " arg" ++ (if expected == 1
-        then ""
-        else "s")
-    ++ "; found values " ++ show found
+showErr (NumArgs expected found)      = "expected " ++ showArity expected
+    ++ " arg" ++ (if usePluralForArity expected then "s" else "")
+    ++ ", found values " ++ show found
 showErr (TypeMismatch expected found) = "invalid type: expected " ++ expected
     ++ ", found " ++ show found
 showErr CircularList                  = "circular list"
@@ -148,6 +145,44 @@ intercalateS sep = go
 
 unwordsList :: [Val] -> ShowS
 unwordsList = intercalateS " " . map shows
+
+showArity :: Arity -> String
+showArity (Exactly n) = show n
+showArity (AtLeast n) = "at least " ++ show n
+showArity (Between i j) = unwords ["between", show i, "and", show j]
+
+usePluralForArity :: Arity -> Bool
+usePluralForArity (Exactly 1) = False
+usePluralForArity (AtLeast 1) = False
+usePluralForArity _ = True
+
+-- | Test an 'Arity' against the length of a list, reporting an error
+-- if the arity is not satisfied.
+--
+-- More efficient than using 'length'.
+testArity :: Arity -> [Val] -> EM ()
+testArity (Exactly n0) vs0
+  | n0 < 0 = panic "negative exact arity"
+  | otherwise = check $ cmpLength n0 vs0
+  where
+    check EQ = pure ()
+    check _  = throwError $ NumArgs (Exactly n0) vs0
+testArity (AtLeast n0) vs0 = check $ cmpLength n0 vs0
+  where
+    check GT = throwError $ NumArgs (AtLeast n0) vs0
+    check _  = pure ()
+testArity a@(Between lo hi) vs0 = check (cmpLength lo vs0) (cmpLength hi vs0)
+  where
+    check LT _ = raise
+    check _ GT = raise
+    check _ _  = pure ()
+    raise = throwError $ NumArgs a vs0
+
+cmpLength :: Int -> [a] -> Ordering
+cmpLength 0 [] = EQ
+cmpLength _ [] = GT
+cmpLength 0 (v:vs) = LT
+cmpLength n (v:vs) = cmpLength (n-1) vs
 
 {- Note: [List Operation Efficiency]
 There's some low-hanging fruit here for optimizing list operations.

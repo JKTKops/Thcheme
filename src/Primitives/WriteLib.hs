@@ -47,11 +47,12 @@ showErrIO = fmap (prefix ++) . mkMsgFor
       ("bad form" `colonAnd`) <$> writeSharedSH form
     mkMsgFor (NotFunction msg form) =
       (msg `colonAnd`) <$> writeSharedSH form
-    mkMsgFor (NumArgs exp act) = 
-      ((expectedMsg exp ++ ", found values") ++) . concat
+    mkMsgFor (NumArgs arity act) = 
+      ((expectedMsg arity ++ ", found values") ++) . concat
       <$> mapM (fmap (' ':) . writeSharedSH) act
-      where expectedMsg 1 = "expected 1 arg"
-            expectedMsg n = "expected " ++ show n ++ " args"
+      where expectedMsg a = "expected " ++ showArity a ++ " arg" ++ p
+              where p | usePluralForArity a = "s"
+                      | otherwise = ""
     mkMsgFor (TypeMismatch exp act) = (expectedMsg exp ++) <$> writeSharedSH act
       where expectedMsg s =
               "invalid type: expected " ++ s ++ ", found "

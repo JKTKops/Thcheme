@@ -222,7 +222,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Define defines in lexical scope"
         , input = "(define (test n) (define + n))\n(test 0)\n+"
-        , expected = Right $ Primitive 2 undefined "+"
+        , expected = Right $ Primitive (AtLeast 0) undefined "+"
         }
     , EvalTest
         { testName = "Lambda normal form no varargs"
@@ -328,12 +328,12 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Empty primitive call fails"
         , input = "(null?)"
-        , expected = Left $ NumArgs 1 []
+        , expected = Left $ NumArgs (Exactly 1) []
         }
     , EvalTest
         { testName = "Empty func call fails"
         , input = "((lambda (x y) (+ x y)))"
-        , expected = Left $ NumArgs 2 []
+        , expected = Left $ NumArgs (Exactly 2) []
         }
     , EvalTest
         { testName = "Eval x fails in primEnv"
@@ -463,13 +463,13 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         { testNameA = "Empty apply primitive"
         , funcIn = "null?"
         , args = []
-        , expectedA = Left $ NumArgs 1 []
+        , expectedA = Left $ NumArgs (Exactly 1) []
         }
     , ApplyTB
         { testNameA = "Under apply primitive"
         , funcIn = "eq?"
         , args = [Number 1]
-        , expectedA = Left $ NumArgs 2 [Number 1]
+        , expectedA = Left $ NumArgs (Exactly 2) [Number 1]
         }
     , ApplyTB
         { testNameA = "Fully apply IOPrimitive"
@@ -481,13 +481,13 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         { testNameA = "Empty apply IOPrimitive"
         , funcIn = "write-port"
         , args = []
-        , expectedA = Left $ NumArgs 2 []
+        , expectedA = Left $ NumArgs (Exactly 2) []
         }
     , ApplyTB
         { testNameA = "Under apply IOPrimitive"
         , funcIn = "write-port"
         , args = [Number 0]
-        , expectedA = Left $ NumArgs 2 [Number 0]
+        , expectedA = Left $ NumArgs (Exactly 2) [Number 0]
         }
     , ApplyTB
         { testNameA = "Fully apply func"
@@ -499,13 +499,13 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         { testNameA = "Empty apply func"
         , funcIn = "(define (add x y) (+ x y))"
         , args = []
-        , expectedA = Left $ NumArgs 2 []
+        , expectedA = Left $ NumArgs (Exactly 2) []
         }
     , ApplyTB
         { testNameA = "Under apply func"
         , funcIn = "(define (test x y) y)"
         , args = [IString ""]
-        , expectedA = Left $ NumArgs 2 [IString ""]
+        , expectedA = Left $ NumArgs (Exactly 2) [IString ""]
         }
     , ApplyTB
         { testNameA = "Min apply vararg func"

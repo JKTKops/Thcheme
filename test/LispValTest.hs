@@ -51,6 +51,11 @@ instance Serial IO LispErr where
                 \/ cons1 Default
                 \/ cons0 Quit
 
+instance Monad m => Serial m Arity where
+    series = cons1 Exactly
+          \/ cons1 AtLeast
+          \/ cons2 Between
+
 instance Arbitrary Val where
     arbitrary = sized lispval'
       where lispval' 0 = oneof simpleCons
@@ -85,7 +90,7 @@ instance Arbitrary Val where
 
 instance Arbitrary LispErr where
     arbitrary = oneof [ do n <- choose (0, 3)
-                           liftM2 NumArgs (return n) (vectorOf n arbitrary)
+                           NumArgs <$> arbitrary <*> vectorOf n arbitrary
                       , liftM2 TypeMismatch arbitrary arbitrary
                       , BadSpecialForm <$> arbitrary
                       , liftM2 NotFunction arbitrary arbitrary
@@ -94,6 +99,15 @@ instance Arbitrary LispErr where
                       , Default <$> arbitrary
                       , return Quit
                       ]
+
+instance Arbitrary Arity where
+    arbitrary = oneof 
+      [ Exactly . QC.getPositive <$> arbitrary
+      , AtLeast . QC.getPositive <$> arbitrary
+      , mkBetween <$> arbitrary <*> arbitrary
+      ]
+      where
+        mkBetween lo hi = Between (QC.getPositive lo) (QC.getPositive hi)
 
 lispValTests :: TestTree
 lispValTests = testGroup "Val" [unitTests, propTests]
