@@ -64,7 +64,7 @@ parseExpr = lexeme $
              -- atom names can start with #\ too so we need an @try@
          <|> (try parseChar <?> "character literal")
          <|> (try parseVector <?> "vector")
-         <|> (parseAtom <?> "symbol")
+         <|> (parseSymbol <?> "symbol")
          <|> (parseString <?> "string")
          <|> (parseQuoted <?> "quote form")
          <|> (lexeme (anyBraces parseListlike) <?> "list")
@@ -81,13 +81,13 @@ delim = notFollowedBy $ alphaNum <|> symbol
 parseString :: Parser Val
 parseString = IString <$> stringLiteral
 
-parseAtom :: Parser Val
-parseAtom = do
+parseSymbol :: Parser Val
+parseSymbol = do
     atom <- identifier
     return $ case atom of
         "#t" -> Bool True
         "#f" -> Bool False
-        _    -> Atom atom
+        _    -> Symbol atom
 
 parseNumber :: Parser Val
 parseNumber = lexeme $ do
@@ -163,4 +163,4 @@ parseQuoted = lexeme $ foldr1 (<|>) parsers
                     ","  -> "unquote"
                     ",@" -> "unquote-splicing"
             x <- parseExpr
-            return $ makeImmutableList [Atom macro, x]) ["'", "`", ",@", ","]
+            return $ makeImmutableList [Symbol macro, x]) ["'", "`", ",@", ","]

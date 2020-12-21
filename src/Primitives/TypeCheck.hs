@@ -25,8 +25,8 @@ typePred tyname func = Prim (tyname ++ "?") (Exactly 1) $ \case
   [x] -> return $ func x
 
 symbol :: Val -> Val
-symbol (Atom _) = Bool True
-symbol _        = Bool False
+symbol (Symbol _) = Bool True
+symbol _          = Bool False
 
 string :: Val -> Val
 string (String _) = Bool True

@@ -80,7 +80,7 @@ data Macro = Macro Arity (InTail -> Builtin)
 -- Invariant: All objects contained in an IPair or IVector are immutable.
 --   Note that this is implicitly transitive.
 data Val
-  = Atom String
+  = Symbol String
   | Number Integer
   | String !(Ref String)
   | IString String
@@ -111,7 +111,7 @@ data Val
 -- (2) 'eqvSSH':   value equality for atoms, otherwise referential
 -- (3) 'equalSSH': structural equality
 eqVal :: Val -> Val -> Bool
-eqVal (Atom s) (Atom s') = s == s'
+eqVal (Symbol s) (Symbol s') = s == s'
 eqVal (Number n) (Number n') = n == n'
 eqVal (IString s) (IString s') = s == s'
 eqVal (Char c) (Char c') = c == c'

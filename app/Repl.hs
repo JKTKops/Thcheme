@@ -74,7 +74,7 @@ replEval (Just inp) = Repl $
     CLI.withInterrupt $ 
     runRepl (evaluateTotalInput inp)
   where
-    interrupted = ( Right (Atom "Interrupted.")
+    interrupted = ( Right (Symbol "Interrupted.")
                   , error "state forced after interrupt, report a bug"
                   )
 

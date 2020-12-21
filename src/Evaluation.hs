@@ -43,7 +43,7 @@ handleSimpleDatum obj = case obj of
     val@Bool{}    -> return val
     val@Vector{}  -> return val
     val@IVector{} -> return val
-    (Atom id)     -> getVar id
+    (Symbol id)   -> getVar id
     Nil           -> return Nil
     _other -> panic "handleSimpleDatum: datum is not simple!"
 
@@ -69,7 +69,7 @@ handleApp tail form function args = do
         p@Pair{} -> do
             fp <- freezeList p
             case fp of
-                FDottedList [Atom "macro"] macro@Closure{} -> evalMacro macro
+                FDottedList [Symbol "macro"] macro@Closure{} -> evalMacro macro
                 _ -> evalCall func
         _              -> evalCall func
 
@@ -174,7 +174,7 @@ makeStackFrame head args =
   pure $ StackFrame (makeImmutableList (head:args)) Nothing
 
 buildFrame :: String -> [Val] -> Maybe Env -> StackFrame
-buildFrame name args = StackFrame (makeImmutableList (Atom name : args))
+buildFrame name args = StackFrame (makeImmutableList (Symbol name : args))
 
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
 evaluate label initEnv opts input = execEM initEnv opts $

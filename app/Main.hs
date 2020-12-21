@@ -21,7 +21,7 @@ runOne (filename : args) = do
     primEnv <- primitiveBindings
     env' <- bindVar primEnv "args" $ makeImmutableList $ map IString $ args
     result <- evaluateExpr env' noOpts $
-        makeImmutableList [Atom "load", IString filename]
+        makeImmutableList [Symbol "load", IString filename]
     case result of
         (Left{},_) -> 
             showResultIO result >>= putStrLn

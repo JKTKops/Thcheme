@@ -66,12 +66,12 @@ ifMacro = Macro (AtLeast 2) $
 
 set :: Macro
 set = Macro (Exactly 2) $ \_ -> \case
-  [Atom var, form] -> evalBody form >>= setVar var
+  [Symbol var, form] -> evalBody form >>= setVar var
   [notAtom, _]     -> throwError $ TypeMismatch "symbol" notAtom
 
 setOpt :: Macro
 setOpt = Macro (Exactly 2) $ \_ -> \case
-  [Atom optName, form] -> do
+  [Symbol optName, form] -> do
     val <- evalBody form
     let mopt = readMaybe optName
     case mopt of
@@ -88,21 +88,21 @@ defineBuiltin (x:xs) = do
 
   where
     defineBuiltinFrozen :: FrozenList -> [Val] -> EM Val
-    defineBuiltinFrozen (FNotList (Atom var)) [form] = do
+    defineBuiltinFrozen (FNotList (Symbol var)) [form] = do
       setVarForCapture var
       val <- evalBody form
       let renamed = case val of
             Closure{} -> val { name = Just var }
             _ -> val
       defineVar var renamed
-    defineBuiltinFrozen (FNotList (Atom var)) badForms =
-      throwError $ NumArgs (Exactly 2) (Atom var : badForms)
+    defineBuiltinFrozen (FNotList (Symbol var)) badForms =
+      throwError $ NumArgs (Exactly 2) (Symbol var : badForms)
     
-    defineBuiltinFrozen (FList (Atom name : params)) body = case body of
+    defineBuiltinFrozen (FList (Symbol name : params)) body = case body of
       [] -> throwError emptyBodyError
       _  -> makeFuncNormal params body (Just name) >>= defineVar name
     
-    defineBuiltinFrozen (FDottedList (Atom name : params) varargs) body = 
+    defineBuiltinFrozen (FDottedList (Symbol name : params) varargs) body = 
       case body of
         [] -> throwError emptyBodyError
         _  -> makeFuncVarargs varargs params body (Just name) >>= defineVar name
@@ -135,7 +135,7 @@ mkLambda (formals : body) = do
     FDottedList params varargs -> case body of
       [] -> throwError emptyBodyError
       _  -> makeFuncVarargs varargs params body Nothing
-    FNotList varargs@(Atom _) -> case body of
+    FNotList varargs@(Symbol _) -> case body of
       [] -> throwError emptyBodyError
       _  -> makeFuncVarargs varargs [] body Nothing
     _notAtomOrList -> throwError $ TypeMismatch "symbol or list" formals
@@ -160,9 +160,9 @@ makeFuncVarargs = makeFunc . Just . show
 
 defmacro :: Macro
 defmacro = Macro (AtLeast 2) $ const $
-  \(Atom name : ps : body) -> do
+  \(Symbol name : ps : body) -> do
     lam <- mkLambda (ps : body)
-    macro <- makeImproperMutableList [Atom "macro"] lam
+    macro <- makeImproperMutableList [Symbol "macro"] lam
     defineVar name macro
 
 begin :: Macro
@@ -202,22 +202,22 @@ quasiquote = Macro (Exactly 1) $ \_ [form]-> runReaderT (qq form) 0
   where 
     qq :: Val -> ReaderT Int EM Val
     qq term = lift (freezeList term) >>= \case
-      FList [Atom "quasiquote", form] -> local (+ 1) $ do
+      FList [Symbol "quasiquote", form] -> local (+ 1) $ do
         inner <- qq form
-        lift $ makeMutableList [Atom "quasiquote", inner]
-      FList [Atom "unquote", form] -> do
+        lift $ makeMutableList [Symbol "quasiquote", inner]
+      FList [Symbol "unquote", form] -> do
         depth <- ask
         if depth == 0
         then lift $ evalBody form
         else local (subtract 1) $ do
           inner <- qq form
-          lift $ makeMutableList [Atom "unquote", inner]
+          lift $ makeMutableList [Symbol "unquote", inner]
       FList forms
           -- this can happen because the parser is smart enough to rewrite
-          -- `(0 . ,lst) as IList [Number 0, Atom unquote, Atom lst]
+          -- `(0 . ,lst) as IList [Number 0, Symbol unquote, Symbol lst]
           -- however whenever this happens, ',lst' will definitely be of size 2
-        | Atom "unquote" `elem` forms
-        , (list, dot) <- break (== Atom "unquote") forms
+        | Symbol "unquote" `elem` forms
+        , (list, dot) <- break (== Symbol "unquote") forms
         , [_,_] <- dot
         -> do lift (makeMutableList dot) >>= qqImproper list
         | otherwise
@@ -230,7 +230,7 @@ quasiquote = Macro (Exactly 1) $ \_ [form]-> runReaderT (qq form) 0
     qqTerms (t:ts) = do
       frozenT <- lift $ freezeList t
       terms <- case frozenT of
-        FList [Atom "unquote-splicing", form] -> do
+        FList [Symbol "unquote-splicing", form] -> do
           depth <- ask
           val <- if depth == 0
                  then lift $ evalBody form

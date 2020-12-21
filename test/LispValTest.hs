@@ -23,7 +23,7 @@ import Primitives
 import Primitives.WriteLib (writeSharedSH, ushowString)
 
 instance Serial IO Val where
-    series = cons1 Atom
+    series = cons1 Symbol
                 \/ (series >>= lift . unsafeEMtoIO . makeMutableList)
                 \/ (makeImmutableList <$> series)
                 \/ cons1 Number
@@ -81,7 +81,7 @@ instance Arbitrary Val where
             -- and then we need a helper that only generates immutable data.
                             ]
               where subval = lispval' $ n `div` 2
-            simpleCons = [ Atom <$> arbitrary
+            simpleCons = [ Symbol <$> arbitrary
                          , Number <$> arbitrary
                          , IString <$> arbitrary
                          , Char <$> arbitrary
@@ -178,7 +178,7 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
         (==) <$> unsafeEMtoIO (referenceShowV input) <*> writeSharedSH input
   where referenceShowV = freezeList >=> referenceShow
       
-        referenceShow (FNotList (Atom s)) = pure s
+        referenceShow (FNotList (Symbol s)) = pure s
         referenceShow (FNotList (Number n)) = pure $ show n
         referenceShow (FNotList (IString s)) = pure $ ushowString s ""
         referenceShow (FNotList (Char c)) = pure $ case c of

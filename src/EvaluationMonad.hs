@@ -26,7 +26,7 @@ module EvaluationMonad
     , panic
 
       -- * Use the evaluation environment
-    , getVar, setVar, updateWith, search
+    , getVar, setVar, search
     , setVarForCapture, defineVar
 
       -- * Manipulating IORefs
@@ -145,20 +145,6 @@ setVar var val = do
         Just e  -> do
             Right v <- liftIO . runExceptT $ Env.defineVar e var val
             return v
-
--- Assumes the first element of args is an Atom;
--- finds it and updates it with given func
--- TODO: trash this when vector-set! is implemented properly
-updateWith :: ([Val] -> EM Val) -> [Val] -> EM Val
-updateWith updater (Atom var : rest) = do
-    envRef <- search var
-    when (isNothing envRef) $ throwError $ UnboundVar "[Set]" var
-    env <- liftIO . readIORef $ fromJust envRef
-    let ref = fromJust $ Map.lookup var env
-    val <- liftIO $ readIORef ref
-    updated <- updater (val : rest)
-    liftIO $ writeIORef ref updated
-    return updated
 
 search :: String -> EM (Maybe Env)
 search var = do

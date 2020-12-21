@@ -94,12 +94,12 @@ evalTests = testGroup "eval" $ map mkEvalTest
     , EvalTest
         { testName = "Quote symbol"
         , input = "'x"
-        , expected = Right $ Atom "x"
+        , expected = Right $ Symbol "x"
         }
     , EvalTest
         { testName = "Quote list"
         , input = "'(+ 1 2)"
-        , expected = Right $ makeImmutableList [Atom "+", Number 1, Number 2]
+        , expected = Right $ makeImmutableList [Symbol "+", Number 1, Number 2]
         }
     , EvalTest
         { testName = "if with no alt (pred true)"
@@ -208,7 +208,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Closure
             { params = ["x"]
             , vararg = Just "y"
-            , body   = [makeImmutableList [Atom "x", Atom "y"]]
+            , body   = [makeImmutableList [Symbol "x", Symbol "y"]]
             , cloEnv = undefined
             , name   = Just "test"
             }
@@ -230,7 +230,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Closure
             { params = ["x"]
             , vararg = Nothing
-            , body   = [makeImmutableList [Atom "+", Number 1, Atom "x"]]
+            , body   = [makeImmutableList [Symbol "+", Number 1, Symbol "x"]]
             , cloEnv = undefined -- we only check == so this should never be evaluated
             , name   = Nothing
             }
@@ -241,7 +241,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Closure
             { params = ["x", "y"]
             , vararg = Just "zs"
-            , body   = [makeImmutableList [Atom "null?", Atom "zs"]]
+            , body   = [makeImmutableList [Symbol "null?", Symbol "zs"]]
             , cloEnv = undefined
             , name   = Nothing
             }
@@ -252,7 +252,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Closure
             { params = []
             , vararg = Just "xs"
-            , body   = [makeImmutableList [Atom "cons", Number 0, Atom "xs"]]
+            , body   = [makeImmutableList [Symbol "cons", Number 0, Symbol "xs"]]
             , cloEnv = undefined
             , name   = Nothing
             }
@@ -274,7 +274,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
                 ]
         , expected = Right $ Closure []
                                   Nothing
-                                  [Atom "foo"]
+                                  [Symbol "foo"]
                                   undefined
                                   (Just "foo")
         }
@@ -360,7 +360,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         { testName = "unquote in weird places is untouched"
         , input    = "`(0 unquote 1 2)"
         , impureExpected = mkExpectedVal $
-            makeMutableList [Number 0, Atom "unquote", Number 1, Number 2]
+            makeMutableList [Number 0, Symbol "unquote", Number 1, Number 2]
         }
     , EvalTest
         { testName = "'eval' primitive evaluates datum"

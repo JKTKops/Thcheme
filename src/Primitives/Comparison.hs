@@ -110,7 +110,7 @@ eqvSSH :: MonadIO m => Val -> Val -> m Bool
 eqvSSH (Bool x)   (Bool y)   = return $ x == y
 eqvSSH (Number x) (Number y) = return $ x == y
 eqvSSH (Char x)   (Char y)   = return $ x == y
-eqvSSH (Atom x)   (Atom y)   = return $ x == y
+eqvSSH (Symbol x) (Symbol y) = return $ x == y
 eqvSSH (Port p)   (Port q)   = return $ p == q
 eqvSSH Nil        Nil        = return True
 eqvSSH str1 str2
@@ -132,7 +132,7 @@ eqSSH :: MonadIO m => Val -> Val -> m Bool
 -- That's possible - we just have to be careful to make the names of the
 -- symbols the memoized part, and not the whole symbol including library
 -- information (once we have libraries).
-eqSSH (Atom x) (Atom y) = return $ x == y
+eqSSH (Symbol x) (Symbol y) = return $ x == y
 eqSSH v1 v2 = liftIO $ do
   n1 <- v1 `seq` makeStableName v1
   n2 <- v2 `seq` makeStableName v2

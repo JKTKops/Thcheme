@@ -65,7 +65,7 @@ truthy _ = True
 -- but it doesn't display unicode characters in strings properly,
 -- can't display anything mutable, and loops on cyclic immutable data.
 showVal :: Val -> ShowS
-showVal (Atom s) = showString s
+showVal (Symbol s) = showString s
 showVal (Number n) = shows n
 showVal (String s) = showString "<can't show mutable string>"
 showVal (IString s) = shows s
