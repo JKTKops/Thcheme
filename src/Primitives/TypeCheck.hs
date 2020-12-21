@@ -1,69 +1,62 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.TypeCheck (rawPrimitives) where
+module Primitives.TypeCheck (primitives) where
 
 import Control.Monad.Except (throwError)
 
-import Types
+import Val
 
-rawPrimitives = [ (name, guardOneArg func) | (name, func) <-
-                    [ ("boolean?", bool)
-                    , ("char?", char)
-                    , ("list?", list)
-                    , ("number?", number)
-                    , ("pair?", pair)
-                    , ("string?", string)
-                    , ("symbol?", symbol)
-                    , ("vector?", vector)
-                    , ("procedure?", procedure)
-                    , ("continuation?", continuation)
-                    ]
-                ]
+primitives :: [Primitive]
+primitives = [ typePred name func 
+             | (name, func) <-
+               [ ("boolean", bool)
+               , ("char", char)
+               , ("number", number)
+               , ("pair", pair)
+               , ("string", string)
+               , ("symbol", symbol)
+               , ("vector", vector)
+               , ("procedure", procedure)
+               , ("continuation", continuation)
+               ]
+             ]
 
-guardOneArg :: (LispVal -> LispVal) -> RawPrimitive
-guardOneArg func = RPrim 1 $ \case
-    [x] -> return $ func x
-    badArgs -> throwError $ NumArgs 1 badArgs
+typePred :: String -> (Val -> Val) -> Primitive
+typePred tyname func = Prim (tyname ++ "?") (Exactly 1) $ \case
+  [x] -> return $ func x
 
-symbol :: LispVal -> LispVal
-symbol (Atom _) = Bool True
-symbol _        = Bool False
+symbol :: Val -> Val
+symbol (Symbol _) = Bool True
+symbol _          = Bool False
 
-string :: LispVal -> LispVal
+string :: Val -> Val
 string (String _) = Bool True
 string _          = Bool False
 
-char :: LispVal -> LispVal
+char :: Val -> Val
 char (Char _) = Bool True
 char _        = Bool False
 
-number :: LispVal -> LispVal
+number :: Val -> Val
 number (Number _) = Bool True
 number _          = Bool False
 
-bool :: LispVal -> LispVal
+bool :: Val -> Val
 bool (Bool _) = Bool True
 bool _        = Bool False
 
-list :: LispVal -> LispVal
-list (List _) = Bool True
-list _        = Bool False
+pair :: Val -> Val
+pair = Bool . pairSH
 
-pair :: LispVal -> LispVal
-pair (List []) = Bool False
-pair (List _)  = Bool True
-pair (DottedList _ _) = Bool True
-pair _ = Bool False
-
-vector :: LispVal -> LispVal
+vector :: Val -> Val
 vector (Vector _) = Bool True
 vector _          = Bool False
 
-procedure :: LispVal -> LispVal
+procedure :: Val -> Val
 procedure Primitive{}    = Bool True
 procedure Continuation{} = Bool True
-procedure Func{}         = Bool True
+procedure Closure{}      = Bool True
 procedure _ = Bool False
 
-continuation :: LispVal -> LispVal
+continuation :: Val -> Val
 continuation Continuation{} = Bool True
 continuation _ = Bool False

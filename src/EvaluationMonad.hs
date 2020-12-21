@@ -3,104 +3,141 @@ module EvaluationMonad
     -- * re-exported from Types
       EM (..)
     , EvalState (..)
+    , StackFrame (..)
+    , Env
+    , Opts
 
     -- * Re-exported modules
+    , callCC -- only useful export of Control.Monad.Cont
     , module Control.Monad.Except
     , module Control.Monad.State.Lazy
-    -- * Useful evaluation actions
-    , pushExpr
-    , popExpr
-    , pushEnv
-    , withNewScope
-    , popEnv
-    , envSnapshot
-    , modifyStackTop
-    , modifyTopReason
-    , getVar
-    , setVar
-    , updateWith
-    , search
-    , setVarForCapture
-    , defineVar
+    , (Fish.>=>), (Fish.<=<)
+
+      -- * Execute EM actions
+    , execEM, execAnyEM, unsafeEMtoIO
+
+      -- * Adjusting the evaluation environment
+    , envSnapshot, pushFrame, popFrame
+
+      -- * using options
+    , enableOpt, disableOpt, lintAssert, noOpts
+
+      -- * explode
+    , panic
+
+      -- * Use the evaluation environment
+    , getVar, setVar, search
+    , setVarForCapture, defineVar
+
+      -- * Manipulating IORefs
+    , newRef, readRef, writeRef, modifyRef
     ) where
 
 import Data.IORef
 import Data.Maybe
 import Data.Either
+import Data.Functor ((<&>))
 import qualified Data.HashMap.Strict as Map
-import Control.Monad.Except
-import Control.Monad.State.Lazy
 
+import Control.Arrow (first)
+import Control.Monad (when, unless, void)
+import qualified Control.Monad as Fish ((>=>), (<=<))
+import Control.Monad.Cont (callCC, runCont)
+import Control.Monad.Except (MonadError (..), liftEither, runExceptT)
+import Control.Monad.State.Lazy (MonadIO (..), MonadState (..), modify, gets)
+
+import Options
 import Types
 import qualified Environment as Env
 
--- | Push an expr to the call stack
-pushExpr :: StepReason -> LispVal -> EM ()
-pushExpr r val = do
-    s <- get
-    put $ s { stack = (r, val) : stack s }
+import GHC.Stack (HasCallStack) -- for panic
 
--- | Remove the top item from the call stack
-popExpr :: EM ()
-popExpr = modify $ \s -> s { stack = case stack s of
-    []     -> error "popExpr: empty stack"
-    (_:tl) -> tl
-  }
 
--- | Push an environment to the top of the sEnv stack
---   The environment becomes the topmost scope of evaluation.
-pushEnv :: Env -> EM ()
-pushEnv e = modify $ \s -> s { symEnv = e : symEnv s }
+execEM :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
+execEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
+                                ES initEnv [] opts
 
--- | Push a new empty scope to the sEnv stack.
-pushEmptyEnv :: EM ()
-pushEmptyEnv = do
-    e <- liftIO $ newIORef Map.empty
-    pushEnv e
+-- | Useful for testing etc.
+execAnyEM :: Env -> Opts -> EM a -> IO (Either LispErr a)
+execAnyEM env opts m = do
+  -- This hack looks very weird if you don't know what's going on here.
+  -- See Note: [EM return types] in Types.hs.
+  store <- newIORef (error "execAnyEM: forced store")
+  (either, _) <- execEM env opts $ do
+    a <- m
+    writeRef store a
+    return Undefined
+  case either of
+    Right _ -> Right <$> readIORef store
+    Left e  -> return $ Left e
 
--- | Evaluate an EM action in an empty local scope.
-withNewScope :: EM a -> EM a
-withNewScope m = pushEmptyEnv *> m <* popEnv
-
--- | Remove the topmost scope from the sEnv stack.
-popEnv :: EM ()
-popEnv = do
-    s <- get
-    let stack = symEnv s
-    put $ s { symEnv = case stack of
-                [] -> error "popEnv: empty env stack"
-                (_:tl) -> tl
-            }
+-- | Convert an EM action to an IO action.
+--
+-- This function is unsafe in the sense that it doesn't handle errors
+-- raised in the EM action, so the action should be guaranteed not to
+-- raise errors. This function is exposed mainly for the test suite,
+-- which uses it to access 'equalSSH' as an IO action.
+--
+-- The EM action is run with linting enabled.
+unsafeEMtoIO :: EM a -> IO a
+unsafeEMtoIO em = do
+  ne <- Env.nullEnv
+  Right a <- execAnyEM ne (setOpt Lint noOpts) em
+  return a
 
 envSnapshot :: EM Env
 envSnapshot = do
-    symEnvStack <- gets symEnv
-    liftIO $ flatten symEnvStack >>= newIORef
+    theStack <- gets stack
+    liftIO $ flatten (envsInStack theStack) >>= newIORef
   where
     flatten = fmap mconcat . mapM readIORef
 
-modifyStackTop :: ((StepReason, LispVal) -> (StepReason, LispVal)) -> EM ()
-modifyStackTop f = modify $ \s ->
-    let top : tail = stack s in
-    s { stack = f top : tail }
+envsInStack :: [StackFrame] -> [Env]
+envsInStack = mapMaybe envOfFrame
+  where envOfFrame (StackFrame _ env) = env
 
-modifyTopReason :: (StepReason -> StepReason) -> EM ()
-modifyTopReason f = modifyStackTop (\(r, v) -> (f r, v))
+pushFrame :: StackFrame -> EM ()
+pushFrame f = modify $ \s -> s { stack = f : stack s }
+
+popFrame :: EM ()
+popFrame = modify $ \s -> s { stack = tail $ stack s }
+
+-- | If linting is enabled, assert that a predicate is true.
+-- If the assertion fails, the runtime will panic with the given message.
+lintAssert :: (Monad m, HasOpts m) => String -> m Bool -> m ()
+lintAssert msg test = whenOpt Lint $ test >>= \b ->
+  unless b $ panic $ panicmsg ++ msg
+  where panicmsg = "\nLinter detected an invariant violation:\n"
+
+-- | Panic.
+--
+-- Calling this function throws a synchronous Haskell exception, printing
+-- the given message along with a note about "the impossible" happening.
+panic :: HasCallStack => String -> a
+panic msg = error $ "Panic! The \"impossible\" happened.\n" ++ msg
 
 -- | Searches the environment stack top-down for a symbol
-getVar :: String -> EM LispVal
+getVar :: String -> EM Val
 getVar var = do
-    stack <- symEnv <$> get
-    l <- liftIO $ rights <$> mapM (\env -> runExceptT $ Env.getVar env var) stack
-    case l of
-        []  -> throwError $ UnboundVar "[Get] unbound symbol" var
-        Undefined : _ -> throwError $ EvaluateDuringInit var
-        v:_ -> return v
+    stack <- gets stack
+    gbl   <- gets globalEnv
+    v <- loop gbl $ envsInStack stack
+    crashUndefined v
+  where
+    loop gbl [] = liftIOThrows $ Env.getVar gbl var
+    loop gbl (env:envs) = do
+      ev <- liftIO $ runExceptT $ Env.getVar env var
+      case ev of
+        Left _  -> loop gbl envs
+        Right v -> return v
+    
+    crashUndefined Undefined = throwError $ EvaluateDuringInit var
+    crashUndefined v = return v
 
 -- | Search the environment top-down for a symbol
---   If it's found, bind it to the given LispVal
+--   If it's found, bind it to the given Val
 --   Otherwise, create a new binding in the top-level
-setVar :: String -> LispVal -> EM LispVal
+setVar :: String -> Val -> EM Val
 setVar var val = do
     mEnv <- search var
     case mEnv of
@@ -109,37 +146,60 @@ setVar var val = do
             Right v <- liftIO . runExceptT $ Env.defineVar e var val
             return v
 
--- Assumes the first element of args is an Atom; finds it and updates it with given func
-updateWith :: ([LispVal] -> EM LispVal) -> [LispVal] -> EM LispVal
-updateWith updater (Atom var : rest) = do
-    envRef <- search var
-    when (isNothing envRef) $ throwError $ UnboundVar "[Set] unbound symbol" var
-    env <- liftIO . readIORef $ fromJust envRef
-    let ref = fromJust $ Map.lookup var env
-    val <- liftIO $ readIORef ref
-    updated <- updater (val : rest)
-    liftIO $ writeIORef ref updated
-    return updated
-
 search :: String -> EM (Maybe Env)
 search var = do
-    stack <- symEnv <$> get
-    l <- liftIO $ catMaybes <$> mapM
-         (\env -> do
-                 e <- runExceptT $ Env.getVar env var
-                 return $ if isRight e then Just env else Nothing
-         ) stack
-    return $ case l of
-        []  -> Nothing
-        e:_ -> Just e
+    stack <- gets stack
+    let envs = envsInStack stack
+    me <- loop envs
+    case me of
+      Nothing -> tryGbl
+      Just e -> return me
+  where
+    loop [] = return Nothing
+    loop (env:envs) = do
+      e <- liftIO $ runExceptT $ Env.getVar env var
+      if isRight e then return $ Just env else loop envs
+    
+    tryGbl = do
+      gbl <- gets globalEnv
+      liftIO $ runExceptT (Env.getVar gbl var) <&> \case
+        Right _ -> Just gbl
+        Left _  -> Nothing
 
--- | Define a var in the top-level environment in preparation for
+-- | Define a var in the innermost environment in preparation for
 -- a function being 'define'd to capture itself.
 setVarForCapture :: String -> EM ()
 setVarForCapture name = void $
   defineVar name Undefined
 
-defineVar :: String -> LispVal -> EM LispVal
+-- | Define a var in the innermost environment.
+--
+-- Panics if the innermost stackframe doesn't have an environment.
+-- If the stackframe doesn't have an environment, then we must be trying
+-- to define a var inside a primitive, which is a mistake.
+-- Use 'setVar' to set a var that might not be from the innermost
+-- environment.
+defineVar :: String -> Val -> EM Val
 defineVar var val = do
-    env <- head . symEnv <$> get
+    stack <- gets stack
+    env <- case stack of
+      (StackFrame _ Nothing : _)  -> panic "no env in frame"
+      (StackFrame _ (Just e) : _) -> pure e
+      [] -> gets globalEnv
     liftIOThrows $ Env.defineVar env var val
+
+newRef :: a -> EM (IORef a)
+newRef = liftIO . newIORef
+{-# INLINE newRef #-}
+
+readRef :: IORef a -> EM a
+readRef = liftIO . readIORef
+{-# INLINE readRef #-}
+
+writeRef :: IORef a -> a -> EM ()
+writeRef ref x = liftIO $ writeIORef ref x
+{-# INLINE writeRef #-}
+
+modifyRef :: IORef a -> (a -> a) -> EM ()
+modifyRef ref f = liftIO $ modifyIORef ref f
+{-# INLINE modifyRef #-}

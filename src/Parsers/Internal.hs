@@ -7,10 +7,11 @@ import Text.ParserCombinators.Parsec hiding (spaces)
 import qualified Text.Parsec.Token as Tok
 
 import Data.Char (digitToInt)
-import Data.Array (listArray)
+import Data.Vector (fromList)
 import Control.Monad.Except (throwError)
 
-import Types
+import Types (ThrowsError)
+import Val
 
 labeledReadOrThrow :: String -> Parser a -> String -> ThrowsError a
 labeledReadOrThrow label parser input = case parse parser label input of
@@ -57,14 +58,13 @@ float = Tok.float lexer
 lexeme :: Parser a -> Parser a
 lexeme = Tok.lexeme lexer
 
--- the absurd number of parens is because someone thought <?> should be infix 0
-parseExpr :: Parser LispVal
+parseExpr :: Parser Val
 parseExpr = lexeme $
              (try parseNumber <?> "number")
              -- atom names can start with #\ too so we need an @try@
          <|> (try parseChar <?> "character literal")
          <|> (try parseVector <?> "vector")
-         <|> (parseAtom <?> "symbol")
+         <|> (parseSymbol <?> "symbol")
          <|> (parseString <?> "string")
          <|> (parseQuoted <?> "quote form")
          <|> (lexeme (anyBraces parseListlike) <?> "list")
@@ -78,18 +78,18 @@ spaces = skipMany1 space
 delim :: Parser ()
 delim = notFollowedBy $ alphaNum <|> symbol
 
-parseString :: Parser LispVal
-parseString = String <$> stringLiteral
+parseString :: Parser Val
+parseString = IString <$> stringLiteral
 
-parseAtom :: Parser LispVal
-parseAtom = do
+parseSymbol :: Parser Val
+parseSymbol = do
     atom <- identifier
     return $ case atom of
         "#t" -> Bool True
         "#f" -> Bool False
-        _    -> Atom atom
+        _    -> Symbol atom
 
-parseNumber :: Parser LispVal
+parseNumber :: Parser Val
 parseNumber = lexeme $ do
     sign <- optionMaybe $ char '-' <|> char '+'
     prefix <- parseRadixPrefix <|> return "#d"
@@ -115,9 +115,9 @@ parseNumber = lexeme $ do
             let n = foldl (\x d -> base * x + toInteger (digitToInt d)) 0 digits
             seq n (return n)
 
-parseChar :: Parser LispVal
+parseChar :: Parser Val
 parseChar = lexeme $ do
-    prefix <- string "#\\"
+    _prefix <- string "#\\"
     char   <- do try $ string "space"
                  return ' '
               <|> (do try $ string "newline"
@@ -132,31 +132,28 @@ parseChar = lexeme $ do
               <?> "char literal"
     return $ Char char
 
-parseVector :: Parser LispVal
+parseVector :: Parser Val
 parseVector = lexeme $ do
     char '#'
     exprs <- parens $ many parseExpr
-    return . Vector . listArray (0, fromIntegral $ length exprs - 1) $ exprs
+    return . IVector $ fromList exprs
 
-parseListlike :: Parser LispVal
+parseListlike :: Parser Val
 parseListlike = do
     init <- many parseExpr
     mlast <- optionMaybe $ lexeme (char '.') >> parseExpr
     case (init, mlast) of
-        (list, Nothing) -> return $ List list
-
+        (list, Nothing) -> return $ makeImmutableList list
         ([], Just e)  -> return e
-        (init, Just (List ls)) -> return . List $ init ++ ls
-        (init0, Just (DottedList init1 dot)) ->
-            return $ DottedList (init0 ++ init1) dot
-        (init, Just dot) -> return $ DottedList init dot
+        (init, Just dot) -> return $ makeImproperImmutableList init dot
 
 -- these are provided strictly for back-compat with the testing code.
 -- them being separately defined leads to exponential parsing time!
+parseList, parseDottedList :: Parser Val
 parseList = parseListlike
 parseDottedList = parseListlike
 
-parseQuoted :: Parser LispVal
+parseQuoted :: Parser Val
 parseQuoted = lexeme $ foldr1 (<|>) parsers
   where parsers = map (\sym -> do
             try $ string sym
@@ -166,4 +163,4 @@ parseQuoted = lexeme $ foldr1 (<|>) parsers
                     ","  -> "unquote"
                     ",@" -> "unquote-splicing"
             x <- parseExpr
-            return $ List [Atom macro, x]) ["'", "`", ",@", ","]
+            return $ makeImmutableList [Symbol macro, x]) ["'", "`", ",@", ","]

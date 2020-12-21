@@ -1,3 +1,4 @@
+{-# LANGUAGE BlockArguments #-}
 module Parsers
     ( readExpr
     , labeledReadExpr
@@ -7,28 +8,31 @@ module Parsers
     ) where
 
 import Text.ParserCombinators.Parsec hiding (spaces)
-import Control.Monad.Except (liftIO)
+import Control.Monad.Except (MonadError, MonadIO, liftIO)
 
 import Parsers.Internal
-import Types
+import Val
+import EvaluationMonad (liftEither)
 
-labeledReadExpr :: String -> String -> ThrowsError LispVal
-labeledReadExpr label = labeledReadOrThrow label $ do
+labeledReadExpr :: String -> String -> Either LispErr Val
+labeledReadExpr label = liftEither . labeledReadOrThrow label do
     whiteSpace
     expr <- parseExpr
     eof
     return expr
 
+readExpr :: String -> Either LispErr Val
 readExpr = labeledReadExpr "Thcheme"
 
-labeledReadExprList :: String -> String -> ThrowsError [LispVal]
-labeledReadExprList label = labeledReadOrThrow label $ do
+labeledReadExprList :: String -> String -> Either LispErr [Val]
+labeledReadExprList label = labeledReadOrThrow label do
     whiteSpace
     exprs <- many parseExpr
     eof
     return exprs
 
+readExprList :: String -> Either LispErr [Val]
 readExprList = labeledReadExprList "Thcheme"
 
-load :: String -> IOThrowsError [LispVal]
-load filename = liftIO (readFile filename) >>= liftThrows . readExprList
+load :: (MonadIO m, MonadError LispErr m) => String -> m [Val]
+load filename = liftIO (readFile filename) >>= liftEither . readExprList

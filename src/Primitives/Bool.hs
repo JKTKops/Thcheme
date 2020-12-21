@@ -1,37 +1,45 @@
-{-# LANGUAGE LambdaCase #-}
-module Primitives.Bool (rawPrimitives, predicate, boolBinop) where
+module Primitives.Bool (primitives, predicate, boolBinop) where
 
 import Control.Monad.Except (throwError)
 
-import Types
+import Val
+import EvaluationMonad (EM)
 import Primitives.Unwrappers (unwrapBool)
 
-rawPrimitives = [ ("&&", boolAnd)
-                , ("||", boolOr)
-                , ("not", boolNot)
-                ]
+primitives :: [Primitive]
+primitives = [ boolNot
+             , boolAnd
+             , boolOr
+             ]
 
-predicate :: (LispVal -> ThrowsError a)
-          -> (a -> Bool)
-          -> RawPrimitive
-predicate unwrapper p = RPrim 1 $ \case
-    [val] -> Bool . p <$> unwrapper val
-    badArgs -> throwError $ NumArgs 1 badArgs
+-- | Evaluate a predicate on a 'Val'. It turns out to be convenient
+-- (at least, currently, 12/6/2020) in Math to separate an impure projection
+-- from the 'Val' and a pure predicate on the projected value.
+predicate :: String            -- ^ name of resulting 'Primitive'
+          -> (Val -> EM a) -- ^ impure projection
+          -> (a -> Bool)       -- ^ pure predicate
+          -> Primitive
+predicate name unwrapper p = Prim name (Exactly 1) $
+  \ [val] -> Bool . p <$> unwrapper val
 
-boolNot :: RawPrimitive
-boolNot = predicate unwrapBool not
+boolNot :: Primitive
+boolNot = predicate "not" unwrapBool not
 
-boolBinop :: (LispVal -> ThrowsError a) -- unwrapper
-          -> (a -> a -> Bool) -- binary boolean operation
-          -> RawPrimitive
-boolBinop unwrapper op = RPrim 2 $ \case
-    [left, right] -> do
-        left' <- unwrapper left
-        right' <- unwrapper right
-        return . Bool $ left' `op` right'
-    badArgs       -> throwError $ NumArgs 2 badArgs
+-- | Evaluate a binary boolean function on two 'Val's. See 'predicate'.
+boolBinop :: String            -- ^ name of resulting 'Primitive'
+          -> (Val -> EM a) -- ^ impure projection
+          -> (a -> a -> Bool)  -- ^ pure binary boolean operation
+          -> Primitive
+boolBinop name unwrapper op = Prim name (Exactly 2) $
+  \[left, right] -> do
+    left'  <- unwrapper left
+    right' <- unwrapper right
+    return $ Bool $ left' `op` right'
 
-boolBoolBinop = boolBinop unwrapBool
-
-boolAnd = boolBoolBinop (&&)
-boolOr  = boolBoolBinop (||)
+-- TODO: [r7rs]
+-- neither of these functions are defined (surprinsgly?) in the r7rs report.
+-- Instead, r7rs relies on the macros "and" and "or".
+-- Probably the right thing to do is remove them.
+boolAnd, boolOr :: Primitive
+boolAnd = boolBinop "&&" unwrapBool (&&)
+boolOr  = boolBinop "||" unwrapBool (||)

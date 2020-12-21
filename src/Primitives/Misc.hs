@@ -1,23 +1,30 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Misc (rawPrimitives, ePrimitives, macros) where
+module Primitives.Misc (primitives, macros) where
 
-import qualified Data.HashMap.Lazy as Map
+-- TODO split into Control and Syntax
+
+import Text.Read (readMaybe)
 
 import Parsers (load)
-import Types
+import Val
 import Evaluation
 import EvaluationMonad
+import Primitives.String (stringSH, unwrapStringPH)
+-- r7rs errors probably don't need this
+import Primitives.WriteLib (writeSharedSH)
+import Control.Monad.Reader -- for qq
 
-rawPrimitives :: [(String, RawPrimitive)]
-rawPrimitives = [ ("id", identityFunction) ]
+-- TODO NEXT: this module is broken right now because of Pairs
 
-ePrimitives :: [(String, Primitive)]
-ePrimitives = [ ("eval", evalPrim)
-              , ("apply", applyFunc)
-              , ("error", errorFunc)
-              , ("load", loadPrim)
-              , ("call-with-current-continuation", callWithCurrentContinuation)
-              ]
+primitives :: [Primitive]
+primitives = [ identityFunction
+             , evalPrim
+             , applyFunc
+             , errorFunc
+             , quit
+             , loadPrim
+             , callWithCurrentContinuation
+             ]
 
 macros :: [(String, Macro)]
 macros = [ ("quote", quote)
@@ -31,196 +38,218 @@ macros = [ ("quote", quote)
          , ("begin", begin)
          ]
 
-identityFunction :: RawPrimitive
-identityFunction = RPrim 1 $ \case
-    [arg]   -> return arg
-    badArgs -> throwError $ NumArgs 1 badArgs
+identityFunction :: Primitive
+identityFunction = Prim "id" (Exactly 1) $ \[arg] -> return arg
 
 callWithCurrentContinuation :: Primitive
-callWithCurrentContinuation = Prim 1 callcc
+callWithCurrentContinuation = 
+  Prim "call-with-current-continuation" (Exactly 1) callcc
   where
-    callcc :: [LispVal] -> EM LispVal
-    callcc [func] = callCC $ \k -> do
-        cont <- reifyCont k
-        -- k :: LispVal -> EM b
-        -- need to produce EM LispVal
-        apply func [cont]
-    callcc badArgs = throwError $ NumArgs 1 badArgs
-
-    reifyCont :: (LispVal -> EM LispVal) -> EM LispVal
-    reifyCont k = do s <- get
-                     return $ Continuation s k
+    callcc :: [Val] -> EM Val
+    callcc [func] = callCC $ \k ->
+        tailCall func [Continuation k]
 
 -- compose?
 
 quote :: Macro
-quote = Macro 1 $ \case
-    [form]  -> return form
-    badArgs -> throwError $ NumArgs 1 badArgs
+quote = Macro (Exactly 1) $ \_ [form]  -> return form
 
 ifMacro :: Macro
-ifMacro = Macro 2 $ \case
-    (pred : conseq : alts) -> do
-        p <- eval pred
-        if truthy p
-        then eval conseq
-        else case alts of
-            [] -> return $ List []
-            xs -> last <$> mapM eval xs
-    badArgs -> throwError $ Default $ "Expected at least 2 args; found " ++ show badArgs
+ifMacro = Macro (AtLeast 2) $ 
+  \tail (pred : conseq : alts) -> do
+    p <- evalBody pred
+    if truthy p
+    then eval tail conseq
+    else case alts of
+      [] -> return Nil -- r7rs says unspecified
+      xs -> evalSeq tail xs
 
 set :: Macro
-set = Macro 2 $ \case
-    [Atom var, form] -> eval form >>= setVar var
-    [notAtom, _]     -> throwError $ TypeMismatch "symbol" notAtom
-    badArgs          -> throwError $ NumArgs 2 badArgs
+set = Macro (Exactly 2) $ \_ -> \case
+  [Symbol var, form] -> evalBody form >>= setVar var
+  [notAtom, _]     -> throwError $ TypeMismatch "symbol" notAtom
 
 setOpt :: Macro
-setOpt = Macro 2 $ \case
-    [Atom optName, form] -> do
-        val <- eval form
-        modify $ \s -> s { options = Map.insert optName val (options s) }
-        return val
-    [notAtom, _] -> throwError $ TypeMismatch "symbol" notAtom
-    badArgs      -> throwError $ NumArgs 2 badArgs
+setOpt = Macro (Exactly 2) $ \_ -> \case
+  [Symbol optName, form] -> do
+    val <- evalBody form
+    let mopt = readMaybe optName
+    case mopt of
+      Nothing -> pure ()
+      Just opt -> if truthy val then enableOpt opt else disableOpt opt
+    return val
+  [notAtom, _] -> throwError $ TypeMismatch "symbol" notAtom
 
-define :: Macro
-define = Macro 1 $ \case
-    [Atom var, form] -> do
-        setVarForCapture var
-        val <- eval form
-        let renamed = case val of
-                Func {} -> val { name = Just var }
-                _ -> val
-        defineVar var renamed
-    (List (Atom name : params) : body) -> case body of
-        [] -> throwError emptyBodyError
-        _  -> makeFuncNormal params body (Just name) >>= defineVar name
-    (DottedList (Atom name : params) varargs : body) -> case body of
+defineBuiltin :: Builtin
+-- arity is AtLeast 1 so can't be called with no args
+defineBuiltin (x:xs) = do
+  defnHead <- freezeList x
+  defineBuiltinFrozen defnHead xs
+
+  where
+    defineBuiltinFrozen :: FrozenList -> [Val] -> EM Val
+    defineBuiltinFrozen (FNotList (Symbol var)) [form] = do
+      setVarForCapture var
+      val <- evalBody form
+      let renamed = case val of
+            Closure{} -> val { name = Just var }
+            _ -> val
+      defineVar var renamed
+    defineBuiltinFrozen (FNotList (Symbol var)) badForms =
+      throwError $ NumArgs (Exactly 2) (Symbol var : badForms)
+    
+    defineBuiltinFrozen (FList (Symbol name : params)) body = case body of
+      [] -> throwError emptyBodyError
+      _  -> makeFuncNormal params body (Just name) >>= defineVar name
+    
+    defineBuiltinFrozen (FDottedList (Symbol name : params) varargs) body = 
+      case body of
         [] -> throwError emptyBodyError
         _  -> makeFuncVarargs varargs params body (Just name) >>= defineVar name
-    (List (notAtom : _) :_) -> throwError $ TypeMismatch "symbol" notAtom
-    (DottedList (notAtom : _) _ : _) -> throwError $ TypeMismatch "symbol" notAtom
-    (notAtomOrList : _) -> throwError $ TypeMismatch "symbol or list" notAtomOrList
-    badArgs -> throwError $ NumArgs 2 badArgs
+    
+    defineBuiltinFrozen (FList (notAtom : _)) _ = 
+      throwError $ TypeMismatch "symbol" notAtom
+    
+    defineBuiltinFrozen (FDottedList (notAtom : _) _) _ =
+      throwError $ TypeMismatch "symbol" notAtom
+    
+    defineBuiltinFrozen _notAtomOrList _ = 
+      throwError $ TypeMismatch "symbol or list" x
 
-lambda :: Macro
-lambda = Macro 1 mkLambda
+-- arities are AtLeast 1 so that we can throw a nicer error than just
+-- "expects at least 2 arguments" in the case of defining a function.
+-- 'define's builtin throws the regular Exactly 2 error if it isn't defining
+-- a function.
+define, lambda :: Macro
+define = Macro (AtLeast 1) $ const defineBuiltin
+lambda = Macro (AtLeast 1) $ const mkLambda
 
-mkLambda :: [LispVal] -> EM LispVal
-mkLambda args = case args of
-    (List params : body) -> case body of
-        [] -> throwError emptyBodyError
-        _  -> makeFuncNormal params body Nothing
-    (DottedList params varargs : body) -> case body of
-        [] -> throwError emptyBodyError
-        _  -> makeFuncVarargs varargs params body Nothing
-    (varargs@(Atom _) : body) -> case body of
-        [] -> throwError emptyBodyError
-        _  -> makeFuncVarargs varargs [] body Nothing
-    (notAtomOrList : _) -> throwError $ TypeMismatch "symbol or list" notAtomOrList
-    badArgs -> throwError $ NumArgs 2 badArgs
+mkLambda :: [Val] -> EM Val
+-- arity is AtLeast 1 so can't be called with no args
+mkLambda (formals : body) = do 
+  frozenFormals <- freezeList formals
+  case frozenFormals of
+    FList params -> case body of
+      [] -> throwError emptyBodyError
+      _  -> makeFuncNormal params body Nothing
+    FDottedList params varargs -> case body of
+      [] -> throwError emptyBodyError
+      _  -> makeFuncVarargs varargs params body Nothing
+    FNotList varargs@(Symbol _) -> case body of
+      [] -> throwError emptyBodyError
+      _  -> makeFuncVarargs varargs [] body Nothing
+    _notAtomOrList -> throwError $ TypeMismatch "symbol or list" formals
 
 emptyBodyError :: LispErr
-emptyBodyError = Default "Attempt to define function with no body"
+emptyBodyError = EmptyBody -- historical artifact, feel free to inline
 
 makeFunc :: Maybe String
-         -> [LispVal]
-         -> [LispVal]
+         -> [Val]
+         -> [Val]
          -> Maybe String
-         -> EM LispVal
+         -> EM Val
 makeFunc varargs params body name = do
     maybe (pure ()) setVarForCapture name
     env <- envSnapshot
-    return $ Func (map show params) varargs body env name
+    return $ Closure (map show params) varargs body env name
 
-makeFuncNormal :: [LispVal] -> [LispVal] -> Maybe String -> EM LispVal
+makeFuncNormal :: [Val] -> [Val] -> Maybe String -> EM Val
 makeFuncNormal = makeFunc Nothing
-makeFuncVarargs :: LispVal -> [LispVal] -> [LispVal] -> Maybe String -> EM LispVal
+makeFuncVarargs :: Val -> [Val] -> [Val] -> Maybe String -> EM Val
 makeFuncVarargs = makeFunc . Just . show
 
 defmacro :: Macro
-defmacro = Macro 3 $ \case
-    (Atom name : ps : body) -> do
-        lam <- mkLambda (ps : body)
-        let macro = DottedList [Atom "macro"] lam
-        defineVar name macro
+defmacro = Macro (AtLeast 2) $ const $
+  \(Symbol name : ps : body) -> do
+    lam <- mkLambda (ps : body)
+    macro <- makeImproperMutableList [Symbol "macro"] lam
+    defineVar name macro
 
 begin :: Macro
-begin = Macro 1 $ \case
-    []    -> throwError $ Default "Expected at least 1 arg; found []"
-    stmts -> withNewScope $ last <$> mapM eval stmts
+begin = Macro (AtLeast 1) $ \tail stmts -> evalSeq tail stmts
 
 evalPrim :: Primitive
-evalPrim = Prim 1 $ \case
-    [form]  -> eval form
-    badArgs -> throwError $ NumArgs 1 badArgs
+evalPrim = Prim "eval" (Exactly 1) $ \[form] -> evalTail form
 
+-- TODO: [r7rs]
 applyFunc :: Primitive
-applyFunc = Prim 1 $ \case
-    [func, List args] -> apply func args
-    (func : args) -> apply func args
-    [] -> throwError $ Default "Expected at least 1 arg; found []"
+applyFunc = Prim "apply" (AtLeast 1) $ \case
+  [func, form] -> do
+    frozenForm <- freezeList form
+    case frozenForm of
+      FList args -> tailCall func args
+      _bad -> throwError $ TypeMismatch "list" form
+  (func : args) -> tailCall func args
 
 loadPrim :: Primitive
-loadPrim = Prim 1 $ \case
-    [String filename] -> do
-        file <- liftIO . runExceptT $ load filename
-        case file of
+loadPrim = Prim "load" (Exactly 1) $ \case
+  [val] | stringSH val -> do
+          filename <- unwrapStringPH val
+          file <- liftIO . runExceptT $ load filename
+          case file of
             Left e   -> throwError e
-            Right ls -> last <$> mapM eval ls
-    [notString] -> throwError $ TypeMismatch "string" notString
-    badArgs     -> throwError $ NumArgs 1 badArgs
+            Right ls -> do
+              state <- get
+              -- put (interaction-environment)
+              put $ ES (globalEnv state) [] (options state)
+              r <- evalBodySeq ls
+              put state
+              return r
+        | otherwise -> throwError $ TypeMismatch "string" val
 
 quasiquote :: Macro
-quasiquote = Macro 1 $ \case
-    [form]  -> evalStateT (qq form) 0
-    badArgs -> throwError $ NumArgs 1 badArgs
+quasiquote = Macro (Exactly 1) $ \_ [form]-> runReaderT (qq form) 0
+  where 
+    qq :: Val -> ReaderT Int EM Val
+    qq term = lift (freezeList term) >>= \case
+      FList [Symbol "quasiquote", form] -> local (+ 1) $ do
+        inner <- qq form
+        lift $ makeMutableList [Symbol "quasiquote", inner]
+      FList [Symbol "unquote", form] -> do
+        depth <- ask
+        if depth == 0
+        then lift $ evalBody form
+        else local (subtract 1) $ do
+          inner <- qq form
+          lift $ makeMutableList [Symbol "unquote", inner]
+      FList forms
+          -- this can happen because the parser is smart enough to rewrite
+          -- `(0 . ,lst) as IList [Number 0, Symbol unquote, Symbol lst]
+          -- however whenever this happens, ',lst' will definitely be of size 2
+        | Symbol "unquote" `elem` forms
+        , (list, dot) <- break (== Symbol "unquote") forms
+        , [_,_] <- dot
+        -> do lift (makeMutableList dot) >>= qqImproper list
+        | otherwise
+        -> qqTerms forms >>= lift . makeMutableList
+      FDottedList forms form -> qqImproper forms form
+      _other -> return term
 
-  where qq :: LispVal -> StateT Int EM LispVal
-        qq (List [Atom "quasiquote", form]) = modify (+ 1) >> do
-            inner <- qq form
-            return $ List [Atom "quasiquote", inner]
-        qq (List [Atom "unquote", form]) = do
-            depth <- get
-            if depth == 0
-            then lift $ eval form
-            else do
-                modify (\s -> s - 1)
-                inner <- qq form
-                return $ List [Atom "unquote", inner]
-        qq (List forms)
-              -- this can happen because the parser is smart enough to rewrite
-              -- `(0 . ,lst) as List [Number 0, Atom unquote, Atom lst]
-              -- however whenever this happens, ',lst' will definitely be of size 2
-            | Atom "unquote" `elem` forms
-            , (list, dot) <- break (== Atom "unquote") forms
-            , [_,_] <- dot
-            = fmap canonicalizeList $ DottedList <$> qqTerms list <*> qq (List dot)
-            | otherwise = List <$> qqTerms forms
-        qq (DottedList forms form) =
-            fmap canonicalizeList $ DottedList <$> qqTerms forms <*> qq form
-        qq form  = return form
+    qqTerms :: [Val] -> ReaderT Int EM [Val]
+    qqTerms [] = return []
+    qqTerms (t:ts) = do
+      frozenT <- lift $ freezeList t
+      terms <- case frozenT of
+        FList [Symbol "unquote-splicing", form] -> do
+          depth <- ask
+          val <- if depth == 0
+                 then lift $ evalBody form
+                 else local (subtract 1) $ qq form
+          lift $ getListOrError val
+        _ -> (:[]) <$> qq t
+      (terms ++) <$> qqTerms ts
+    
+    qqImproper :: [Val] -> Val -> ReaderT Int EM Val
+    qqImproper prop improp = do
+      qqprop <- qqTerms prop
+      qqimprop <- qq improp
+      lift $ makeImproperMutableList qqprop qqimprop
 
-        qqTerms :: [LispVal] -> StateT Int EM [LispVal]
-        qqTerms [] = return []
-        qqTerms (t:ts) = do
-            lift $ pushExpr Expand t
-            terms <- case t of
-                List [Atom "unquote-splicing", form] -> do
-                    depth <- get
-                    val <- if depth == 0
-                           then lift $ eval form
-                           else modify (\s -> s - 1) >> qq form
-                    case val of
-                        List vs -> return vs
-                        _ -> throwError $ TypeMismatch "list" val
-                _ -> (:[]) <$> qq t
-            lift popExpr
-            (terms ++) <$> qqTerms ts
+quit :: Primitive
+quit = Prim "quit" (Exactly 0) $ \_ -> throwError Quit
 
 errorFunc :: Primitive
-errorFunc = Prim 1 $ \case
-    [String s] -> throwError $ Default s
-    [notStr]   -> throwError . Default $ show notStr
-    badArgs    -> throwError $ NumArgs 1 badArgs
+errorFunc = Prim "error" (Exactly 1) $ \case
+  [val] 
+    | stringSH val -> unwrapStringPH val >>= throwError . Default
+    | otherwise -> liftIO (writeSharedSH val) >>= throwError . Default

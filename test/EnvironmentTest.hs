@@ -2,24 +2,23 @@ module EnvironmentTest (environmentTests) where
 
 import Test.Tasty
 import Test.Tasty.HUnit
-import Test.Tasty.QuickCheck as QC
 
-import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.IORef
 import Data.Either
 import Control.Monad.Trans.Except (runExceptT)
-import Control.Monad.Trans (lift)
 
-import LispValTest
+import LispValTest ()
+import EvaluationTest ((?=))
 
-import Types
+import Val
 import Bootstrap
 import Environment
 
 environmentTests :: TestTree
 environmentTests = testGroup "Environment" [unitTests]
 
+unitTests :: TestTree
 unitTests = testGroup "Unit Tests"
     [ testIsBound
     , testGetVar
@@ -27,6 +26,7 @@ unitTests = testGroup "Unit Tests"
     , testDefineVar
     ]
 
+testIsBound :: TestTree
 testIsBound = testGroup "isBound"
     [ testCase "Var is bound" $ do
         primEnv <- primitiveBindings
@@ -36,6 +36,7 @@ testIsBound = testGroup "isBound"
         not <$> isBound primEnv "dumbname" @? "'dumbname' is bound"
     ]
 
+testGetVar :: TestTree
 testGetVar = testGroup "getVar"
     [ testCase "Get +" $ do
         primEnv <- primitiveBindings
@@ -48,15 +49,16 @@ testGetVar = testGroup "getVar"
         getRes <- runExceptT $ getVar primEnv "dne"
         isLeft getRes @? "Found 'dne' in primEnv"
         let Left e = getRes
-        e @?= UnboundVar "[Get] unbound symbol" "dne"
+        e @?= UnboundVar "[Get]" "dne"
     , testCase "Get from null env" $ do
         nullEnv <- nullEnv
         getRes <- runExceptT $ getVar nullEnv "fail"
         isLeft getRes @? "Found 'fail' in nullEnv"
         let Left f = getRes
-        f @?= UnboundVar "[Get] unbound symbol" "fail"
+        f @?= UnboundVar "[Get]" "fail"
     ]
 
+testSetVar :: TestTree
 testSetVar = testGroup "setVar"
     [ testCase "Set +" $ do
         primEnv <- primitiveBindings
@@ -73,15 +75,16 @@ testSetVar = testGroup "setVar"
         getRes <- runExceptT $ setVar primEnv "x" $ Char 'a'
         isLeft getRes @? "Succeeded setting x in primEnv"
         let Left e = getRes
-        e @?= UnboundVar "[Set] unbound symbol" "x"
+        e @?= UnboundVar "[Set]" "x"
     , testCase "Set x in nullEnv" $ do
         nullEnv <- nullEnv
-        res <- runExceptT $ setVar nullEnv "x" $ String "test"
+        res <- runExceptT $ setVar nullEnv "x" $ IString "test"
         isLeft res @? "Succeeded setting x in nullEnv"
         let Left e = res
-        e @?= UnboundVar "[Set] unbound symbol" "x"
+        e @?= UnboundVar "[Set]" "x"
     ]
 
+testDefineVar :: TestTree
 testDefineVar = testGroup "defineVar"
     [ testCase "Define x 5" $ do
         primEnv <- primitiveBindings
@@ -105,6 +108,7 @@ testDefineVar = testGroup "defineVar"
         v @?= Char '+'
     ]
 
+testBindVar :: TestTree
 testBindVar = testGroup "bindVar"
     [ testCaseSteps "bindVar in nullEnv" $ \step -> do
         step "Bind x to 5"
@@ -126,7 +130,7 @@ testBindVar = testGroup "bindVar"
         oldSize <- do
             map <- readIORef env
             return $ Map.size map
-        env <- bindVar env "list" $ List [Number 1, Number 2]
+        env <- bindVar env "list" $ makeImmutableList [Number 1, Number 2]
 
         step "Check env size"
         map <- readIORef env
@@ -135,6 +139,5 @@ testBindVar = testGroup "bindVar"
         step "Verify binding"
         check <- runExceptT $ getVar env "list"
         isRight check @? "Failed to get list after bind"
-        let Right v = check
-        v @?= List [Number 1, Number 2]
+        check ?= Right (makeImmutableList [Number 1, Number 2])
     ]

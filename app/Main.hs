@@ -1,14 +1,12 @@
 module Main (main) where
 
 import System.Environment
-import Control.Monad.Except
-import qualified Data.HashMap.Strict as Map (empty)
 
-import Types
-import Parsers (readExpr)
-import Evaluation (evaluateExpr)
-import Environment (Env, bindVar)
+import Val
+import Evaluation (evaluateExpr, showResultIO)
+import Environment (bindVar)
 import Bootstrap (primitiveBindings)
+import Options (noOpts)
 import Repl
 
 main :: IO ()
@@ -21,8 +19,10 @@ main = do
 runOne :: [String] -> IO ()
 runOne (filename : args) = do
     primEnv <- primitiveBindings
-    env' <- bindVar primEnv "args" $ List . map String $ args
-    result <- evaluateExpr env' Map.empty (List [Atom "load", String filename])
+    env' <- bindVar primEnv "args" $ makeImmutableList $ map IString $ args
+    result <- evaluateExpr env' noOpts $
+        makeImmutableList [Symbol "load", IString filename]
     case result of
-        (Left err, s) -> print err >> print s
+        (Left{},_) -> 
+            showResultIO result >>= putStrLn
         _             -> return ()

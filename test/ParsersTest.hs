@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternSynonyms, ViewPatterns #-}
 module ParsersTest (parsersTests) where
 
 import Test.Tasty
@@ -7,12 +8,21 @@ import Test.Tasty.QuickCheck
 import Text.ParserCombinators.Parsec
 import Data.Maybe
 import Data.Either
-import Data.Array
+import qualified Data.Vector as V
+
+import Control.Arrow (first)
 
 import Parsers
 import Parsers.Internal
-import Types
-import LispValTest
+import Val
+import LispValTest ()
+import EvaluationTest ((?=))
+
+pattern IList xs <- (fromList -> Just xs)
+  where IList xs = makeImmutableList xs
+
+pattern IDottedList xs x <- (fromDList -> Just (xs, x))
+  where IDottedList xs x = makeImproperImmutableList xs x
 
 parsersTests :: TestTree
 parsersTests = testGroup "Parser tests" [unitTests, propTests]
@@ -64,14 +74,14 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         , expectedContents = Just $ Char 'f'
         }
     , mkE2Etest
-        { testName = "Atom that looks like a Char"
+        { testName = "Symbol that looks like a Char"
         , input = "#\\ff"
-        , expectedContents = Just $ Atom "#\\ff"
+        , expectedContents = Just $ Symbol "#\\ff"
         }
     , mkE2Etest
-        { testName = "Regular Atom"
+        { testName = "Regular Symbol"
         , input = "symbol"
-        , expectedContents = Just $ Atom "symbol"
+        , expectedContents = Just $ Symbol "symbol"
         }
     , mkE2Etest
         { testName = "#t"
@@ -86,97 +96,97 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
     , mkE2Etest
         { testName = "Simple string"
         , input = "\"string\""
-        , expectedContents = Just $ String "string"
+        , expectedContents = Just $ IString "string"
         }
     , mkE2Etest
         { testName = "Quoted atom"
         , input = "'$name"
-        , expectedContents = Just $ List [Atom "quote", Atom "$name"]
+        , expectedContents = Just $ IList [Symbol "quote", Symbol "$name"]
         }
     , mkE2Etest
         { testName = "Quoted char"
         , input = "'#\\*"
-        , expectedContents = Just $ List [Atom "quote", Char '*']
+        , expectedContents = Just $ IList [Symbol "quote", Char '*']
         }
     , mkE2Etest
         { testName = "Immediately nested quote forms"
         , input = "`,4"
-        , expectedContents = Just $ List [Atom "quasiquote", List
-                                         [Atom "unquote", Number 4]]
+        , expectedContents = Just $ IList [Symbol "quasiquote", IList
+                                          [Symbol "unquote", Number 4]]
         }
     , mkE2Etest
         { testName = "Quasiquoted mess"
         , input = "`(,(foo) ,@(bar) x 1)"
         , expectedContents = Just $
-            List [Atom "quasiquote", List
-                 [ List [Atom "unquote", List [Atom "foo"]]
-                 , List [Atom "unquote-splicing", List [Atom "bar"]]
-                 , Atom "x"
-                 , Number 1
-                 ]]
+            IList [Symbol "quasiquote", IList
+                  [ IList [Symbol "unquote", IList [Symbol "foo"]]
+                  , IList [Symbol "unquote-splicing", IList [Symbol "bar"]]
+                  , Symbol "x"
+                  , Number 1
+                  ]]
         }
     , mkE2Etest
-        { testName = "Nested list"
+        { testName = "Nested List"
         , input = "(f \"x\" #\\5 (+ 3))"
         , expectedContents = Just $
-            List [Atom "f", String "x", Char '5', List
-                [Atom "+", Number 3]
+            IList [Symbol "f", IString "x", Char '5', IList
+                  [Symbol "+", Number 3]
             ]
         }
     , mkE2Etest
         { testName = "List with []"
         , input = "[+ 1 2]"
         , expectedContents = Just $
-            List [Atom "+", Number 1, Number 2]
+            IList [Symbol "+", Number 1, Number 2]
         }
     , mkE2Etest
         { testName = "List with {}"
         , input = "{test-func #\\a 0}"
         , expectedContents = Just $
-            List [Atom "test-func", Char 'a', Number 0]
+            IList [Symbol "test-func", Char 'a', Number 0]
         }
     , mkE2Etest
-        { testName = "Regular dotted list"
+        { testName = "Regular dotted List"
         , input = "(f 5 #\\$ . (1 2 \"test\"))"
         , expectedContents = Just $
-            List [Atom "f", Number 5, Char '$'
-                 , Number 1, Number 2, String "test"]
+            IList [Symbol "f", Number 5, Char '$'
+                  , Number 1, Number 2, IString "test"]
         }
     , mkE2Etest
         { testName = "Dotted with nil"
         , input = "(+ 0 . ())"
-        , expectedContents = Just $ List [Atom "+", Number 0]
+        , expectedContents = Just $ IList [Symbol "+", Number 0]
         }
     , mkE2Etest
-        { testName = "Irregular dotted list"
+        { testName = "Irregular dotted List"
         , input = "(f 0 . m)"
-        , expectedContents = Just $ DottedList [Atom "f", Number 0] (Atom "m")
+        , expectedContents = Just $ IDottedList [Symbol "f", Number 0] (Symbol "m")
         }
     , mkE2Etest
-        { testName = "Degenerate dotted list"
+        { testName = "Degenerate dotted List"
         , input = "(. xs)"
-        , expectedContents = Just $ Atom "xs"
+        , expectedContents = Just $ Symbol "xs"
         }
     , mkE2Etest
         { testName = "Empty vector"
         , input = "#()"
-        , expectedContents = Just $ Vector (listArray (0, -1) [])
+        , expectedContents = Just $ IVector V.empty
         }
     , mkE2Etest
         { testName = "regular vector"
         , input = "#(\"test\" 0 atom)"
-        , expectedContents = Just $ Vector (listArray (0, 2)
-            [String "test", Number 0, Atom "atom"])
+        , expectedContents = Just $ IVector $ V.fromList
+            [IString "test", Number 0, Symbol "atom"]
         }
     , mkE2Etest
         { testName = "Irregular spacing"
         , input = "(f 5 #\\$(1 2 #h45) #b10(test))"
         , expectedContents = Just $
-            List
-                [Atom "f", Number 5, Char '$', List
+            IList
+                [Symbol "f", Number 5, Char '$', IList
                     [Number 1, Number 2, Number 69]
-                , Number 2, List
-                    [Atom "test"]
+                , Number 2, IList
+                    [Symbol "test"]
                 ]
         }
     , mkE2Etest
@@ -205,10 +215,10 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         }
     ]
 
-mkE2Etest :: TestBuilder LispVal
+mkE2Etest :: TestBuilder Val
 mkE2Etest = TB End2End "" "" Nothing
 
-testParseExpr :: TestBuilder LispVal -> TestTree
+testParseExpr :: TestBuilder Val -> TestTree
 testParseExpr testBuilder =
     testCaseSteps (testName testBuilder) $ \step -> do
         step "Parsing"
@@ -223,7 +233,9 @@ testParseExpr testBuilder =
             let val = fromRight undefined parse
 
             step "Verifying parse"
-            val @?= fromJust (expectedContents testBuilder)
+            -- TODO: we should also verify that the result is
+            -- appropriately mutable/immutable.
+            Right val ?= Right (fromJust $ expectedContents testBuilder)
         else do
             step "Verifying failure"
             isLeft parse @? "Parse succeeded on: " ++ pInput
@@ -275,44 +287,44 @@ stringParserTests = testGroup "Parsing Strings" $ map testStringParser
     ]
 
 atomParserTests :: TestTree
-atomParserTests = testGroup "Parsing Atoms" $ map testAtomParser
-    [ let symbol = "atom" in mkAtomTest
+atomParserTests = testGroup "Parsing Symbols" $ map testSymbolParser
+    [ let symbol = "atom" in mkSymbolTest
         { testName = "Simple atom"
         , input = symbol
         , expectedContents = Just symbol
         }
-    , let symbol = "#name" in mkAtomTest
-        { testName = "Atom with #"
+    , let symbol = "#name" in mkSymbolTest
+        { testName = "Symbol with #"
         , input = symbol
         , expectedContents = Just symbol
         }
-    , let symbol = "!@#$%&*-_=+|:\\/?<>~" in mkAtomTest
-        { testName = "Atom with all symbols"
+    , let symbol = "!@#$%&*-_=+|:\\/?<>~" in mkSymbolTest
+        { testName = "Symbol with all symbols"
         , input = symbol
         , expectedContents = Just symbol
         }
-    , let symbol = "t1" in mkAtomTest
-        { testName = "Atom with digit"
+    , let symbol = "t1" in mkSymbolTest
+        { testName = "Symbol with digit"
         , input = symbol
         , expectedContents = Just symbol
         }
-    , mkAtomTest
-        { testName = "Atom starts with digit"
+    , mkSymbolTest
+        { testName = "Symbol starts with digit"
         , input = "5a"
         }
-    , mkAtomTest
-        { testName = "Atom with brackets"
+    , mkSymbolTest
+        { testName = "Symbol with brackets"
         , input = "na[]me"
         }
-    , mkAtomTest
-        { testName = "Atom with braces"
+    , mkSymbolTest
+        { testName = "Symbol with braces"
         , input = "na{}me"
         }
-    , mkAtomTest
-        { testName = "Atom with invalid symbols"
-        , input = "AlmostValidAtom`name"
+    , mkSymbolTest
+        { testName = "Symbol with invalid symbols"
+        , input = "AlmostValidSymbol`name"
         }
-    , let symbol = "Complex#Valid15Atom\\Name8?" in mkAtomTest
+    , let symbol = "Complex#Valid15Symbol\\Name8?" in mkSymbolTest
         { testName = "Complex valid atom"
         , input = symbol
         , expectedContents = Just symbol
@@ -477,48 +489,50 @@ charParserTests = testGroup "Parsing Chars" $ map testCharParser
         }
     ]
 
+listParserTests :: TestTree
 listParserTests = testGroup "Parsing Lists"
     [ testCase "\"5 #a #\\a\"" $ do
         let p = parse parseList "" "5 #a #\\a"
         isRight p @? "Parse failed."
         let val = fromList $ fromRight undefined p
-        isJust val @? "Parse did not return a List."
+        isJust val @? "Parse did not return a list."
         let correct = case fromJust val of
-                [Number 5, Atom "#a", Char 'a'] -> True
+                [Number 5, Symbol "#a", Char 'a'] -> True
                 _ -> False
         correct @? "Contents of the list are wrong: " ++ show (fromJust val)
     ]
 
+dotListParserTests :: TestTree
 dotListParserTests = testGroup "Parsing Dotted Lists"
     [ testCase "\"5 #a . #\\a\"" $ do
         let p = parse parseDottedList "" "5 #a . #\\a"
         isRight p @? "Parse failed."
-        let val = case fromRight undefined p of
-                DottedList ls l -> Just (ls, l)
-                _ -> Nothing
-        isJust val @? "Parse did not return a Dotted List."
-        let correct = case fromJust val of
-                ([Number 5, Atom "#a"], Char 'a') -> True
-                _ -> False
-        correct @? "Contents of the dotted list are wrong: " ++ show (fromJust val)
+        let Right val = p
+            mpair = fromDList val
+        isJust mpair @? "Parse did not return a dotted list."
+        let correct = case fromJust mpair of
+              ([Number 5, Symbol "#a"], Char 'a') -> True
+              _ -> False
+        correct @? "Contents of the dotted list are wrong: " ++ show val
     ]
 
+vectorParserTests :: TestTree
 vectorParserTests = testGroup "Parsing vectors"
     [ testCase "\"#(1 #\\x ())\"" $ do
         let p = run parseVector "#(1 #\\x ())"
         val <- verify p
-        fromJust val @?= listArray (0, 2) [Number 1, Char 'x', List []]
+        fromJust val @?= V.fromList [Number 1, Char 'x', Nil]
     , testCase "\"#()\"" $ do
         let p = run parseVector "#()"
         val <- verify p
-        fromJust val @?= listArray (0, -1) []
+        fromJust val @?= V.empty
     ]
   where verify p = do
             isRight p @? "Parse failed."
             let val = case fromRight undefined p of
-                    Vector arr -> Just arr
+                    IVector v -> Just v
                     _ -> Nothing
-            isJust val @? "Parse did not return a Vector."
+            isJust val @? "Parse did not return an IVector."
             return val
 
 -- PROPERTY TESTS
@@ -529,33 +543,33 @@ prop_CorrectSymbols = testProperty "Recognize correct set of symbols" $
 
 prop_QuoteParser = testProperty "tick always results in quote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" ('\'' : show (input :: LispVal))
+        let result = parse parseQuoted "" ('\'' : show (input :: Val))
         in isRight result ==> case result of
-            Right (List (Atom "quote" : _)) -> True
+            Right (IPair (Symbol "quote") _) -> True
             _ -> False
 
 prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" ('`' : show (input :: LispVal))
+        let result = parse parseQuoted "" ('`' : show (input :: Val))
         in isRight result ==> case result of
-            Right (List (Atom "quasiquote" : _)) -> True
+            Right (IPair (Symbol "quasiquote") _)  -> True
             _ -> False
 
 prop_UnquoteParser = testProperty "comma always results in unquote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" (',' : clean (show (input :: LispVal)))
+        let result = parse parseQuoted "" (',' : clean (show (input :: Val)))
         in isRight result ==> case result of
-            Right (List (Atom "unquote" : _)) -> True
+            Right (IPair (Symbol "unquote") _)  -> True
             _ -> False
-  -- if we don't do this, a LispString/Atom that starts with '@' will turn it into
+  -- if we don't do this, a LispString/Symbol that starts with '@' will turn it into
   -- an unquote splicing, which happened in a test at least once.
   where clean = dropWhile (== '@')
 
 prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-splicing" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" (",@" ++ show (input :: LispVal))
+        let result = parse parseQuoted "" (",@" ++ show (input :: Val))
         in isRight result ==> case result of
-            Right (List (Atom "unquote-splicing" : _)) -> True
+            Right (IPair (Symbol "unquote-splicing") _)  -> True
             _ -> False
 
 -- HELPER
@@ -568,8 +582,8 @@ parseSucceeds p s = isRight $ parse p "" s
 testStringParser :: TestBuilder String -> TestTree
 testStringParser tb = testParser tb fromString
 
-testAtomParser :: TestBuilder String -> TestTree
-testAtomParser tb = testParser tb fromAtom
+testSymbolParser :: TestBuilder String -> TestTree
+testSymbolParser tb = testParser tb fromSymbol
 
 testNumberParser :: TestBuilder Integer -> TestTree
 testNumberParser tb = testParser tb fromNumber
@@ -577,10 +591,10 @@ testNumberParser tb = testParser tb fromNumber
 testCharParser :: TestBuilder Char -> TestTree
 testCharParser tb = testParser tb fromChar
 
-data TestType = TString | TAtom | TNumber | TChar | End2End
+data TestType = TString | TSymbol | TNumber | TChar | End2End
 instance Show TestType where
     show TString = "String"
-    show TAtom   = "Atom"
+    show TSymbol = "Symbol"
     show TNumber = "Number"
     show TChar   = "Char"
     show End2End = "End to End"
@@ -591,20 +605,20 @@ data TestBuilder a = TB { testType :: TestType
                         , expectedContents :: Maybe a
                         }
 
-mkStringTest, mkAtomTest, mkNumTest, mkCharTest :: TestBuilder a
+mkStringTest, mkSymbolTest, mkNumTest, mkCharTest :: TestBuilder a
 mkStringTest = TB TString "String Parser Test" "" Nothing
-mkAtomTest = TB TAtom "Atom Parser Test" "" Nothing
+mkSymbolTest = TB TSymbol "Symbol Parser Test" "" Nothing
 mkNumTest = TB TNumber "Number Parser Test" "" Nothing
 mkCharTest = TB TChar "Char Parser Test" "" Nothing
 
 testParser :: (Eq a, Show a)
            => TestBuilder a
-           -> (LispVal -> Maybe a)
+           -> (Val -> Maybe a)
            -> TestTree
 testParser testBuilder decons = let
     parser = case testType testBuilder of
         TString -> parseString
-        TAtom   -> parseAtom
+        TSymbol   -> parseSymbol
         TNumber -> parseNumber
         TChar   -> parseChar
 
@@ -629,22 +643,30 @@ testParser testBuilder decons = let
             step "Verifying failure"
             isLeft parse @? "Parse succeeded on: " ++ input testBuilder
 
-fromString :: LispVal -> Maybe String
-fromString (String s) = Just s
+fromString :: Val -> Maybe String
+fromString (IString s) = Just s
 fromString _          = Nothing
 
-fromAtom :: LispVal -> Maybe String
-fromAtom (Atom s) = Just s
-fromAtom _        = Nothing
+fromSymbol :: Val -> Maybe String
+fromSymbol (Symbol s) = Just s
+fromSymbol _        = Nothing
 
-fromNumber :: LispVal -> Maybe Integer
+fromNumber :: Val -> Maybe Integer
 fromNumber (Number n) = Just n
 fromNumber _          = Nothing
 
-fromChar :: LispVal -> Maybe Char
+fromChar :: Val -> Maybe Char
 fromChar (Char c) = Just c
 fromChar _        = Nothing
 
-fromList :: LispVal -> Maybe [LispVal]
-fromList (List ls) = Just ls
-fromList _            = Nothing
+fromList :: Val -> Maybe [Val]
+fromList (IPair c d) =
+    (c:) <$> fromList d
+fromList Nil = Just []
+fromList _ = Nothing
+
+fromDList :: Val -> Maybe ([Val], Val)
+fromDList (IPair c d) =
+    first (c:) <$> fromDList d
+fromDList Nil = Nothing -- not dotted
+fromDList obj = Just ([], obj)

@@ -3,19 +3,16 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 module Repl where
 
-import System.IO
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.Char (isSpace)
 import Data.Function ((&))
 import Data.List (isPrefixOf, sort)
-import Data.Maybe (fromMaybe)
-import qualified Data.HashMap.Strict as Map
 
 import qualified System.Console.Haskeline as CLI
 
-import Types
-import Parsers
+import Val
+import EvaluationMonad (EvalState (..), Env, Opts, noOpts)
 import Evaluation
 import Bootstrap
 import qualified Environment as Env (keys)
@@ -34,13 +31,15 @@ repl = do
     replLoop
       & runRepl
       & CLI.runInputT settings
-      & flip evalStateT (RS env Map.empty)
+      & flip evalStateT (RS env noOpts)
 
 replLoop :: Repl ()
 replLoop = until_
-    (isTerminationError . fst)
+    (stop . fst)
     (getInput >>= replEval)
-    (Repl . CLI.outputStrLn . showResult)
+    (Repl . (CLI.outputStrLn <=< liftIO . showResultIO))
+  where stop Right{}  = False
+        stop (Left e) = isTerminationError e
 
 getInputLine :: String -> Repl (Maybe String)
 getInputLine = Repl . CLI.getInputLine
@@ -63,28 +62,31 @@ getInput = runMaybeT $ go id 0
       where prompt = case balance of
        -- balance is only 0 on the first input, otherwise we
        -- would've returned the input after the last round.
+       -- If the user enters only whitespace and hits enter,
+       -- we loop around and should get 0 again.
               0 -> ">>> "
               _ -> "... "
 
-replEval :: Maybe String -> Repl (Either LispErr LispVal, EvalState)
+replEval :: Maybe String -> Repl (Either LispErr Val, EvalState)
 replEval Nothing = pure (Left Quit, error "state forced after CTRL-D, report a bug")
 replEval (Just inp) = Repl $
     CLI.handleInterrupt (pure interrupted) $ 
     CLI.withInterrupt $ 
     runRepl (evaluateTotalInput inp)
   where
-    interrupted = ( Right (Atom "Interrupted.")
+    interrupted = ( Right (Symbol "Interrupted.")
                   , error "state forced after interrupt, report a bug"
                   )
 
-evaluateTotalInput :: String -> Repl (Either LispErr LispVal, EvalState)
+evaluateTotalInput :: String -> Repl (Either LispErr Val, EvalState)
 evaluateTotalInput input = do
     replState <- get
     let cEnv = env replState
         cOpts = replOpts replState
     result@(_, evalState) <- liftIO (evaluate "<interactive>" cEnv cOpts input)
     -- since Env = IORef (HashMap...), executing the 'evaluate' action has already
-    -- updated everything in the env in the replState!
+    -- updated everything in the env in the replState! The 'EvalState' is returned
+    -- so that we can print the stack.
     put $ replState { replOpts = options evalState }
     return result
 

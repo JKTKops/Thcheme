@@ -4,7 +4,7 @@ import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import           Control.Monad.Except (liftEither)
 
-import           Types
+import qualified Val
 import qualified Primitives.Bool             as BoolOps
 import qualified Primitives.Char             as CharOps
 import qualified Primitives.Comparison       as Comparison
@@ -17,56 +17,36 @@ import qualified Primitives.TypeTransformers as TypeCast
 import qualified Primitives.Vector           as Vector
 import qualified Primitives.IOPrimitives     as IO
 
-primitives :: HashMap String LispVal
+-- temporary
+import Types
+
+primitives :: HashMap String Val
 primitives = foldr1 Map.union
-                [ Map.mapWithKey makeRPrimitive rawPrimitives
-                , Map.mapWithKey makeIPrimitive ioPrimitives
-                , Map.mapWithKey makeEPrimitive ePrimitives
+                [ primitivesMap
                 , Map.mapWithKey makeMacroPrimitive macros
                 ]
+  where
+    primitivesList = concat
+      [ Math.primitives
+      , BoolOps.primitives
+      , CharOps.primitives
+      , Comparison.primitives
+      , List.primitives
+      , String.primitives
+      , Vector.primitives
+      , TypeCheck.primitives
+      , TypeCast.primitives
+      , Misc.primitives
+      , IO.primitives
+      ]
 
-rawPrimitives :: HashMap String RawPrimitive
-rawPrimitives = Map.fromList $ Math.rawPrimitives ++
-                            List.rawPrimitives ++
-                            Vector.rawPrimitives ++
-                            String.rawPrimitives ++
-                            BoolOps.rawPrimitives ++
-                            CharOps.rawPrimitives ++
-                            Comparison.rawPrimitives ++
-                            TypeCheck.rawPrimitives ++
-                            TypeCast.rawPrimitives ++
-                            Misc.rawPrimitives ++
-                            [("quit", quit)]
-
-ioPrimitives :: HashMap String IOPrimitive
-ioPrimitives = Map.fromList IO.ioPrimitives
-
-ePrimitives :: HashMap String Primitive
-ePrimitives = Map.fromList Misc.ePrimitives
+    primitivesMap = Map.fromList
+      [ (name, Val.makePrimitive prim)
+      | prim@(Prim name _ _) <- primitivesList
+      ]
 
 macros :: HashMap String Macro
-macros = Map.fromList $ String.macros ++
-                        Vector.macros ++
-                        List.macros ++
-                        Misc.macros
+macros = Map.fromList Misc.macros
 
-makePrimitive :: String -> Arity -> Builtin -> LispVal
-makePrimitive name arity f = Primitive arity f name
-
-makeRPrimitive :: String -> RawPrimitive -> LispVal
-makeRPrimitive name (RPrim arity func) =
-    makePrimitive name arity (liftEither . func)
-
-makeIPrimitive :: String -> IOPrimitive -> LispVal
-makeIPrimitive name (IPrim arity func) =
-    makePrimitive name arity (liftIOThrows . func)
-
-makeEPrimitive :: String -> Primitive -> LispVal
-makeEPrimitive name (Prim arity func) =
-    makePrimitive name arity func
-
-makeMacroPrimitive :: String -> Macro -> LispVal
-makeMacroPrimitive name (Macro arity func) = PMacro arity func name
-
-quit :: RawPrimitive
-quit = RPrim 0 $ \_ -> Left Quit
+makeMacroPrimitive :: String -> Macro -> Val
+makeMacroPrimitive name (Macro arity func) = PrimMacro arity func name

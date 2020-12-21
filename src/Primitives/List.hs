@@ -1,133 +1,78 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.List (rawPrimitives, macros) where
+module Primitives.List (primitives) where
 
-import Prelude hiding (sequence)
-import Control.Monad.Except (throwError, (>=>))
-import Control.Monad.Writer (Writer, writer, runWriter)
+import Control.Monad (replicateM)
 
-import Types
-import Evaluation (eval)
-import EvaluationMonad (updateWith)
+import Val
+import EvaluationMonad
 
-rawPrimitives :: [(String, RawPrimitive)]
-rawPrimitives = [ ("list", listOp)
-                , ("cons", cons)
-                , ("append", appendOp)
-                , ("null?", nullOp)
-                ] ++
-                [ (name, RPrim 1 func)
-                | (name, func) <- compositions [1..4] [("a", car), ("d", cdr)]
-                ]
+primitives :: [Primitive]
+primitives =
+  [ isListP
+  , consP
+  , listP
+  , appendP
+  , nullP
+  , setCarP
+  , setCdrP
+  ]
+  ++ cxrCompositions [1..4]
 
-macros :: [(String, Macro)]
-macros = [ ("set-car!", setCar)
-         , ("set-cdr!", setCdr)
-         ]
+isListP :: Primitive
+isListP = Prim "list?" (Exactly 1) $ \[x] -> Bool <$> isListSH x
 
-car :: RBuiltin
-car [List (x:xs)]        = return x
-car [DottedList(x:xs) _] = return x
-car [badArg]             = throwError $ TypeMismatch "pair" badArg
-car badArgs              = throwError $ NumArgs 1 badArgs
+consP :: Primitive
+consP = Prim "cons" (Exactly 2) $ \[x, y]  -> consSSS x y
 
-cdr :: RBuiltin
-cdr [List (x:xs)]         = return $ List xs
-cdr [DottedList [_] x]    = return x
-cdr [DottedList (_:xs) x] = return $ DottedList xs x
-cdr [badArg]              = throwError $ TypeMismatch "pair" badArg
-cdr badArgs               = throwError $ NumArgs 1 badArgs
+carB :: Builtin
+carB [pair@Pair{}]  = carPS pair
+carB [pair@IPair{}] = carPS pair
+carB [badArg] = throwError $ TypeMismatch "pair" badArg
 
-cons :: RawPrimitive
-cons = RPrim 2 $ \case
-    [x, List []]            -> return $ List [x]
-    [x, List xs]            -> return . List $ x:xs
-    [x, DottedList xs last] -> return $ DottedList (x:xs) last
-    [x, y]                  -> return $ DottedList [x] y
-    badArgs                 -> throwError $ NumArgs 2 badArgs
+cdrB :: Builtin
+cdrB [pair@Pair{}]  = cdrPS pair
+cdrB [pair@IPair{}] = cdrPS pair
+cdrB [badArg] = throwError $ TypeMismatch "pair" badArg
 
-compositions :: [Int] -> [(String, RBuiltin)] -> [(String, RBuiltin)]
-compositions nums = map writerToPrim . logChooseN nums
-    where writerToPrim :: Writer String [RBuiltin] -> (String, RBuiltin)
-          writerToPrim w = let (prims, log) = runWriter w
-                           in ("c" ++ log ++ "r", foldr1 sequence prims)
+cxrCompositions :: [Int] -> [Primitive]
+cxrCompositions ns = do
+    len         <- ns
+    combination <- replicateM len carAndCdr
+    let (n, b) = foldr1 combine combination
+    return $ Prim ("c" ++ n ++ "r") (Exactly 1) b
+  where
+    carAndCdr = [("a", carB), ("d", cdrB)]
+    -- 'cadr' does cdr, then car, so we use left fish instead of right
+    combine (c1, m1) (c2, m2) = (c1 ++ c2, m1 . single <=< m2)
+    single x = [x]
 
--- The fully general type signature is
--- sequence :: (Monad m, Applicative f) => (a -> m b) -> (f b -> m c) -> a -> m c
-sequence :: RBuiltin -- ^ First primitive to execute
-         -> RBuiltin -- ^ Use the result of first primitive as argument to this primitive
-         -> RBuiltin
-sequence f g = f >=> g . return
+listP :: Primitive
+listP = Prim "list" (AtLeast 0) makeMutableList
 
-logChooseN :: (Monoid m) => [Int] -> [(m, a)] -> [Writer m [a]]
-logChooseN ns as = do
-    num <- ns
-    foldr ($) [return []] (replicate num $ addChoice as)
-    where
-        addChoice :: (Monoid m) => [(m, a)] -> [Writer m [a]] -> [Writer m [a]]
-        addChoice as ws = do (iden, val) <- as
-                             w <- ws
-                             return $ do let (list, log) = runWriter w
-                                         -- See note [car/cdr names]
-                                         writer (val:list, log `mappend` iden)
+appendP :: Primitive
+appendP = Prim "append" (AtLeast 1) aux
+  where 
+    -- aux will never be called with 0 arguments since arity is 1+
+    aux [x] = return x
+    aux xs = do
+        (lists, last) <- walk xs
+        makeImproperMutableList (concat lists) last
+    
+    walk :: [Val] -> EM ([[Val]], Val)
+    walk [x] = return ([], x)
+    walk (x:xs) = do
+        requireList x
+        ~(lists, last) <- walk xs
+        FList fx <- freezeList x
+        return (fx:lists, last)
 
-{-
-NOTE [car/cdr names]
-`cadr` performs `cdr`, then performs `car`.
-Because of this, we take the computation result to be a list
-of car/cdr operations in the order we intend to execute them,
-but put the identifier _after_ the existing log so that they
-will appear in reverse order.
--}
+nullP :: Primitive
+nullP = Prim "null?" (Exactly 1) $ \case
+  [Nil] -> return $ Bool True
+  [_]   -> return $ Bool False
 
-listOp :: RawPrimitive
-listOp = RPrim 0 $ return . List
+setCarP :: Primitive
+setCarP = Prim "set-car!" (Exactly 2) $ \[pair, v] -> setCarSSS pair v
 
-appendOp :: RawPrimitive
-appendOp = RPrim 0 $ fmap List . worker
-  where worker :: [LispVal] -> ThrowsError [LispVal]
-        worker []             = return []
-        worker (List [] : ls) = worker ls
-        worker (List xs : ls) = (xs ++) <$> worker ls
-        worker (notList : _)  = throwError $ TypeMismatch "list" notList
-
-nullOp :: RawPrimitive
-nullOp = RPrim 1 $ \case
-    [List []] -> return $ Bool True
-    [_]       -> return $ Bool False
-    badArgs   -> throwError $ NumArgs 1 badArgs
-
-setCar :: Macro
-setCar = Macro 2 $ \args -> case args of
-    (Atom _ : _) -> updateWith helper args
-    _            -> helper args
-  where helper :: [LispVal] -> EM LispVal
-        helper [List (_ : cdr), form] = do
-            form' <- eval form
-            return $ List (form' : cdr)
-        helper [DottedList (_ : cdr1) cdr2, form] = do
-            form' <- eval form
-            return $ DottedList (form' : cdr1) cdr2
-        helper [List [], _] = throwError $ TypeMismatch "pair" (List [])
-        helper [notList, _] = throwError $ TypeMismatch "pair" notList
-        helper badArgs      = throwError $ NumArgs 2 badArgs
-
-setCdr :: Macro
-setCdr = Macro 2 $ \args -> case args of
-    (Atom _ : _) -> updateWith helper args
-    _            -> helper args
-  where helper :: [LispVal] -> EM LispVal
-        helper [List (car : _), form] = do
-            form' <- eval form
-            return $ case form' of
-                List cdr -> List (car : cdr)
-                DottedList cdr1 cdr2 -> DottedList (car : cdr1) cdr2
-                _ -> DottedList [car] form'
-        helper [DottedList (car : _) _, form] = do
-            form' <- eval form
-            return $ case form' of
-                List cdr -> List (car : cdr)
-                DottedList cdr1 cdr2 -> DottedList (car : cdr1) cdr2
-                _ -> DottedList [car] form'
-        helper [List [], _] = throwError $ TypeMismatch "pair" (List [])
-        helper [notList, _] = throwError $ TypeMismatch "pair" notList
-        helper badArgs      = throwError $ NumArgs 2 badArgs
+setCdrP :: Primitive
+setCdrP = Prim "set-cdr!" (Exactly 2) $ \[pair, v] -> setCdrSSS pair v

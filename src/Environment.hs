@@ -1,5 +1,6 @@
 module Environment
     ( Env -- re-exported from Types
+    , nullEnv
     , isBound
     , getVar
     , setVar
@@ -15,27 +16,32 @@ import Data.IORef
 import Data.Maybe (isJust)
 import Control.Monad.Except (liftIO, throwError)
 
+-- This module is allowed to import Types because EvaluationMonad
+-- imports this module!
 import Types
+
+nullEnv :: IO Env
+nullEnv = newIORef Map.empty
 
 isBound :: Env -> String -> IO Bool
 isBound envRef var = isJust . Map.lookup var <$> readIORef envRef
 
-getVar :: Env -> String -> IOThrowsError LispVal
+getVar :: Env -> String -> IOThrowsError Val
 getVar envRef var = do
     env <- liftIO $ readIORef envRef
-    maybe (throwError $ UnboundVar "[Get] unbound symbol" var)
+    maybe (throwError $ UnboundVar "[Get]" var)
           (liftIO . readIORef)
           (Map.lookup var env)
 
-setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+setVar :: Env -> String -> Val -> IOThrowsError Val
 setVar envRef var value = do
     env <- liftIO $ readIORef envRef
-    maybe (throwError $ UnboundVar "[Set] unbound symbol" var)
+    maybe (throwError $ UnboundVar "[Set]" var)
           (liftIO . flip writeIORef value)
           (Map.lookup var env)
     return value
 
-defineVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+defineVar :: Env -> String -> Val -> IOThrowsError Val
 defineVar envRef var value = do
     env <- liftIO $ readIORef envRef
     maybe (liftIO $ do
@@ -45,23 +51,23 @@ defineVar envRef var value = do
           (const $ setVar envRef var value >> return value)
           (Map.lookup var env)
 
-bindVar :: Env -> String -> LispVal -> IO Env
+bindVar :: Env -> String -> Val -> IO Env
 bindVar envRef var value = do
     env <- readIORef envRef
     valRef <- newIORef value
     let env' = Map.insert var valRef env
     newIORef env'
 
-bindVars :: Env -> HashMap String LispVal -> IO Env
+bindVars :: Env -> HashMap String Val -> IO Env
 bindVars envRef bindings = readIORef envRef
                        >>= extendEnv bindings
                        >>= newIORef
   where
-    extendEnv :: HashMap String LispVal
-              -> HashMap String (IORef LispVal)
-              -> IO (HashMap String (IORef LispVal))
+    extendEnv :: HashMap String Val
+              -> HashMap String (IORef Val)
+              -> IO (HashMap String (IORef Val))
     extendEnv bindings env = (`Map.union` env) <$> mapM createRef bindings
-    createRef :: LispVal -> IO (IORef LispVal)
+    createRef :: Val -> IO (IORef Val)
     createRef = newIORef
 
 keys :: Env -> IO [String]

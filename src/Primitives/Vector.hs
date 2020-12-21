@@ -1,65 +1,91 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Vector (rawPrimitives, macros) where
+module Primitives.Vector
+  ( primitives
+  
+  -- * Haskell-level vector utilities
+  , vectorLengthPH, vectorElemsPH
+  ) where
 
-import Data.Array
+import qualified Data.Vector as V
+import qualified Data.Vector.Mutable as MV
+import Data.Functor (($>))
 import Control.Monad.Except
 
-import Types
-import Evaluation (eval)
-import EvaluationMonad (updateWith)
+import Val
+import EvaluationMonad (EM, panic)
 
-rawPrimitives :: [(String, RawPrimitive)]
-rawPrimitives = [ ("vector", vector)
-                , ("make-vector", makeVector)
-                , ("vector-length", vectorLength)
-                , ("vector-ref", vectorRef)
-                ]
+import GHC.Stack
 
-macros :: [(String, Macro)]
-macros = [ ("vector-set!", vectorSet)
-         ]
+primitives :: [Primitive]
+primitives = [vectorP, makeVectorP, vectorLengthP, vectorRefP, vectorSetP]
 
-vector :: RawPrimitive
-vector = RPrim 1 $ \vals -> return . Vector $
-    listArray (0, fromIntegral $ length vals - 1) vals
+vectorP :: Primitive
+vectorP = Prim "vector" (AtLeast 0) $ 
+  liftIO . fmap Vector . V.thaw . V.fromList
 
-makeVector :: RawPrimitive
-makeVector = RPrim 1 $ \case
-    [Number n] -> return . Vector $ listArray (0, n - 1) (repeat $ Number 0)
-    [Number n, val] -> return . Vector $ listArray (0, n - 1) (repeat val)
-    (notNum : _) -> throwError $ TypeMismatch "number" notNum
-    badArgs -> throwError $ NumArgs 1 badArgs
+makeVectorB :: Builtin
+makeVectorB [val] = makeVectorB [val, Number 0]
+makeVectorB [Number k, val]
+  | k < 0 = throwError $ TypeMismatch "positive number" (Number k)
+  | k > toInteger (maxBound :: Int) = throwError $ Default $
+    "can't make vector bigger than " ++ show (maxBound :: Int)
+  | otherwise = liftIO $ Vector <$> MV.replicate (fromInteger k) val
+makeVectorB [notNum, _] = throwError $ TypeMismatch "number" notNum
 
-vectorLength :: RawPrimitive
-vectorLength = RPrim 1 $ \case
-    -- lower bound omitted, always 0
-    [Vector arr] -> let (_, hi) = bounds arr in return . Number $ hi + 1
-    [notVec]     -> throwError $ TypeMismatch "vector" notVec
-    badArgs      -> throwError $ NumArgs 1 badArgs
+makeVectorP :: Primitive
+makeVectorP = Prim "make-vector" (Between 1 2) makeVectorB
 
-vectorRef :: RawPrimitive
-vectorRef = RPrim 2 $ \case
-    [Vector arr, Number i]
-        | i `elem` [0.. snd (bounds arr)] -> return $ arr ! i
-        | otherwise -> throwError . Default $ "Vector index out of bounds: " ++ show i
-    [Vector _, notNum] -> throwError $ TypeMismatch "number" notNum
-    [notVec, _] -> throwError $ TypeMismatch "vector" notVec
-    badArgs -> throwError $ NumArgs 2 badArgs
+vectorLengthP :: Primitive
+vectorLengthP = Prim "vector-length" (Exactly 1) $ \case
+  [val] | vectorSH val -> return $ Number $ toInteger $ vectorLengthPH val
+        | otherwise -> throwError $ TypeMismatch "vector" val
 
-vectorSet :: Macro
-vectorSet = Macro 3 $ \case
-    args@(Atom _ : _) -> updateWith helper args
-    args -> helper args
-  where helper :: [LispVal] -> EM LispVal
-        helper args = do
-            let head : tail = args
-            argVals <- mapM eval tail
-            case head : argVals of
-                [Vector arr, Number i, val]
-                    | i `elem` [0.. snd (bounds arr)] ->
-                      return . Vector $ arr // [(i, val)]
-                    | otherwise ->
-                      throwError . Default $ "Vector index out of bounds: " ++ show i
-                [Vector _, notNum, _] -> throwError $ TypeMismatch "number" notNum
-                [notVec, _, _] -> throwError $ TypeMismatch "vector" notVec
-                badArgs -> throwError $ NumArgs 3 badArgs
+vectorRefP :: Primitive
+vectorRefP = Prim "vector-ref" (Exactly 2) $ \case
+  [vec, num]
+    | vectorSH vec 
+    , Number k <- num 
+    -> vectorRefPHS vec (fromInteger k)
+
+    | not $ vectorSH vec 
+    -> throwError $ TypeMismatch "vector" vec
+
+    | otherwise
+    -> throwError $ TypeMismatch "number" num
+
+vectorRefPHS :: Val -> Int -> EM Val
+vectorRefPHS v i = do
+  if i < 0 || i >= vectorLengthPH v 
+    then throwError $ Default $ "vector index out of bounds: " ++ show i
+    else case v of
+      Vector mv  -> liftIO $ MV.read mv i
+      IVector iv -> return $ iv V.! i
+
+vectorSetP :: Primitive
+vectorSetP = Prim "vector-set!" (Exactly 3) vectorSetB
+
+vectorSetB :: Builtin
+vectorSetB [Vector v, Number k, obj] = vectorSetHHSS v (fromInteger k) obj
+vectorSetB [IVector{}, _, _] = throwError $ SetImmutable "vector"
+vectorSetB [notVec, Number{}, _] = throwError $ TypeMismatch "vector" notVec
+vectorSetB [_, notNum, _] = throwError $ TypeMismatch "number" notNum
+
+vectorSetHHSS :: MV.IOVector Val -> Int -> Val -> EM Val
+vectorSetHHSS v i obj = do
+    if i < 0 || i >= MV.length v
+      then throwError $ Default $ "vector index out of bounds: " ++ show i
+      else liftIO $ MV.write v i obj $> obj
+
+-------------------------------------
+-- internal utilities for vectors
+-------------------------------------
+
+vectorLengthPH :: Val -> Int
+vectorLengthPH (Vector v)  = MV.length v
+vectorLengthPH (IVector v) = V.length v
+vectorLengthPH _ = panic "vectorLengthPH: not a vector"
+
+vectorElemsPH :: (MonadIO m) => Val -> m [Val]
+vectorElemsPH (Vector v) = liftIO $ V.toList <$> V.freeze v
+vectorElemsPH (IVector v) = return $ V.toList v
+vectorElemsPH _ = panic "vectorElemsPH: not a vector"
