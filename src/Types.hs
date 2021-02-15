@@ -7,7 +7,7 @@ module Types
     , Builtin
     , Primitive (..)
     , Macro (..)
-    , Val (..)
+    , Val (..), RealNumber (..), Number (..)
     , Ref
     , LispErr (..)
     , ThrowsError
@@ -24,16 +24,22 @@ module Types
     , liftIOThrows
     ) where
 
-import Text.ParserCombinators.Parsec (ParseError)
-import Data.HashMap.Strict (HashMap)
-import Data.IORef
-import qualified Data.Vector as V
+import Control.Monad.Cont ( (<=<), Cont, ContT(ContT), MonadCont(..)
+                          , MonadIO(..), cont, runCont )
+import Control.Monad.Except           ( ExceptT, MonadError(..), liftEither
+                                      , runExceptT )
+import Control.Monad.Fail             ( MonadFail(..) )
+import Control.Monad.State.Lazy       ( MonadState(get, put), gets, modify )
+import Data.Complex                   ( Complex(..) )
+import Data.HashMap.Strict            ( HashMap )
+import Data.IORef                     ( IORef )
+import Data.Ratio                     ( (%), denominator, numerator )
+import qualified Data.Vector         as V
 import qualified Data.Vector.Mutable as V
-import Control.Monad.Cont
-import Control.Monad.Except
-import Control.Monad.Fail
-import Control.Monad.State.Lazy
-import System.IO (Handle)
+import qualified Data.Vector.Unboxed as U
+import           Data.Word                      ( Word8 )
+import           System.IO                      ( Handle )
+import           Text.ParserCombinators.Parsec  ( ParseError )
 
 import Options
 
@@ -81,7 +87,9 @@ data Macro = Macro Arity (InTail -> Builtin)
 --   Note that this is implicitly transitive.
 data Val
   = Symbol String
-  | Number Integer
+
+  | Number !Number
+
   | String !(Ref String)
   | IString String
   | Char Char
@@ -102,8 +110,60 @@ data Val
   | Nil
   | Pair !(Ref Val) !(Ref Val)
   | IPair Val Val
+
   | Vector  !(V.IOVector Val)
   | IVector !(V.Vector Val)
+  | IByteVector !(U.Vector Word8)
+
+-- | Scheme numbers. Note that there is no Ord Number instance;
+-- complex numbers are not orderable and Scheme comparisons of
+-- complex numbers always return #f.
+data Number
+  = Real {-# UNPACK #-}!RealNumber
+  | Complex {-# UNPACK #-}!(Complex RealNumber)
+
+data RealNumber
+  = Bignum {-# UNPACK #-}!Integer
+  | Flonum {-# UNPACK #-}!Double
+  | Ratnum {-# UNPACK #-}!Rational
+
+-- | This is equality in the sense of Scheme '='.
+instance Eq RealNumber where
+  Flonum f == Flonum g = f == g
+  Flonum f == bigOrRat = not (isInfinite f) && r1 == r2
+    -- note that we make the fp number exact instead of making the
+    -- exact number fp. This is critical. An example from the R7RS
+    -- paper is: let big be (exp 2 1000). Assume big is exact and
+    -- that inexact numbers are IEEE doubles [they are]. Then
+    -- (= (inexact big) (+ big 1)) should be #f, but if inexact
+    -- conversion is used, it will be #t.
+    where r1 = toRational f
+          r2 = case bigOrRat of
+            Bignum i -> i % 1
+            Ratnum r -> r
+            Flonum{} -> error "(==)@Number: impossible flonum"
+  bigOrRat == n@Flonum{} = n == bigOrRat
+  Bignum i == Bignum j = i == j
+  Bignum i == Ratnum r = i % 1 == r
+  Ratnum r == Bignum i = r == i % 1
+  Ratnum r == Ratnum s = r == s
+
+instance Eq Number where
+  Real a == Real b = a == b
+  Real a == Complex (r :+ i) = a == r && i == Bignum 0
+  Complex (r :+ i) == Real b = r == b && i == Bignum 0
+  Complex (a :+ b) == Complex (x :+ y) = a == x && b == y
+
+instance Show RealNumber where
+  show (Bignum i) = show i
+  show (Flonum f)
+    | isInfinite f = sign : "inf.0"
+    | isNaN f      = "+nan.0" 
+    | otherwise    = show f
+    where sign = if f < 0 then '-' else '+'
+  show (Ratnum r)
+    | denominator r == 1 = show (numerator r)
+    | otherwise = show (numerator r) ++ "/" ++ show (denominator r)
 
 -- | Doesn't compare mutable things; most likely you want
 --
@@ -173,6 +233,7 @@ type ThrowsError = Either LispErr
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
+extractValue Left{} = error "extractValue: Left"
 
 isTerminationError :: LispErr -> Bool
 isTerminationError Quit = True

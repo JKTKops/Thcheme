@@ -14,8 +14,8 @@ primitives :: [Primitive]
 primitives = [ openInputFile
              , openOutputFile
              , closePort
-             , readProc
-             , readLineProc
+             , readP
+             , readLineP
              , writeProc
              , writeToPort
              , readContents
@@ -28,6 +28,7 @@ makePort name mode = Prim name (Exactly 1) $ \case
           filename <- unwrapStringPH val
           Port <$> liftIO (openFile filename mode)
         | otherwise -> throwError $ TypeMismatch "string" val
+  _ -> panic $ "makePort@" ++ name ++ " arity"
 
 openInputFile, openOutputFile :: Primitive
 openInputFile  = makePort "open-input-file" ReadMode
@@ -38,17 +39,19 @@ closePort = Prim "close-port" (Exactly 1) $ \case
     [Port port] -> liftIO $ hClose port >> return (Bool True)
     _           -> return $ Bool False
 
-readProc :: Primitive
-readProc = Prim "read" (Between 0 1) read
+readP :: Primitive
+readP = Prim "read" (Between 0 1) read
   where
     read :: Builtin
     read []         = read [Port stdin]
     read [Port hdl] = liftIO (hGetLine hdl) >>= liftEither . readExpr
     read [badArg]   = throwError $ TypeMismatch "port" badArg
+    read _ = panic "read arity"
 
-readLineProc :: Primitive
-readLineProc = Prim "read-line" (Exactly 0) $ \case
-    []      -> liftIO getLine >>= fmap String . newRef
+readLineP :: Primitive
+readLineP = Prim "read-line" (Exactly 0) $ \case
+    [] -> liftIO getLine >>= fmap String . newRef
+    _ -> panic "readLine arity"
 
 {- TODO: [r7rs]
 we need to both define 'display' and fix write, as well as adding
@@ -71,7 +74,8 @@ writeToPort = Prim "write-port" (Exactly 2) write
 write :: Builtin
 write [obj]           = write [obj, Port stdout]
 write [obj, Port hdl] = liftIO $ hPutStr hdl (show obj) >> return (Bool True)
-write [obj, badArg]   = throwError $ TypeMismatch "port" badArg
+write [_obj, badArg]  = throwError $ TypeMismatch "port" badArg
+write _ = panic "write arity"
 
 readContents :: Primitive
 readContents = Prim "read-contents" (Exactly 1) $ \case
@@ -80,6 +84,7 @@ readContents = Prim "read-contents" (Exactly 1) $ \case
           contents <- liftIO (readFile filename)
           String <$> newRef contents
         | otherwise -> throwError $ TypeMismatch "string" val
+  _ -> panic "readContents arity"
 
 readAll :: Primitive
 readAll = Prim "read-all" (Exactly 1) $ \case
@@ -87,3 +92,4 @@ readAll = Prim "read-all" (Exactly 1) $ \case
           filename <- unwrapStringPH val
           load filename >>= makeMutableList
         | otherwise -> throwError $ TypeMismatch "string" val
+  _ -> panic "readAll arity"

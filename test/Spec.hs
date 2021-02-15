@@ -7,7 +7,7 @@ import ParsersTest
 import EvaluationTest
 
 main :: IO ()
-main = putStrLn "%expect 1" >> defaultMain tests
+main = defaultMain tests
 
 tests :: TestTree
 tests = testGroup "Tests"

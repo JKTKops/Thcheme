@@ -8,11 +8,10 @@ module Primitives.Comparison
   ) where
 
 import Control.Monad (join)
-import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 
 import Val
-import EvaluationMonad (EM)
+import EvaluationMonad (EM, panic)
 import Primitives.Bool (boolBinop)
 import Primitives.Unwrappers
 import Primitives.Vector hiding (primitives)
@@ -25,9 +24,6 @@ import qualified Data.HashTable.IO as H
 import System.Mem.StableName (StableName, makeStableName)
 import System.Random (randomRIO)
 
-import qualified Data.Vector as V
-import qualified Data.Vector.Mutable as V
-
 primitives :: [Primitive]
 primitives = [eqP, eqvP, equalP] ++ typeSpecific
 
@@ -39,6 +35,7 @@ equalP = Prim "equal?" (Exactly 2) equalB
 eqB, eqvB, equalB :: Builtin
 equalityBuiltin :: (Val -> Val -> EM Bool) -> Builtin
 equalityBuiltin e [x1,x2] = Bool <$> e x1 x2
+equalityBuiltin _ _ = panic "equalityBuiltin arity"
 
 eqB    = equalityBuiltin eqSSH
 eqvB   = equalityBuiltin eqvSSH
@@ -46,18 +43,24 @@ equalB = equalityBuiltin equalSSH
 
 -- TODO: we should really just move these into the files for their own
 -- types and define them individually. We maybe end up copying some code
--- (the duplication that's eliminated by PrimBuilder) but in exchange we end
+-- (the duplication that's eliminated by OrdBuilder) but in exchange we end
 -- up _removing_ the duplication of the logic of string=? and char=? etc. by
 -- being able to import the appropriate module of primitives and call out to, 
 -- say, stringEqPH directly.
 typeSpecific :: [Primitive]
 typeSpecific = [ primGen builtin
-               | (PrimBuilder primGen) <- primBuilders, builtin <- builtinComparisons
+               | (OrdBuilder primGen) <- primBuilders, builtin <- builtinComparisons
+               ] ++
+               [ makePrim "" True numBoolBinop eqPair
+               , makePrim "string" False strBoolBinop eqPair
+               , makePrim "char" False charBoolBinop eqPair
                ]
+  where eqPair :: Eq a => (String, a -> a -> Bool)
+        -- the monomorphism restriction applies here if type signature is omitted.
+        eqPair = ("=", (==))
 
 builtinComparisons :: Ord a => [(String, a -> a -> Bool)]
-builtinComparisons = [ ("=", (==))
-                     , ("<", (<))
+builtinComparisons = [ ("<", (<))
                      , (">", (>))
                      , ("<=", (<=))
                      , (">=", (>=))
@@ -65,36 +68,43 @@ builtinComparisons = [ ("=", (==))
 
 -- | A wrapper over a function that converts a (Haskell) builtin comparison
 -- function into a Primitive function. We use this to convert the Haskell
--- builtins into appropriate comparison functions for all Scheme types.
-data PrimBuilder = forall a. Ord a =>
-                      PrimBuilder ((String, a -> a -> Bool) -> Primitive)
+-- builtins into appropriate comparison functions for all comparable Scheme
+-- types.
+data OrdBuilder = forall a. Ord a =>
+                      OrdBuilder ((String, a -> a -> Bool) -> Primitive)
 
-primBuilders :: [PrimBuilder]
-primBuilders = [ PrimBuilder makeNumPrim
-               , PrimBuilder makeStrPrim
-               , PrimBuilder makeCharPrim
+primBuilders :: [OrdBuilder]
+primBuilders = [ OrdBuilder makeNumPrim
+               , OrdBuilder makeStrPrim
+               , OrdBuilder makeCharPrim
                ]
-  where makePrim :: String -- type name
-                 -> Bool   -- appends '?' if False, nothing if True
-                 -> (String -> (a -> a -> Bool) -> Primitive)
-                 -> (String, a -> a -> Bool)
-                 -> Primitive
-        makePrim tyname isNum primGen (opName, op) = primGen primName op
-          where primName = tyname ++ opName ++ suffix
-                suffix | not isNum = "?"
-                       | otherwise = ""
 
-        makeNumPrim = makePrim "" True numBoolBinop
-        makeStrPrim = makePrim "string" False strBoolBinop
-        makeCharPrim = makePrim "char" False charBoolBinop
+makePrim :: String -- type name
+   -> Bool   -- appends '?' if False, nothing if True
+   -> (String -> (a -> a -> Bool) -> Primitive)
+   -> (String, a -> a -> Bool)
+   -> Primitive
+makePrim tyname isNum primGen (opName, op) = primGen primName op
+  where primName = tyname ++ opName ++ suffix
+        suffix | not isNum = "?"
+               | otherwise = ""
+
+makeNumPrim :: (String, RealNumber -> RealNumber -> Bool) -> Primitive
+makeNumPrim = makePrim "" True realBoolBinop
+makeStrPrim :: (String, String -> String -> Bool) -> Primitive
+makeStrPrim = makePrim "string" False strBoolBinop
+makeCharPrim :: (String, Char -> Char -> Bool) -> Primitive
+makeCharPrim = makePrim "char" False charBoolBinop
 
 -- boolBinop :: String -> (Val -> EM a) -> (a -> a -> Bool) -> Primitive
 
 -- TODO: none of these satisfy r7rs, which says the predicate should be
 -- satisfied pairwise along a whole list of elements; we should not use
 -- 'boolBinop'.
-numBoolBinop :: String -> (Integer -> Integer -> Bool) -> Primitive
+numBoolBinop :: String -> (Number -> Number -> Bool) -> Primitive
 numBoolBinop name = boolBinop name unwrapNum
+realBoolBinop :: String -> (RealNumber -> RealNumber -> Bool) -> Primitive
+realBoolBinop name = boolBinop name unwrapRealNum
 strBoolBinop :: String -> (String -> String -> Bool) -> Primitive
 strBoolBinop name = boolBinop name unwrapStr
 charBoolBinop :: String -> (Char -> Char -> Bool) -> Primitive
@@ -234,10 +244,12 @@ vectorLoop shouldDec e = go where
       if k <= 0 then return $ Just k
       else loop (u:us) (v:vs) (k-1)
     | otherwise = loop (u:us) (v:vs) k
+  go _ _ _ = panic "vectorLoop: different lengths" 
 
   loop (u:us) (v:vs) k = e u v k >>= \case
     Nothing -> return Nothing
     Just k' -> go us vs k'
+  loop _ _ _ = panic "loop: empty list"
 
 -- TODO:
 -- this is an implementation of the algorithm from
@@ -304,10 +316,6 @@ interleave x y k = do
   return $ case result of
     Nothing -> False
     Just{}  -> True
-
-unlessJust :: Applicative f => Maybe a -> f () -> f ()
-unlessJust Nothing m = m
-unlessJust Just{}  _ = pure ()
 
 ifM :: Monad m => m Bool -> m a -> m a -> m a
 ifM test t f = test >>= \b -> if b then t else f

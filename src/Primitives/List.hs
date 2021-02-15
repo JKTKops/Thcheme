@@ -28,11 +28,13 @@ carB :: Builtin
 carB [pair@Pair{}]  = carPS pair
 carB [pair@IPair{}] = carPS pair
 carB [badArg] = throwError $ TypeMismatch "pair" badArg
+carB _ = panic "car arity"
 
 cdrB :: Builtin
 cdrB [pair@Pair{}]  = cdrPS pair
 cdrB [pair@IPair{}] = cdrPS pair
 cdrB [badArg] = throwError $ TypeMismatch "pair" badArg
+cdrB _ = panic "cdr arity"
 
 cxrCompositions :: [Int] -> [Primitive]
 cxrCompositions ns = do
@@ -59,6 +61,7 @@ appendP = Prim "append" (AtLeast 1) aux
         makeImproperMutableList (concat lists) last
     
     walk :: [Val] -> EM ([[Val]], Val)
+    walk [] = panic "append arity"
     walk [x] = return ([], x)
     walk (x:xs) = do
         requireList x
@@ -70,6 +73,7 @@ nullP :: Primitive
 nullP = Prim "null?" (Exactly 1) $ \case
   [Nil] -> return $ Bool True
   [_]   -> return $ Bool False
+  _ -> panic "null arity"
 
 setCarP :: Primitive
 setCarP = Prim "set-car!" (Exactly 2) $ \[pair, v] -> setCarSSS pair v

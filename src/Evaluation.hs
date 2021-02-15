@@ -20,7 +20,7 @@ import Parsers
 import Val
 import EvaluationMonad
 import qualified Environment as Env
-import Options (checkOpt, ifOpt, Opt(FullStackTrace))
+import Options (ifOpt, Opt(FullStackTrace))
 import Primitives.WriteLib (writeSharedSH, showErrIO)
 
 eval :: InTail -- ^ Is this form in tail position of a body?
@@ -29,7 +29,7 @@ eval :: InTail -- ^ Is this form in tail position of a body?
 eval tail expr = do
   fexpr <- freezeList expr
   case fexpr of
-    FList (function : args) -> handleApp tail expr function args
+    FList (function : args) -> handleApp tail function args
     FList []      -> return Nil -- see Note: [Freezing Nil] in Val.hs
     FNotList obj  -> handleSimpleDatum obj
     FDottedList{} -> throwError $ BadSpecialForm expr
@@ -48,9 +48,8 @@ handleSimpleDatum obj = case obj of
     _other -> panic "handleSimpleDatum: datum is not simple!"
 
 handleApp :: InTail -- ^ Is this application in tail position?
-          -> Val    -- ^ the original unfrozen Val, to put on the stack
           -> Val -> [Val] -> EM Val
-handleApp tail form function args = do
+handleApp tail function args = do
     func <- case function of
         Primitive{}    -> return function
         Continuation{} -> return function
@@ -99,7 +98,8 @@ evalTail = eval True
 
 evalSeq :: InTail -> [Val] -> EM Val
 evalSeq tail = go
-  where go [form] = eval tail form
+  where go [] = error "evalSeq: no forms"
+        go [form] = eval tail form
         go (s:ss) = evalBody s >> go ss
 
 -- | Evaluate a sequence in either tail or non-tail position.
@@ -143,7 +143,8 @@ apply _ Continuation{} badArgs = throwError $ NumArgs (Exactly 1) badArgs
 -- application will be visible on the stack if an error is raised,
 -- which makes it look like closures are responsible for checking their
 -- own arity.
-apply _ f@(Closure formals mvarg body cloEnv _name) args = do
+apply _ (Closure formals mvarg body _cloEnv _name) args = do
+                                  -- cloEnv is in the stack frame
   let arity = case mvarg of
         Nothing -> Exactly $ length formals
         Just{}  -> AtLeast $ length formals
@@ -153,7 +154,7 @@ apply _ f@(Closure formals mvarg body cloEnv _name) args = do
 apply _ notFunc _ = throwError $ NotFunction "Not a function" notFunc
 
 makeStackFrame :: Val -> [Val] -> EM StackFrame
-makeStackFrame f@(Closure formals mvarg _body cloEnv mname) args = do
+makeStackFrame (Closure formals mvarg _body cloEnv mname) args = do
   env  <- bindFormals cloEnv
   env' <- bindVararg env
   return $ buildFrame name args $ Just env'
@@ -207,7 +208,7 @@ showEvalState es = ("Stack trace:\n" ++) <$> numberedLines
         -- unlines puts an extra newline at the end, which we
         -- actually want because it looks better.
         numberedLines = unlines . zipWith (<+>) numbers <$> exprs
-        numbers = map (\i -> show i ++ ";") [1..]
+        numbers = map (\i -> show i ++ ";") [1 :: Int ..]
 
         -- Note that we use write-shared here. It's possible that the error
         -- was raised because we tried to 'eval' a cyclic list. If we don't

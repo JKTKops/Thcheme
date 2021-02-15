@@ -1,14 +1,13 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Bootstrap (
+module Bootstrap 
+    (
       primitiveBindings
     , stdlib -- for testing... might want to move to Bootstrap.Internal
     ) where
 
-import Data.IORef (newIORef)
 import Data.FileEmbed (embedStringFile)
-import qualified Data.HashMap.Strict as Map (empty)
 
-import Types
+import Types   ( ThrowsError, Val )
 import Parsers (labeledReadExprList)
 
 import Primitives (primitives)

@@ -12,6 +12,7 @@ import Control.Monad.Except (throwError)
 
 import Types (ThrowsError)
 import Val
+import EvaluationMonad (panic)
 
 labeledReadOrThrow :: String -> Parser a -> String -> ThrowsError a
 labeledReadOrThrow label parser input = case parse parser label input of
@@ -93,16 +94,18 @@ parseNumber :: Parser Val
 parseNumber = lexeme $ do
     sign <- optionMaybe $ char '-' <|> char '+'
     prefix <- parseRadixPrefix <|> return "#d"
-    num <- Number <$> case prefix of
+    num <- makeBignum <$> case prefix of
         "#b" -> number 2 (char '0' <|> char '1')
         "#o" -> number 8 octDigit
         "#d" -> number 10 digit -- float case goes here :)
         "#h" -> number 16 hexDigit
+        _ -> panic "parseNumber: parseRadixPrefix failure"
     delim
     case sign of
         Nothing  -> return num
         Just '+' -> return num
         Just '-' -> let Number n = num in return . Number $ negate n
+        _ -> panic "parseNumber: impossible sign"
 
   where parseRadixPrefix :: Parser String
         parseRadixPrefix = do
@@ -118,13 +121,13 @@ parseNumber = lexeme $ do
 parseChar :: Parser Val
 parseChar = lexeme $ do
     _prefix <- string "#\\"
-    char   <- do try $ string "space"
-                 return ' '
-              <|> (do try $ string "newline"
+    char   <-      do _ <- try $ string "space"
+                      return ' '
+              <|> (do _ <- try $ string "newline"
                       return '\n')
-              <|> (do try $ string "carriage-return"
+              <|> (do _ <- try $ string "carriage-return"
                       return '\r')
-              <|> (do try $ string "tab"
+              <|> (do _ <- try $ string "tab"
                       return '\t')
               <|> try (do c <- anyChar
                           delim
@@ -134,7 +137,7 @@ parseChar = lexeme $ do
 
 parseVector :: Parser Val
 parseVector = lexeme $ do
-    char '#'
+    _ <- char '#'
     exprs <- parens $ many parseExpr
     return . IVector $ fromList exprs
 
@@ -155,12 +158,13 @@ parseDottedList = parseListlike
 
 parseQuoted :: Parser Val
 parseQuoted = lexeme $ foldr1 (<|>) parsers
-  where parsers = map (\sym -> do
-            try $ string sym
-            let macro = case sym of
-                    "'"  -> "quote"
-                    "`"  -> "quasiquote"
-                    ","  -> "unquote"
-                    ",@" -> "unquote-splicing"
+  where parsers = map macroParser macros
+        macroParser (sym, macro) = do
+            _ <- try $ string sym
             x <- parseExpr
-            return $ makeImmutableList [Symbol macro, x]) ["'", "`", ",@", ","]
+            return $ makeImmutableList [Symbol macro, x]
+        macros = [ ("'", "quote")
+                 , ("`", "quasiquote")
+                 , (",@", "unquote-splicing")
+                 , (",",  "unquote")
+                 ]

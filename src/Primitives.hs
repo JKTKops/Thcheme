@@ -2,7 +2,6 @@ module Primitives (primitives) where
 
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
-import           Control.Monad.Except (liftEither)
 
 import qualified Val
 import qualified Primitives.Bool             as BoolOps

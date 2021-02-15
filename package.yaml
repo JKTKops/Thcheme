@@ -41,6 +41,10 @@ dependencies:
 
 library:
   source-dirs: src
+  ghc-options:
+  - -Wall
+  - -Wno-name-shadowing
+  - -Wno-orphans
   dependencies:
   - file-embed
 

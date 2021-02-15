@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ViewPatterns #-}
 module Primitives.Vector
   ( primitives
   
@@ -9,12 +10,11 @@ module Primitives.Vector
 import qualified Data.Vector as V
 import qualified Data.Vector.Mutable as MV
 import Data.Functor (($>))
-import Control.Monad.Except
+import Control.Monad.Except ( MonadIO(..), MonadError(throwError) )
 
 import Val
 import EvaluationMonad (EM, panic)
-
-import GHC.Stack
+import Primitives.Unwrappers (unwrapExactInteger)
 
 primitives :: [Primitive]
 primitives = [vectorP, makeVectorP, vectorLengthP, vectorRefP, vectorSetP]
@@ -25,33 +25,31 @@ vectorP = Prim "vector" (AtLeast 0) $
 
 makeVectorB :: Builtin
 makeVectorB [val] = makeVectorB [val, Number 0]
-makeVectorB [Number k, val]
-  | k < 0 = throwError $ TypeMismatch "positive number" (Number k)
+makeVectorB [n@(getExactInteger -> Just k), val]
+  | k < 0 = throwError $ TypeMismatch "exact positive integer" n
   | k > toInteger (maxBound :: Int) = throwError $ Default $
     "can't make vector bigger than " ++ show (maxBound :: Int)
   | otherwise = liftIO $ Vector <$> MV.replicate (fromInteger k) val
 makeVectorB [notNum, _] = throwError $ TypeMismatch "number" notNum
+makeVectorB _ = panic "makeVector arity"
 
 makeVectorP :: Primitive
 makeVectorP = Prim "make-vector" (Between 1 2) makeVectorB
 
 vectorLengthP :: Primitive
 vectorLengthP = Prim "vector-length" (Exactly 1) $ \case
-  [val] | vectorSH val -> return $ Number $ toInteger $ vectorLengthPH val
+  [val] | vectorSH val -> return $ makeBignum $ toInteger $ vectorLengthPH val
         | otherwise -> throwError $ TypeMismatch "vector" val
+  _ -> panic "vectorLength arity"
 
 vectorRefP :: Primitive
 vectorRefP = Prim "vector-ref" (Exactly 2) $ \case
   [vec, num]
-    | vectorSH vec 
-    , Number k <- num 
-    -> vectorRefPHS vec (fromInteger k)
-
-    | not $ vectorSH vec 
-    -> throwError $ TypeMismatch "vector" vec
-
-    | otherwise
-    -> throwError $ TypeMismatch "number" num
+    | vectorSH vec -> do
+      k <- unwrapExactInteger num
+      vectorRefPHS vec (fromInteger k)
+    | otherwise -> throwError $ TypeMismatch "vector" vec
+  _ -> panic "vectorRef arity"
 
 vectorRefPHS :: Val -> Int -> EM Val
 vectorRefPHS v i = do
@@ -60,15 +58,18 @@ vectorRefPHS v i = do
     else case v of
       Vector mv  -> liftIO $ MV.read mv i
       IVector iv -> return $ iv V.! i
+      _ -> panic "vectorRef type"
 
 vectorSetP :: Primitive
 vectorSetP = Prim "vector-set!" (Exactly 3) vectorSetB
 
 vectorSetB :: Builtin
-vectorSetB [Vector v, Number k, obj] = vectorSetHHSS v (fromInteger k) obj
+vectorSetB [Vector v, getExactInteger -> Just k, obj] = 
+  vectorSetHHSS v (fromInteger k) obj
 vectorSetB [IVector{}, _, _] = throwError $ SetImmutable "vector"
 vectorSetB [notVec, Number{}, _] = throwError $ TypeMismatch "vector" notVec
 vectorSetB [_, notNum, _] = throwError $ TypeMismatch "number" notNum
+vectorSetB _ = panic "vectorSet arity"
 
 vectorSetHHSS :: MV.IOVector Val -> Int -> Val -> EM Val
 vectorSetHHSS v i obj = do

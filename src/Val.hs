@@ -1,6 +1,8 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Val
   ( -- * Val and support types
-    Val (..)
+    Val (..), Number (..), RealNumber (..)
   , LispErr (..), isTerminationError
   , Primitive (..)
   , Macro (..)
@@ -29,21 +31,31 @@ module Val
     -- * Test for immutable data
   , isImmutablePair, isImmutable
 
+    -- * Making and working with Numbers
+  , makeBignum, makeFlonum, makeRatnum
+  , approxToRatnum, realInexact
+  , getExactInteger, isExactZero
+  , implicitRealConversion, implicitNumericConversion
+
     -- * Showing 'Val' in IO
   , showValIO
   ) where
 
 import Types
 import EvaluationMonad
-import Control.Monad (join, when)
-import Control.Monad.Loops (allM)
 import Control.Monad.Trans.Maybe (MaybeT(..))
+import Data.Bits (shiftL, bit)
+import Data.Complex (Complex((:+)))
 import Data.IORef (readIORef) -- for show in IO
 import Data.Foldable (foldrM)
+import Data.Ratio ((%), numerator, denominator)
 
 import qualified Data.Vector as V
+import qualified Data.Vector.Unboxed as U
 import Data.Maybe (fromMaybe)
 import System.Mem.StableName (makeStableName)
+
+import GHC.Float (Floating(..))
 
 makePrimitive :: Primitive -> Val
 makePrimitive (Prim name arity func) = Primitive arity func name
@@ -67,7 +79,7 @@ truthy _ = True
 showVal :: Val -> ShowS
 showVal (Symbol s) = showString s
 showVal (Number n) = shows n
-showVal (String s) = showString "<can't show mutable string>"
+showVal (String _s) = showString "<can't show mutable string>"
 showVal (IString s) = shows s
 showVal (Char c)   = showString "#\\" . showString (case c of
     ' '  -> "space"
@@ -81,7 +93,7 @@ showVal Port{} = showString "#<port>"
 showVal Undefined = showString "#<undefined>"
 showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
 showVal Continuation{} = showString "#<cont>"
-showVal (Closure args varargs body env name) = 
+showVal (Closure args varargs _body _env name) = 
     showParen True $
         displayName . showChar ' '
       . showParen True (displayArgs . displayVarargs)
@@ -109,11 +121,18 @@ showVal p@IPair{} = showParen True $ showDList $ fromList p
 
 showVal Vector{} = showString "<can't show mutable vector>"
 showVal (IVector v) = showChar '#' . showParen True (unwordsList (V.toList v))
+showVal (IByteVector v) = showString "#u8" . showParen True (showList (U.toList v))
 showVal Nil = showString "()"
 
 -- | Can't show mutable things.
 instance Show Val where
     showsPrec _ v s = showVal v s
+
+-- | Doesn't display exactness indicators and always uses base 10.
+instance Show Number where
+  show (Real r) = show r
+  show (Complex (r :+ i)) = show r ++ sign ++ show i ++ "i"
+    where sign = if i < 0 then "" else "+"
 
 showErr :: LispErr -> String
 showErr (UnboundVar message varname)  = message ++ " unbound symbol: " ++ varname
@@ -181,8 +200,8 @@ testArity a@(Between lo hi) vs0 = check (cmpLength lo vs0) (cmpLength hi vs0)
 cmpLength :: Int -> [a] -> Ordering
 cmpLength 0 [] = EQ
 cmpLength _ [] = GT
-cmpLength 0 (v:vs) = LT
-cmpLength n (v:vs) = cmpLength (n-1) vs
+cmpLength 0 (_:_) = LT
+cmpLength n (_:vs) = cmpLength (n-1) vs
 
 {- Note: [List Operation Efficiency]
 There's some low-hanging fruit here for optimizing list operations.
@@ -459,6 +478,58 @@ isImmutable Vector{} = False
 isImmutable String{} = False
 isImmutable _ = True
 
+makeBignum :: Integer -> Val
+makeBignum = Number . Real . Bignum
+
+makeFlonum :: Double -> Val
+makeFlonum = Number . Real . Flonum
+
+makeRatnum :: Integer -> Integer -> Val
+makeRatnum x y = Number $ Real $ Ratnum (x % y)
+
+approxToRatnum :: Double -> Val
+approxToRatnum = Number . Real . Ratnum . toRational
+
+getExactInteger :: Val -> Maybe Integer
+getExactInteger v = case v of
+  Number (Real (Bignum i)) -> return i
+  Number (Real (Flonum _)) -> Nothing
+  Number (Real (Ratnum r)) -> case denominator r of
+    1 -> return $ numerator r
+    _ -> Nothing
+  Number (Complex (r :+ i)) -> case i of
+    Bignum 0 -> getExactInteger (Number (Real r))
+    Flonum _ -> Nothing
+    Ratnum z -> if z == 0 then getExactInteger (Number (Real r)) else Nothing
+    _notNplusZeroI -> Nothing
+  _other -> Nothing
+
+implicitNumericConversion :: Number -> Number -> (Number, Number)
+implicitNumericConversion (Real x) (Real y) = (Real x, Real y)
+implicitNumericConversion x y = (asComplex x, asComplex y)
+  where
+    asComplex :: Number -> Number
+    asComplex (Real r) = Complex (r :+ 0)
+    asComplex (Complex c) = Complex c
+
+-- | Perform an implicit Scheme conversion of two numbers.
+--
+-- The "order" of numeric types is bignum < ratnum < flonum.
+-- The lesser argument will be casted upwards to match the greater one.
+-- The returned Numbers are guaranteed to use the same Number constructor.
+implicitRealConversion :: RealNumber -> RealNumber -> (RealNumber, RealNumber)
+implicitRealConversion = work
+  where
+    work x@Flonum{} y = (x, Flonum $ asFlonum y)
+    work x y@Flonum{} = (Flonum $ asFlonum x, y)
+    work x@Ratnum{} y = (x, asRatnum y)
+    work x y@Ratnum{} = (asRatnum x, y)
+    work x y = (x, y) -- both Bignum
+
+    asRatnum (Ratnum r) = Ratnum r
+    asRatnum (Bignum n) = Ratnum (n % 1)
+    asRatnum Flonum{} = error "implicitRealConversion.asRatnum: impossible flonum"
+
 pairSH :: Val -> Bool
 pairSH Pair{}  = True
 pairSH IPair{} = True
@@ -498,6 +569,7 @@ showsListIO (Pair c d) = do
 showsListIO (IPair car cdr) = do
     showsCar <- showsValIO car
     (showsCar .) <$> showsListIO1 cdr
+showsListIO _notPair = error "showsListIO: not a list"
 
 -- | 'showsListIO', but puts a space before showing
 -- the next object. If the next object is 'Nil' (i.e., we're done)
@@ -509,3 +581,293 @@ showsListIO1 p@Pair{}  = (showString " " .) <$> showsListIO p
 showsListIO1 p@IPair{} = (showString " " .) <$> showsListIO p
 showsListIO1 Nil = pure id
 showsListIO1 dot = (showString " . " .) <$> showsValIO dot
+
+-------------------------------------------------------------------------------
+-- Numeric Class Instances for Number
+-------------------------------------------------------------------------------
+
+type Binop a = a -> a -> a
+type Monop a = a -> a
+
+{- HLINT ignore "Redundant lambda" -}
+mkRealNumberBinop :: (forall a. Num a => Binop a)
+                  -> Binop RealNumber
+mkRealNumberBinop op = \x y -> case implicitRealConversion x y of
+  (Bignum a, Bignum b) -> Bignum (a `op` b)
+  (Ratnum a, Ratnum b) -> Ratnum (a `op` b)
+  (Flonum a, Flonum b) -> Flonum (a `op` b)
+  _ -> error "mkRealNumberBinop: implicitRealConversion failure"
+{-# INLINE mkRealNumberBinop #-}
+
+{- HLINT ignore "Redundant lambda" -}
+mkRealNumberMonop :: (forall a. Num a => Monop a)
+                  -> Monop RealNumber
+mkRealNumberMonop op = \case
+  Bignum a -> Bignum (op a)
+  Ratnum a -> Ratnum (op a)
+  Flonum a -> Flonum (op a)
+{-# INLINE mkRealNumberMonop #-}
+
+{- HLINT ignore "Redundant lambda" -}
+mkNumberBinop :: (forall a. Num a => Binop a)
+              -> Binop Number
+mkNumberBinop op = \x y -> case implicitNumericConversion x y of
+  (Real a, Real b) -> Real (a `op` b)
+  (Complex w, Complex z) -> Complex (w `op` z)
+  _ -> panic " mkNumberBinop: implicitNumericConversion failure"
+{-# INLINE mkNumberBinop #-}
+
+{- HLINT ignore "Redundant lambda" -}
+mkNumberMonop :: (forall a. Num a => Monop a)
+              -> Monop Number
+mkNumberMonop op = \case
+  Real n -> Real $ op n
+  Complex c -> Complex $ op c
+{-# INLINE mkNumberMonop #-}
+
+realNumberPlus, realNumberSub, realNumberTimes :: Binop RealNumber
+realNumberPlus  = mkRealNumberBinop (+)
+realNumberSub   = mkRealNumberBinop (-)
+realNumberTimes x y
+  | isExactZero (Real x) || isExactZero (Real y) = Bignum 0
+  | otherwise = mkRealNumberBinop (*) x y
+
+realNumberNegate, realNumberAbs, realNumberSignum :: Monop RealNumber
+realNumberNegate = mkRealNumberMonop negate
+realNumberAbs    = mkRealNumberMonop abs
+realNumberSignum = mkRealNumberMonop signum
+
+numberTimes :: Binop Number
+numberTimes x y
+  | isExactZero x || isExactZero y = 0
+  | otherwise = mkNumberBinop (*) x y
+
+isExactZero :: Number -> Bool
+isExactZero (Real (Bignum 0)) = True
+isExactZero (Real (Ratnum 0)) = True
+isExactZero (Complex (r :+ i)) = isExactZero (Real r) && isExactZero (Real i)
+isExactZero _          = False
+{-# INLINABLE isExactZero #-}
+
+instance Num RealNumber where
+  (+) = realNumberPlus
+  (-) = realNumberSub
+  (*) = realNumberTimes
+  negate = realNumberNegate
+  abs    = realNumberAbs
+  signum = realNumberSignum
+  fromInteger = Bignum
+
+instance Num Number where
+  (+) = mkNumberBinop (+)
+  (-) = mkNumberBinop (-)
+  (*) = numberTimes -- checks for exact zeroes
+  negate = mkNumberMonop negate
+  abs    = mkNumberMonop abs
+  signum = mkNumberMonop signum
+  fromInteger = Real . Bignum
+
+asFlonum :: RealNumber -> Double
+asFlonum (Bignum i) = fromInteger i
+asFlonum (Ratnum r) = fromRational r
+asFlonum (Flonum f) = f
+
+realInexact :: RealNumber -> RealNumber
+realInexact = Flonum . asFlonum
+
+flonumPredicate :: (Double -> Bool) -> RealNumber -> Bool
+flonumPredicate p = applyPred
+  where applyPred (Flonum f) = p f
+        applyPred _notFlonum = False
+{-# INLINE flonumPredicate #-}
+
+-- | Implementation of 'scaleFloat' for Number. Does the right thing
+-- without converting where possible. Bignums are converted to Ratnums
+-- if the power is negative.
+--
+-- realNumberScale p n returns 0 if p is negative and n is 0. This is the
+-- same behavior as scaleFloat for Float/Double and gives correct
+-- results for Complex divison.
+realNumberScale :: Int -> RealNumber -> RealNumber
+realNumberScale p (Flonum f) = Flonum (scaleFloat p f)
+realNumberScale p bigOrRat
+  | p < 0 = case bigOrRat of
+    Bignum 0 -> Bignum 0
+    Ratnum 0 -> Bignum 0 -- simplify. No cost to doing this because a
+                         -- rational would need to be deconstructed to do
+                         -- the next step anyway.
+    _notZero -> bigOrRat * recip (Bignum (bit $ negate p))
+  | otherwise = case bigOrRat of
+    Bignum i -> Bignum (i `shiftL` p)
+    Ratnum r -> Ratnum (r * (2 ^ p))
+    Flonum{} -> error "realNumberScale: impossible flonum"
+
+instance RealFloat RealNumber where
+  floatRadix  = floatRadix  . asFlonum
+  floatDigits = floatDigits . asFlonum
+  floatRange  = floatRange  . asFlonum
+  decodeFloat = decodeFloat . asFlonum
+  encodeFloat s e = Flonum (encodeFloat s e)
+  exponent (Flonum f) = exponent f
+  exponent _bigOrRat  = 0
+  significand = Flonum . significand . asFlonum
+  scaleFloat = realNumberScale
+  isNaN = flonumPredicate isNaN
+  isInfinite = flonumPredicate isInfinite
+  isDenormalized = flonumPredicate isDenormalized
+  isNegativeZero = flonumPredicate isNegativeZero
+  -- Bignums are not IEEE floating-point numbers!
+  isIEEE = flonumPredicate isIEEE
+  atan2 x y = Flonum (atan2 (asFlonum x) (asFlonum y))
+
+mkRoundingMode :: Integral b
+               => (forall a. RealFrac a => a -> b)
+               -> RealNumber -> b
+mkRoundingMode mode = applyMode
+  where applyMode (Bignum i) = fromInteger i -- no rounding to do
+        applyMode (Ratnum r) = mode r
+        applyMode (Flonum f) = mode f
+{-# INLINE mkRoundingMode #-}
+
+instance RealFrac RealNumber where
+  properFraction (Bignum a) = (fromInteger a, 0)
+  properFraction (Ratnum r) = let (n, f) = properFraction r
+                              in  (n, Ratnum f)
+  properFraction (Flonum f) = let (n, f') = properFraction f
+                              in  (n, Flonum f')
+
+  truncate = mkRoundingMode truncate
+  round    = mkRoundingMode round
+  ceiling  = mkRoundingMode ceiling
+  floor    = mkRoundingMode floor
+
+instance Real RealNumber where
+  toRational (Bignum i) = i % 1
+  toRational (Ratnum r) = r
+  toRational (Flonum f) = toRational f
+
+floatingOp :: Monop Double -> Monop RealNumber
+floatingOp f n = Flonum (f (asFlonum n))
+{-# INLINE floatingOp #-}
+
+instance Floating RealNumber where
+  pi = Flonum pi
+  exp = floatingOp exp
+  log = floatingOp log
+  sqrt = floatingOp sqrt
+  sin = floatingOp sin
+  cos = floatingOp cos
+  tan = floatingOp tan
+  asin = floatingOp asin
+  acos = floatingOp acos
+  atan = floatingOp atan
+  sinh = floatingOp sinh
+  cosh = floatingOp cosh
+  tanh = floatingOp tanh
+  asinh = floatingOp asinh
+  acosh = floatingOp acosh
+  atanh = floatingOp atanh
+  log1p = floatingOp log1p
+  expm1 = floatingOp expm1
+  log1pexp = floatingOp log1pexp
+  log1mexp = floatingOp log1mexp
+
+  x ** y = Flonum (asFlonum x ** asFlonum y)
+  logBase x y = Flonum (logBase (asFlonum x) (asFlonum y))
+  
+-- distinct from numberDiv
+realNumberDivide :: Binop RealNumber
+realNumberDivide x y = case implicitRealConversion x y of
+  (Bignum a, Bignum b) -> Ratnum (a % b)
+  (Ratnum a, Ratnum b) -> Ratnum (a / b)
+  (Flonum a, Flonum b) -> Flonum (a / b)
+  _ -> error "realNumberDivide: implicitRealConversion failure"
+
+realNumberRecip :: Monop RealNumber
+realNumberRecip (Bignum i) = Ratnum (1 % i)
+realNumberRecip (Ratnum r) = Ratnum (recip r)
+realNumberRecip (Flonum f) = Flonum (recip f)
+
+numberDivide :: Binop Number
+numberDivide x y = case implicitNumericConversion x y of
+  (Real a, Real b) -> Real (a / b)
+  (Complex a, Complex b) -> Complex (a / b)
+  _ -> error "numberDivide: implicitNumericConversion failure"
+
+numberRecip :: Monop Number
+numberRecip (Real r)    = Real (recip r)
+numberRecip (Complex z) = Complex (recip z)
+
+instance Fractional RealNumber where
+  (/) = realNumberDivide
+  recip = realNumberRecip
+  fromRational = Ratnum
+
+instance Fractional Number where
+  (/) = numberDivide
+  recip = numberRecip
+  fromRational = Real . Ratnum
+
+realNumberCompare :: RealNumber -> RealNumber -> Ordering
+realNumberCompare = (<=>) where
+  Flonum f <=> Flonum g = f `compare` g
+  Flonum f <=> bigOrRat
+    | isInfinite f = f `compare` 0
+    | otherwise    = r1 `compare` r2
+    -- note that we make the fp number exact instead of making the
+    -- exact number fp. This is critical. An example from the R7RS
+    -- paper is: let big be (exp 2 1000). Assume big is exact and
+    -- that inexact numbers are IEEE doubles [they are]. Then
+    -- (= (inexact big) (+ big 1)) should be #f, but if inexact
+    -- conversion is used, it will be #t.
+    where r1 = toRational f
+          r2 = case bigOrRat of
+            Bignum i -> i % 1
+            Ratnum r -> r
+            Flonum{} -> error "realNumberCompare.<=>: impossible flonum"
+  bigOrRat <=> n@Flonum{} = case n <=> bigOrRat of
+    LT -> GT
+    EQ -> EQ
+    GT -> LT
+  Bignum i <=> Bignum j = i `compare` j
+  Bignum i <=> Ratnum r = (i % 1) `compare` r
+  Ratnum r <=> Bignum i = r `compare` (i % 1)
+  Ratnum r <=> Ratnum s = r `compare` s
+
+-- | Number is not really an Integral type, since it's possible it has
+-- a floating-point backing. Here's what we do:
+-- 1) toInteger truncates
+-- 2) quotRem uses Number division unless both arguments are Bignums.
+
+-- This instance exists mostly so that the rounding modes from RealFrac
+-- can be used with RealNumbers.
+instance Integral RealNumber where
+  toInteger (Bignum i) = i
+  toInteger (Ratnum r) = truncate r
+  toInteger (Flonum f) = truncate f
+
+  quotRem (Bignum x) (Bignum y) = let (q, r) = quotRem x y
+                                  in (Bignum q, Bignum r)
+  quotRem x y = (x / y, 0)
+
+instance Ord RealNumber where
+  compare = realNumberCompare
+
+-- | 'Enum' essentially does not have any of the laws you might expect
+-- it to have; for types that are not also Bounded, it is lawless.
+-- This is a useful-ish instance which generally behaves as expected
+-- and which is needed to give the Integral instance.
+instance Enum RealNumber where
+  succ (Bignum i) = Bignum (succ i)
+  succ (Ratnum r) = Ratnum (succ r)
+  succ (Flonum f) = Flonum (succ f)
+  pred (Bignum i) = Bignum (pred i)
+  pred (Ratnum r) = Ratnum (pred r)
+  pred (Flonum f) = Flonum (pred f)
+  toEnum i = Bignum (toEnum i)
+  fromEnum (Bignum i) = fromEnum i
+  fromEnum (Ratnum r) = fromEnum r
+  fromEnum (Flonum f) = fromEnum f
+  -- The rest of the functions are omitted because they are not used
+  -- and it is not clear what the 'correct' implementations are for
+  -- Scheme Numbers.

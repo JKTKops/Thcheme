@@ -1,4 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE ViewPatterns #-}
 module Primitives.String 
   ( primitives
   
@@ -6,13 +7,14 @@ module Primitives.String
   , unwrapStringPH, stringSH
   ) where
 
-import Control.Monad.IO.Class
-import Data.IORef (readIORef, writeIORef)
+import Control.Monad.IO.Class ( MonadIO(..) )
+import Data.IORef (readIORef)
 import Data.List (splitAt) -- if we switch to text, drop this
 import Data.Functor (($>))
 
 import Val
 import EvaluationMonad
+import Primitives.Unwrappers (unwrapExactInteger)
 
 -- TODO: use Data.CaseInsensitive to add the -foldcase functions
 
@@ -33,34 +35,36 @@ stringB [] = String <$> newRef "" -- fast track empty list
 stringB cs = checkChars cs >> String <$> newRef (extract cs)
   where
     checkChars [] = pure ()
-    checkChars (Char c : cs) = checkChars cs
+    checkChars (Char{} : cs) = checkChars cs
     checkChars (notChar:_) = throwError $ TypeMismatch "char" notChar
 
     extract [] = ""
     extract (Char c : cs) = c : extract cs
+    extract _ = panic "string.extract: impossible non-char"
 
 stringLengthP :: Primitive
 stringLengthP = Prim "string-length" (Exactly 1) $ \case
-  [val] | stringSH val -> Number . toInteger . length <$> unwrapStringPH val
+  [val] | stringSH val -> makeBignum . toInteger . length <$> unwrapStringPH val
         | otherwise -> throwError $ TypeMismatch "string" val
+  _ -> panic "stringLength arity"
 
 stringRefP :: Primitive
 stringRefP = Prim "string-ref" (Exactly 2) $ \case
   [string, num]
-    | stringSH string, Number k <- num
-    -> do str <- unwrapStringPH string
+    | stringSH string
+    -> do k <- unwrapExactInteger num
+          str <- unwrapStringPH string
           let len = toInteger $ length str
           if k < 0 || k >= len
             then throwError $ Default 
               $ "string index out of bounds: " ++ show k
             else return $ Char $ str !! fromInteger k
-
-    | stringSH string -> throwError $ TypeMismatch "integer" num
     | otherwise -> throwError $ TypeMismatch "string" string
+  _ -> panic "stringRef arity"
 
 stringSetP :: Primitive
 stringSetP = Prim "string-set!" (Exactly 3) $ \case
-  [String ref, Number k, Char c] -> do
+  [String ref, getExactInteger -> Just k, Char c] -> do
     str <- readRef ref
     let len = toInteger $ length str
     if k < 0 || k >= len
@@ -75,7 +79,8 @@ stringSetP = Prim "string-set!" (Exactly 3) $ \case
     -- if num actually is a number, char must not be a character.
     -- otherwise one of the above patterns would've matched.
     | Number _ <- num -> throwError $ TypeMismatch "character" char
-    | otherwise       -> throwError $ TypeMismatch "integer" num
+    | otherwise       -> throwError $ TypeMismatch "exact integer" num
+  _ -> panic "stringSet arity"
 
 -------------------------------------------------------
 -- Haskell-level utilities
@@ -89,3 +94,4 @@ stringSH _ = False
 unwrapStringPH :: MonadIO m => Val -> m String
 unwrapStringPH (IString s) = return s
 unwrapStringPH (String ref) = liftIO $ readIORef ref
+unwrapStringPH _ = panic "unwrapString: not a string"

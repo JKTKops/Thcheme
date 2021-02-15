@@ -37,10 +37,8 @@ import Data.IORef
 import Data.Maybe
 import Data.Either
 import Data.Functor ((<&>))
-import qualified Data.HashMap.Strict as Map
 
-import Control.Arrow (first)
-import Control.Monad (when, unless, void)
+import Control.Monad (unless, void)
 import qualified Control.Monad as Fish ((>=>), (<=<))
 import Control.Monad.Cont (callCC, runCont)
 import Control.Monad.Except (MonadError (..), liftEither, runExceptT)
@@ -153,7 +151,7 @@ search var = do
     me <- loop envs
     case me of
       Nothing -> tryGbl
-      Just e -> return me
+      Just _e -> return me
   where
     loop [] = return Nothing
     loop (env:envs) = do

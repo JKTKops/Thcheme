@@ -6,6 +6,7 @@ import qualified Data.Char as C
     (toLower, toUpper, isAlpha, isNumber, isSpace, isUpper, isLower)
 
 import Val
+import EvaluationMonad (panic)
 
 primitives :: [Primitive]
 primitives = [ makeCharPrim name Bool f 
@@ -28,3 +29,4 @@ makeCharPrim :: String -> (a -> Val) -> (Char -> a) -> Primitive
 makeCharPrim name constr func = Prim name (Exactly 1) $ \case
   [Char c] -> return . constr $ func c
   [badArg] -> throwError $ TypeMismatch "char" badArg
+  _ -> panic $ "makeCharPrim@" ++ name ++ " arity"

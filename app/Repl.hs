@@ -50,6 +50,18 @@ getInput = runMaybeT $ go id 0
     -- this is a bit optimized to avoid the awful behavior of
     -- ++ and also to avoid traversing the whole string every iteration
     -- to determine the balance.
+    --
+    -- On the other hand, it's also wrong. 'bracketBalance' doesn't do
+    -- the right thing when it encounters brackets in comments or strings
+    -- (excluding datum comments). The right thing to do is probably
+    -- just to actually try parsing the input on each iteration. Hopefully
+    -- no one is crazy enough to enter hundreds of lines of input at once
+    -- and get bad quadratic behavior.
+    --
+    -- The really-right thing to do would be to have a reader that integrates
+    -- with the parser, able to ask the parser if it has accepted or if it
+    -- needs more input. I suspect this is possible using something like a
+    -- coroutine monad.
     go :: (String -> String) -> Int -> MaybeT Repl String
     go prevLines balance = do 
         line <- MaybeT $ getInputLine prompt

@@ -227,7 +227,9 @@ askLabel name = asks $ M.lookup name
 -- it calls 'showLitChar' - a function that does not propogate Unicode
 -- characters! Which is pretty silly. This leads to the awkward situation where
 -- we print #\λ correctly, but not (list->string '(#\λ)).
--- This function corrects the case that escapes Unicode code points.
+--
+-- This function corrects the case of 'showLitChar'
+-- that escapes Unicode code points.
 ushowString :: String -> ShowS
 ushowString s = showChar '\"' . showLitString s . showChar '\"'
   where 

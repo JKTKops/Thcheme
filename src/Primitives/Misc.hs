@@ -18,11 +18,11 @@ import Control.Monad.Reader -- for qq
 
 primitives :: [Primitive]
 primitives = [ identityFunction
-             , evalPrim
-             , applyFunc
-             , errorFunc
+             , evalP
+             , applyP
+             , errorP
              , quit
-             , loadPrim
+             , loadP
              , callWithCurrentContinuation
              ]
 
@@ -48,6 +48,7 @@ callWithCurrentContinuation =
     callcc :: [Val] -> EM Val
     callcc [func] = callCC $ \k ->
         tailCall func [Continuation k]
+    callcc _ = panic "callcc arity"
 
 -- compose?
 
@@ -68,6 +69,7 @@ set :: Macro
 set = Macro (Exactly 2) $ \_ -> \case
   [Symbol var, form] -> evalBody form >>= setVar var
   [notAtom, _]     -> throwError $ TypeMismatch "symbol" notAtom
+  _ -> panic "set arity"
 
 setOpt :: Macro
 setOpt = Macro (Exactly 2) $ \_ -> \case
@@ -79,10 +81,12 @@ setOpt = Macro (Exactly 2) $ \_ -> \case
       Just opt -> if truthy val then enableOpt opt else disableOpt opt
     return val
   [notAtom, _] -> throwError $ TypeMismatch "symbol" notAtom
+  _ -> panic "setOpt arity"
 
-defineBuiltin :: Builtin
+defineB :: Builtin
 -- arity is AtLeast 1 so can't be called with no args
-defineBuiltin (x:xs) = do
+defineB [] = panic "define arity"
+defineB (x:xs) = do
   defnHead <- freezeList x
   defineBuiltinFrozen defnHead xs
 
@@ -121,12 +125,13 @@ defineBuiltin (x:xs) = do
 -- 'define's builtin throws the regular Exactly 2 error if it isn't defining
 -- a function.
 define, lambda :: Macro
-define = Macro (AtLeast 1) $ const defineBuiltin
-lambda = Macro (AtLeast 1) $ const mkLambda
+define = Macro (AtLeast 1) $ const defineB
+lambda = Macro (AtLeast 1) $ const lambdaB
 
-mkLambda :: [Val] -> EM Val
+lambdaB :: Builtin
 -- arity is AtLeast 1 so can't be called with no args
-mkLambda (formals : body) = do 
+lambdaB [] = panic "lambda arity"
+lambdaB (formals : body) = do 
   frozenFormals <- freezeList formals
   case frozenFormals of
     FList params -> case body of
@@ -161,28 +166,29 @@ makeFuncVarargs = makeFunc . Just . show
 defmacro :: Macro
 defmacro = Macro (AtLeast 2) $ const $
   \(Symbol name : ps : body) -> do
-    lam <- mkLambda (ps : body)
+    lam <- lambdaB (ps : body)
     macro <- makeImproperMutableList [Symbol "macro"] lam
     defineVar name macro
 
 begin :: Macro
 begin = Macro (AtLeast 1) $ \tail stmts -> evalSeq tail stmts
 
-evalPrim :: Primitive
-evalPrim = Prim "eval" (Exactly 1) $ \[form] -> evalTail form
+evalP :: Primitive
+evalP = Prim "eval" (Exactly 1) $ \[form] -> evalTail form
 
 -- TODO: [r7rs]
-applyFunc :: Primitive
-applyFunc = Prim "apply" (AtLeast 1) $ \case
+applyP :: Primitive
+applyP = Prim "apply" (AtLeast 1) $ \case
   [func, form] -> do
     frozenForm <- freezeList form
     case frozenForm of
       FList args -> tailCall func args
       _bad -> throwError $ TypeMismatch "list" form
   (func : args) -> tailCall func args
+  _ -> panic "apply arity"
 
-loadPrim :: Primitive
-loadPrim = Prim "load" (Exactly 1) $ \case
+loadP :: Primitive
+loadP = Prim "load" (Exactly 1) $ \case
   [val] | stringSH val -> do
           filename <- unwrapStringPH val
           file <- liftIO . runExceptT $ load filename
@@ -196,6 +202,7 @@ loadPrim = Prim "load" (Exactly 1) $ \case
               put state
               return r
         | otherwise -> throwError $ TypeMismatch "string" val
+  _ -> panic "load arity"
 
 quasiquote :: Macro
 quasiquote = Macro (Exactly 1) $ \_ [form]-> runReaderT (qq form) 0
@@ -248,8 +255,9 @@ quasiquote = Macro (Exactly 1) $ \_ [form]-> runReaderT (qq form) 0
 quit :: Primitive
 quit = Prim "quit" (Exactly 0) $ \_ -> throwError Quit
 
-errorFunc :: Primitive
-errorFunc = Prim "error" (Exactly 1) $ \case
+errorP :: Primitive
+errorP = Prim "error" (Exactly 1) $ \case
   [val] 
     | stringSH val -> unwrapStringPH val >>= throwError . Default
     | otherwise -> liftIO (writeSharedSH val) >>= throwError . Default
+  _ -> panic "error function arity"

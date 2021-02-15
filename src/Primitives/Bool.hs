@@ -1,6 +1,4 @@
-module Primitives.Bool (primitives, predicate, boolBinop) where
-
-import Control.Monad.Except (throwError)
+module Primitives.Bool (primitives, predicate, predicateM, boolBinop) where
 
 import Val
 import EvaluationMonad (EM)
@@ -21,6 +19,13 @@ predicate :: String            -- ^ name of resulting 'Primitive'
           -> Primitive
 predicate name unwrapper p = Prim name (Exactly 1) $
   \ [val] -> Bool . p <$> unwrapper val
+
+-- | Evaluate an impure predicate on a 'Val'.
+predicateM :: String           -- ^ name of resulting Primitive
+           -> (Val -> EM Bool) -- ^ predicate (SH)
+           -> Primitive
+predicateM name p = Prim name (Exactly 1) $
+  \ [val] -> Bool <$> p val
 
 boolNot :: Primitive
 boolNot = predicate "not" unwrapBool not

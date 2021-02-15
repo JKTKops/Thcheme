@@ -1,14 +1,13 @@
-{-# LANGUAGE LambdaCase #-}
 module Primitives.TypeTransformers (primitives) where
 
 import Data.Char (chr, ord)
 import qualified Data.Vector as V
-import qualified Data.Vector.Mutable as V
 import Control.Monad.Except (throwError)
 
 import Val
 import EvaluationMonad
 import Primitives.String hiding (primitives)
+import Primitives.Unwrappers (unwrapExactInteger)
 
 primitives :: [Primitive]
 primitives = [ typeTransformer name transform 
@@ -31,7 +30,7 @@ typeTransformer name t = Prim name (Exactly 1) $
   \[x] -> t x
 
 charToNumber :: Val -> EM Val
-charToNumber (Char c) = return . Number . fromIntegral $ ord c
+charToNumber (Char c) = return . makeBignum . fromIntegral $ ord c
 charToNumber notChar  = throwError $ TypeMismatch "char" notChar
 
 charToString :: Val -> EM Val
@@ -53,8 +52,9 @@ listToVector v = do
     liftIO $ Vector <$> V.thaw (V.fromList vals)
 
 numberToChar :: Val -> EM Val
-numberToChar (Number n) = return . Char . chr $ fromIntegral n
-numberToChar notNum     = throwError $ TypeMismatch "number" notNum
+numberToChar v = do
+  i <- unwrapExactInteger v
+  return $ Char $ chr $ fromIntegral i
 
 -- R7RS is unclear if these strings should be mutable. I'm guessing that in
 -- the absence of an explicit suggestion, we should make them mutable.
@@ -77,6 +77,10 @@ stringToList val
   | stringSH val = unwrapStringPH val >>= makeMutableList . map Char
   | otherwise = throwError $ TypeMismatch "string" val
 
+-- TODO [r7rs]
+-- needs access to the new parser to read numbers
+
+-- | Pretty broken, only accepts strings containing integers in base 10.
 stringToNumber :: Val -> EM Val
 stringToNumber str
   | stringSH str = do
@@ -84,7 +88,7 @@ stringToNumber str
     let parsed = reads s
     if null parsed || snd (head parsed) /= ""
       then return $ Bool False
-      else return . Number . fst $ head parsed
+      else return . makeBignum . fst $ head parsed
   | otherwise = throwError $ TypeMismatch "string" str
 
 vectorToList :: Val -> EM Val

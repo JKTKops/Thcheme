@@ -1,9 +1,8 @@
 {-# LANGUAGE LambdaCase #-}
 module Primitives.TypeCheck (primitives) where
 
-import Control.Monad.Except (throwError)
-
 import Val
+import EvaluationMonad (panic)
 
 primitives :: [Primitive]
 primitives = [ typePred name func 
@@ -23,6 +22,7 @@ primitives = [ typePred name func
 typePred :: String -> (Val -> Val) -> Primitive
 typePred tyname func = Prim (tyname ++ "?") (Exactly 1) $ \case
   [x] -> return $ func x
+  _ -> panic $ "typePred@" ++ tyname ++ " arity"
 
 symbol :: Val -> Val
 symbol (Symbol _) = Bool True

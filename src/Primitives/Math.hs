@@ -1,44 +1,57 @@
-{-# Language LambdaCase #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
 module Primitives.Math (primitives) where
 
 import Control.Monad (mapM)
+import Data.Complex (Complex(..))
+import Data.Functor ((<&>))
+import Data.List (foldl', foldl1')
 
 import Val
-import EvaluationMonad (throwError)
-import Primitives.Unwrappers (unwrapNum)
-import Primitives.Bool (predicate)
+import EvaluationMonad (throwError, panic)
+import Primitives.Unwrappers (unwrapNum, unwrapRealNum)
+import Primitives.Bool (predicate, predicateM)
 
 addP, mulP, divP, modP, quotP, remP :: Primitive
 addP = numericBinop "+" (+) 0
 mulP = numericBinop "*" (*) 1
-divP = guardDivZero $ numericBinop1 "/" div -- see Note: [divide]
-modP = numericBinop1 "mod" mod
-quotP = numericBinop1 "quotient" quot
-remP = numericBinop1 "remainder" rem
+divP = guardDivZero $ numericBinop1 "/" (/) -- see Note: [divide]
+modP = realBinop1 "mod" mod
+quotP = realBinop1 "quotient" quot
+remP = realBinop1 "remainder" rem
 
 -- | Converts a (Haskell) builtin function on Integers to a 'Primitive'.
 --   The primitive can only cause type errors;
 --   Too many arguments will be folded over the operation;
 --   none will use the default value.
 numericBinop :: String
-             -> (Integer -> Integer -> Integer)
-             -> Integer
+             -> (Number -> Number -> Number)
+             -> Number
              -> Primitive
-numericBinop name op start = Prim name (AtLeast 0) $ 
-  fmap (Number . foldl op start) . mapM unwrapNum
+numericBinop name op start = Prim name (AtLeast 0) $
+  fmap (Number . foldl' op start) . mapM unwrapNum
 
 -- | Same as numericBinop, except at least one arg must be given.
 numericBinop1 :: String
-              -> (Integer -> Integer -> Integer)
+              -> (Number -> Number -> Number)
               -> Primitive
-numericBinop1 name op = Prim name (AtLeast 1) $ 
-  fmap (Number . foldl1 op) . mapM unwrapNum
+numericBinop1 name op = Prim name (AtLeast 1) $
+  fmap (Number . foldl1' op) . mapM unwrapNum
+
+realBinop1 :: String
+           -> (RealNumber -> RealNumber -> RealNumber)
+           -> Primitive
+realBinop1 name op = Prim name (AtLeast 1) $
+  fmap (Number . Real . foldl1' op) . mapM unwrapRealNum
 
 guardDivZero :: Primitive -> Primitive
 guardDivZero (Prim name arity f) = Prim name arity $ \args ->
-  if Number 0 `elem` tail args
-  then throwError $ Default "divide by zero"
-  else f args
+    if any isExactZeroVal $ tail args
+    then throwError $ Default "divide by zero"
+    else f args
+  where
+    isExactZeroVal (Number n) = isExactZero n
+    isExactZeroVal _ = False
 
 -- | See the r7rs standard.
 --
@@ -47,16 +60,17 @@ subP :: Primitive
 subP = Prim "-" (AtLeast 1) $ \case
   [x]      -> Number . negate <$> unwrapNum x
   as@(_:_) -> Number . foldl1 (-) <$> mapM unwrapNum as
+  _ -> panic "sub arity"
 
 negateP :: Primitive
-negateP = Prim "negate" (Exactly 1) $ 
+negateP = Prim "negate" (Exactly 1) $
   \[x] -> Number . negate <$> unwrapNum x
 
-numericPredicate :: String -> (Integer -> Bool) -> Primitive
-numericPredicate name = predicate name unwrapNum
+numericPredicate :: String -> (RealNumber -> Bool) -> Primitive
+numericPredicate name p = predicateM name $ fmap p . unwrapRealNum
 
 zeroCheck :: Primitive
-zeroCheck = numericPredicate "zero?" (== 0)
+zeroCheck = predicate "zero?" unwrapNum (== 0)
 
 positiveCheck :: Primitive
 positiveCheck = numericPredicate "positive?" (> 0)
@@ -82,6 +96,19 @@ divide [x]    = unwrapNum x >>= return . Number . ((Prelude./) 1)
 divide params = mapM unwrapNum params >>= return . Number . foldl1 (Prelude./)
 -}
 
+inexactP :: Primitive
+inexactP = Prim "inexact" (Exactly 1) $
+  \[x] -> unwrapNum x <&> \case
+    Real r -> Number $ Real $ realInexact r
+    Complex (r :+ i) -> Number $ Complex $ realInexact r :+ realInexact i
+
+makeRectangularP :: Primitive
+makeRectangularP = Prim "make-rectangular" (Exactly 2) $
+  \[x, y] -> do
+    a <- unwrapRealNum x
+    b <- unwrapRealNum y
+    return $ Number $ Complex $ a :+ b
+
 primitives :: [Primitive]
 primitives = [ addP
              , subP
@@ -96,4 +123,8 @@ primitives = [ addP
              , negativeCheck
              , oddCheck
              , evenCheck
+
+             , inexactP
+
+             , makeRectangularP
              ]
