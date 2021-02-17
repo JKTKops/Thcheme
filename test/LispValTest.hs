@@ -7,6 +7,7 @@ import Test.Tasty.SmallCheck as SC
 import Test.Tasty.QuickCheck as QC
 import Test.SmallCheck.Series
 
+import Data.Complex (Complex(..))
 import Data.List (isPrefixOf)
 import Data.IORef
 import qualified Data.Vector as V
@@ -55,6 +56,15 @@ instance Monad m => Serial m Arity where
     series = cons1 Exactly
           \/ cons1 AtLeast
           \/ cons2 Between
+
+instance Monad m => Serial m Number where
+    series = cons1 Real \/ cons1 Complex
+
+instance Monad m => Serial m RealNumber where
+    series = cons1 Bignum \/ cons1 Ratnum \/ cons1 Flonum
+
+instance (Monad m, Serial m a) => Serial m (Complex a) where
+    series = cons2 (:+)
 
 instance Arbitrary Val where
     arbitrary = sized lispval'
@@ -108,6 +118,16 @@ instance Arbitrary Arity where
       ]
       where
         mkBetween lo hi = Between (QC.getPositive lo) (QC.getPositive hi)
+
+instance Arbitrary Number where
+    arbitrary = oneof [Real <$> arbitrary, Complex <$> arbitrary]
+
+instance Arbitrary RealNumber where
+    arbitrary = oneof
+      [ Bignum <$> arbitrary
+      , Ratnum <$> arbitrary
+      , Flonum <$> arbitrary
+      ]
 
 lispValTests :: TestTree
 lispValTests = testGroup "Val" [unitTests, propTests]

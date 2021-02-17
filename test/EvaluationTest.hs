@@ -354,7 +354,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         { testName = "dot unquote is unquote-splicing"
         , input    = "(define lst '(1 2))\n`(0 . ,lst)"
         , impureExpected = mkExpectedVal $
-            makeMutableList $ map Number [0..2]
+            makeMutableList $ map (Number . Real) [0..2]
         }
     , ImpureEvalTest
         { testName = "unquote in weird places is untouched"

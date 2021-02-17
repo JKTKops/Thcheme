@@ -1,6 +1,8 @@
 {-# LANGUAGE PatternSynonyms, ViewPatterns #-}
 module ParsersTest (parsersTests) where
 
+import Prelude hiding (getChar)
+
 import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
@@ -18,10 +20,10 @@ import Val
 import LispValTest ()
 import EvaluationTest ((?=))
 
-pattern IList xs <- (fromList -> Just xs)
+pattern IList xs <- (unrollList -> Just xs)
   where IList xs = makeImmutableList xs
 
-pattern IDottedList xs x <- (fromDList -> Just (xs, x))
+pattern IDottedList xs x <- (unrollDList -> Just (xs, x))
   where IDottedList xs x = makeImproperImmutableList xs x
 
 parsersTests :: TestTree
@@ -494,7 +496,7 @@ listParserTests = testGroup "Parsing Lists"
     [ testCase "\"5 #a #\\a\"" $ do
         let p = parse parseList "" "5 #a #\\a"
         isRight p @? "Parse failed."
-        let val = fromList $ fromRight undefined p
+        let val = unrollList $ fromRight undefined p
         isJust val @? "Parse did not return a list."
         let correct = case fromJust val of
                 [Number 5, Symbol "#a", Char 'a'] -> True
@@ -508,7 +510,7 @@ dotListParserTests = testGroup "Parsing Dotted Lists"
         let p = parse parseDottedList "" "5 #a . #\\a"
         isRight p @? "Parse failed."
         let Right val = p
-            mpair = fromDList val
+            mpair = unrollDList val
         isJust mpair @? "Parse did not return a dotted list."
         let correct = case fromJust mpair of
               ([Number 5, Symbol "#a"], Char 'a') -> True
@@ -580,16 +582,16 @@ parseSucceeds :: Parser a -> String -> Bool
 parseSucceeds p s = isRight $ parse p "" s
 
 testStringParser :: TestBuilder String -> TestTree
-testStringParser tb = testParser tb fromString
+testStringParser tb = testParser tb getString
 
 testSymbolParser :: TestBuilder String -> TestTree
-testSymbolParser tb = testParser tb fromSymbol
+testSymbolParser tb = testParser tb getSymbol
 
 testNumberParser :: TestBuilder Integer -> TestTree
-testNumberParser tb = testParser tb fromNumber
+testNumberParser tb = testParser tb getInteger
 
 testCharParser :: TestBuilder Char -> TestTree
-testCharParser tb = testParser tb fromChar
+testCharParser tb = testParser tb getChar
 
 data TestType = TString | TSymbol | TNumber | TChar | End2End
 instance Show TestType where
@@ -643,30 +645,30 @@ testParser testBuilder decons = let
             step "Verifying failure"
             isLeft parse @? "Parse succeeded on: " ++ input testBuilder
 
-fromString :: Val -> Maybe String
-fromString (IString s) = Just s
-fromString _          = Nothing
+getString :: Val -> Maybe String
+getString (IString s) = Just s
+getString _          = Nothing
 
-fromSymbol :: Val -> Maybe String
-fromSymbol (Symbol s) = Just s
-fromSymbol _        = Nothing
+getSymbol :: Val -> Maybe String
+getSymbol (Symbol s) = Just s
+getSymbol _        = Nothing
 
-fromNumber :: Val -> Maybe Integer
-fromNumber (Number n) = Just n
-fromNumber _          = Nothing
+getInteger :: Val -> Maybe Integer
+getInteger (Number (Real (Bignum n))) = Just n
+getInteger _ = Nothing
 
-fromChar :: Val -> Maybe Char
-fromChar (Char c) = Just c
-fromChar _        = Nothing
+getChar :: Val -> Maybe Char
+getChar (Char c) = Just c
+getChar _        = Nothing
 
-fromList :: Val -> Maybe [Val]
-fromList (IPair c d) =
-    (c:) <$> fromList d
-fromList Nil = Just []
-fromList _ = Nothing
+unrollList :: Val -> Maybe [Val]
+unrollList (IPair c d) =
+    (c:) <$> unrollList d
+unrollList Nil = Just []
+unrollList _ = Nothing
 
-fromDList :: Val -> Maybe ([Val], Val)
-fromDList (IPair c d) =
-    first (c:) <$> fromDList d
-fromDList Nil = Nothing -- not dotted
-fromDList obj = Just ([], obj)
+unrollDList :: Val -> Maybe ([Val], Val)
+unrollDList (IPair c d) =
+    first (c:) <$> unrollDList d
+unrollDList Nil = Nothing -- not dotted
+unrollDList obj = Just ([], obj)
