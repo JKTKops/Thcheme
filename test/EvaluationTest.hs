@@ -288,6 +288,22 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , impureExpected = mkExpectedVal $
             makeMutableList [Number 6, Number 8]
         }
+    , EvalTest
+        { testName = "uncaptured free variables are not found in calling env"
+        , input = "(begin\
+                  \  (define (foo) x)\
+                  \  (let ((x 5))\
+                  \    (begin (foo) ())))"
+        , expected = Left $ UnboundVar "[Get]" "x"
+        }
+    , EvalTest
+        { testName = "uncaptured free variables are found in global env"
+        , input = unlines [ "(define (foo) x)"
+                          , "(define x 5)"
+                          , "(foo)"
+                          ]
+        , expected = Right $ Number 5
+        }
     , ImpureEvalTest
         { testName = "captured global variables mutate"
         , input    = unlines [ "(define x 5)"
@@ -314,6 +330,18 @@ evalTests = testGroup "eval" $ map mkEvalTest
                 ]
         , impureExpected = mkExpectedVal $
             makeMutableList [Number 1, Number 0]
+        }
+    , EvalTest
+        -- At the time of writing this test (2/19/2021) all local scope
+        -- mechanisms are rewritten in terms of lambdas, and making/applying
+        -- closures can't actually make the 'localEnv' stack bigger than 1.
+        -- However in the future, 'let' & friends will become primitives and
+        -- at that point this test will actually be interesting.
+        { testName = "Local bindings are visible in nested scopes"
+        , input = "(let ((x 1))\
+                  \  (let ((y 2))\
+                  \    (+ x y)))"
+        , expected = Right $ Number 3
         }
     , EvalTest
         { testName = "Begin does not open a new scope"

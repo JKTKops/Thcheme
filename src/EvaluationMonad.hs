@@ -4,7 +4,7 @@ module EvaluationMonad
       EM (..)
     , EvalState (..)
     , StackFrame (..)
-    , Env
+    , Env, GlobalEnv, LocalEnv
     , Opts
 
     -- * Re-exported modules
@@ -17,7 +17,7 @@ module EvaluationMonad
     , execEM, execAnyEM, unsafeEMtoIO
 
       -- * Adjusting the evaluation environment
-    , envSnapshot, pushFrame, popFrame
+    , pushFrame, popFrame
 
       -- * using options
     , enableOpt, disableOpt, lintAssert, noOpts
@@ -34,7 +34,6 @@ module EvaluationMonad
     ) where
 
 import Data.IORef
-import Data.Maybe
 import Data.Either
 import Data.Functor ((<&>))
 
@@ -53,7 +52,7 @@ import GHC.Stack (HasCallStack) -- for panic
 
 execEM :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
 execEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
-                                ES initEnv [] opts
+                                ES initEnv [] [] opts
 
 -- | Useful for testing etc.
 execAnyEM :: Env -> Opts -> EM a -> IO (Either LispErr a)
@@ -83,22 +82,21 @@ unsafeEMtoIO em = do
   Right a <- execAnyEM ne (setOpt Lint noOpts) em
   return a
 
-envSnapshot :: EM Env
-envSnapshot = do
-    theStack <- gets stack
-    liftIO $ flatten (envsInStack theStack) >>= newIORef
-  where
-    flatten = fmap mconcat . mapM readIORef
-
-envsInStack :: [StackFrame] -> [Env]
-envsInStack = mapMaybe envOfFrame
-  where envOfFrame (StackFrame _ env) = env
-
 pushFrame :: StackFrame -> EM ()
-pushFrame f = modify $ \s -> s { stack = f : stack s }
+pushFrame frame@(StackFrame _ mlcl) = modify $ \s -> case mlcl of
+  Just lcl -> s { localEnv = lcl, stack = frame : stack s }
+  Nothing  -> s { localEnv = [],  stack = frame : stack s }
 
 popFrame :: EM ()
-popFrame = modify $ \s -> s { stack = tail $ stack s }
+popFrame = do
+  frameStack <- gets stack
+  case frameStack of
+    [] -> panic "popFrame: no frame"
+    [_] -> modify $ \s -> s { localEnv = [], stack = [] }
+    (_ : tail@(StackFrame _ mOldLcl : _)) ->
+      modify $ \s -> case mOldLcl of
+        Just lcl -> s { localEnv = lcl, stack = tail }
+        Nothing  -> s { localEnv = [],  stack = tail }
 
 -- | If linting is enabled, assert that a predicate is true.
 -- If the assertion fails, the runtime will panic with the given message.
@@ -117,9 +115,9 @@ panic msg = error $ "Panic! The \"impossible\" happened.\n" ++ msg
 -- | Searches the environment stack top-down for a symbol
 getVar :: String -> EM Val
 getVar var = do
-    stack <- gets stack
-    gbl   <- gets globalEnv
-    v <- loop gbl $ envsInStack stack
+    gbl <- gets globalEnv
+    lcl <- gets localEnv
+    v   <- loop gbl lcl
     crashUndefined v
   where
     loop gbl [] = liftIOThrows $ Env.getVar gbl var
@@ -146,9 +144,8 @@ setVar var val = do
 
 search :: String -> EM (Maybe Env)
 search var = do
-    stack <- gets stack
-    let envs = envsInStack stack
-    me <- loop envs
+    lcl <- gets localEnv
+    me <- loop lcl
     case me of
       Nothing -> tryGbl
       Just _e -> return me
@@ -172,17 +169,13 @@ setVarForCapture name = void $
 
 -- | Define a var in the innermost environment.
 --
--- Panics if the innermost stackframe doesn't have an environment.
--- If the stackframe doesn't have an environment, then we must be trying
--- to define a var inside a primitive, which is a mistake.
--- Use 'setVar' to set a var that might not be from the innermost
+-- Use 'setVar' to set a local var that might not be from the innermost
 -- environment.
 defineVar :: String -> Val -> EM Val
 defineVar var val = do
-    stack <- gets stack
-    env <- case stack of
-      (StackFrame _ Nothing : _)  -> panic "no env in frame"
-      (StackFrame _ (Just e) : _) -> pure e
+    lclStack <- gets localEnv
+    env <- case lclStack of
+      (e:_) -> pure e
       [] -> gets globalEnv
     liftIOThrows $ Env.defineVar env var val
 

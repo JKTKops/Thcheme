@@ -155,8 +155,8 @@ makeFunc :: Maybe String
          -> EM Val
 makeFunc varargs params body name = do
     maybe (pure ()) setVarForCapture name
-    env <- envSnapshot
-    return $ Closure (map show params) varargs body env name
+    lcl <- gets localEnv
+    return $ Closure (map show params) varargs body lcl name
 
 makeFuncNormal :: [Val] -> [Val] -> Maybe String -> EM Val
 makeFuncNormal = makeFunc Nothing
@@ -197,7 +197,7 @@ loadP = Prim "load" (Exactly 1) $ \case
             Right ls -> do
               state <- get
               -- put (interaction-environment)
-              put $ ES (globalEnv state) [] (options state)
+              put $ ES (globalEnv state) [] [] (options state)
               r <- evalBodySeq ls
               put state
               return r

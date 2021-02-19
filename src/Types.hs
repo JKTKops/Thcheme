@@ -1,7 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Types
-    ( Env
+    ( Env, GlobalEnv, LocalEnv
     , Arity (..)
     , InTail
     , Builtin
@@ -58,6 +58,8 @@ isn't significantly smaller, and currently we pay an extra dereference for
 every single name lookup. Low-hanging fruit?
 -}
 type Env = IORef (HashMap String (IORef Val))
+type GlobalEnv = Env
+type LocalEnv  = [Env] -- ^ stack of environments forms local env
 type Ref = IORef
 
 -- * Function types and components
@@ -101,7 +103,7 @@ data Val
      { params :: [String]
      , vararg :: Maybe String
      , body   :: [Val]
-     , cloEnv :: Env
+     , cloEnv :: LocalEnv
      , name   :: Maybe String
      }
   | Port Handle
@@ -326,7 +328,8 @@ instance MonadIO EM where
     liftIO = emLiftIO
 
 instance MonadFail EM where
-    fail s = throwError . Default $ s ++ "\nAn error occurred, please report a bug."
+    fail s = throwError . Default $ 
+        "The following error occurred, please report a bug.\n" ++ s
 
 instance HasOpts EM where
     getOpts = gets options
@@ -336,9 +339,11 @@ liftIOThrows :: IOThrowsError a -> EM a
 liftIOThrows = liftEither <=< liftIO . runExceptT
 
 -- | The current state of evaluation
-data EvalState = ES { globalEnv  :: Env
+data EvalState = ES { globalEnv  :: GlobalEnv
+                    , localEnv   :: LocalEnv
                     , stack      :: [StackFrame]
                     , options    :: Opts
                     }
 
-data StackFrame = StackFrame Val (Maybe Env)
+-- | Associate a call in the callTrace with its captured local environment.
+data StackFrame = StackFrame Val (Maybe LocalEnv)

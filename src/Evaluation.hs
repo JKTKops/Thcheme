@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 module Evaluation
     ( -- | evaluate a string
       evaluate
@@ -155,9 +156,13 @@ apply _ notFunc _ = throwError $ NotFunction "Not a function" notFunc
 
 makeStackFrame :: Val -> [Val] -> EM StackFrame
 makeStackFrame (Closure formals mvarg _body cloEnv mname) args = do
-  env  <- bindFormals cloEnv
-  env' <- bindVararg env
-  return $ buildFrame name args $ Just env'
+  (top, tail) <- case cloEnv of
+    [] -> (,[]) <$> liftIO Env.nullEnv
+    (top : rest) -> pure (top, rest)
+
+  top'  <- bindFormals top
+  top'' <- bindVararg top'
+  return $ buildFrame name args $ Just $ top'' : tail
   where
     bindFormals env = liftIO $ Env.bindVars env 
                              $ Map.fromList 
@@ -174,7 +179,7 @@ makeStackFrame Continuation{} args = pure $ buildFrame "#<cont>" args Nothing
 makeStackFrame head args = 
   pure $ StackFrame (makeImmutableList (head:args)) Nothing
 
-buildFrame :: String -> [Val] -> Maybe Env -> StackFrame
+buildFrame :: String -> [Val] -> Maybe LocalEnv -> StackFrame
 buildFrame name args = StackFrame (makeImmutableList (Symbol name : args))
 
 evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)

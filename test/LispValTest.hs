@@ -170,7 +170,7 @@ testShowPrimitives = testCase "Primitives show correctly" $
 
 testShowFunctions :: TestTree
 testShowFunctions = testCase "Functions show correctly" $
-    do emptyEnv <- newIORef Map.empty
+    do let emptyEnv = []
        show (Closure [] Nothing [] emptyEnv (Just "testFunc")) @?= "(testFunc () ...)"
        show (Closure ["x"] Nothing [] emptyEnv (Just "testFunc")) @?=
             "(testFunc (x) ...)"
