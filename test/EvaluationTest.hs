@@ -519,6 +519,18 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         , args = [Number 0, Number 1, Number 2]
         , expectedA = Right $ makeImmutableList [Number 0, Number 1, Number 2]
         }
+    , ApplyTB
+        { testNameA = "Min apply 'Between' arity func"
+        , funcIn = "make-vector"
+        , args = [Number 2]
+        , expectedA = Right $ IVector $ fromList [Number 0, Number 0]
+        }
+    , ApplyTB
+        { testNameA = "Max apply 'Between' arity func"
+        , funcIn = "make-vector"
+        , args = [Number 2, Number 3]
+        , expectedA = Right $ IVector $ fromList $ replicate 2 (Number 3)
+        }
     ]
 
 -- Precondition on apply: args are fully evaluated scheme forms

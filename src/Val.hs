@@ -192,8 +192,8 @@ testArity (AtLeast n0) vs0 = check $ cmpLength n0 vs0
     check _  = pure ()
 testArity a@(Between lo hi) vs0 = check (cmpLength lo vs0) (cmpLength hi vs0)
   where
-    check LT _ = raise
-    check _ GT = raise
+    check GT _ = raise
+    check _ LT = raise
     check _ _  = pure ()
     raise = throwError $ NumArgs a vs0
 
