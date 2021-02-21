@@ -822,7 +822,8 @@ instance Floating Number where
       EQ -> Real nan
       -- note that exp and log give real results when applied
       -- to real arguments, when possible.
-    | otherwise = exp (log x * y)
+  Real x ** Real y = Real (x ** y)
+  x ** y = exp (log x * y)
   
   sqrt z | isExactZero z = 0
   sqrt (Real r)
