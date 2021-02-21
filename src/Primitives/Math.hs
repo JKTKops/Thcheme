@@ -6,6 +6,7 @@ import Control.Monad (mapM)
 import Data.Complex (Complex(..))
 import Data.Functor ((<&>))
 import Data.List (foldl', foldl1')
+import Data.Ratio (approxRational)
 
 import Val
 import EvaluationMonad (throwError, panic)
@@ -96,11 +97,37 @@ divide [x]    = unwrapNum x >>= return . Number . ((Prelude./) 1)
 divide params = mapM unwrapNum params >>= return . Number . foldl1 (Prelude./)
 -}
 
+-------------------------------------------------------------------------------
+-- typically useful math operations
+-------------------------------------------------------------------------------
+
 inexactP :: Primitive
 inexactP = Prim "inexact" (Exactly 1) $
   \[x] -> unwrapNum x <&> \case
     Real r -> Number $ Real $ realInexact r
     Complex (r :+ i) -> Number $ Complex $ realInexact r :+ realInexact i
+
+rationalizeP :: Primitive
+rationalizeP = Prim "rationalize" (Exactly 2) $
+  \[x, eps] -> do
+    rx <- unwrapRealNum x
+    reps <- unwrapRealNum eps
+    return $ Number $ Real $ Ratnum $ approxRational rx reps
+
+squareP :: Primitive
+squareP = Prim "square" (Exactly 1) $
+  \[x] -> Number . (\n -> n*n) <$> unwrapNum x
+
+exptP :: Primitive
+exptP = Prim "expt" (Exactly 2) $
+  \[z1, z2] -> do
+    z1' <- unwrapNum z1
+    z2' <- unwrapNum z2
+    return $ Number $ z1' ** z2'
+
+-------------------------------------------------------------------------------
+-- Complex functions
+-------------------------------------------------------------------------------
 
 makeRectangularP :: Primitive
 makeRectangularP = Prim "make-rectangular" (Exactly 2) $
@@ -108,6 +135,78 @@ makeRectangularP = Prim "make-rectangular" (Exactly 2) $
     a <- unwrapRealNum x
     b <- unwrapRealNum y
     return $ Number $ Complex $ a :+ b
+
+makePolarP :: Primitive
+makePolarP = Prim "make-polar" (Exactly 2) $
+  \[m, theta] -> do
+    m' <- unwrapRealNum m
+    theta' <- unwrapRealNum theta
+    return $ Number $ Real m' * Complex (cos theta' :+ sin theta')
+
+realPartP :: Primitive
+realPartP = Prim "real-part" (Exactly 1) $
+  \[z] -> unwrapNum z <&> \case
+    Real r -> Number $ Real r
+    Complex (r :+ _i) -> Number $ Real r
+
+imagPartP :: Primitive
+imagPartP = Prim "imag-part" (Exactly 1) $
+  \[z] -> unwrapNum z <&> \case
+    Real _r -> Number $ Real 0
+    Complex (_r :+ i) -> Number $ Real i
+
+magnitudeP :: Primitive
+magnitudeP = Prim "magnitude" (Exactly 1) $
+  \[z] -> Number . abs <$> unwrapNum z
+
+angleP :: Primitive
+angleP = Prim "angle" (Exactly 1) $
+  \[z] -> unwrapNum z <&> \case
+    Real r
+      | r < 0 || isNegativeZero r -> Number pi
+      | otherwise -> Number 0
+    Complex (a :+ b) -> Number $ Real $ atan2 b a
+
+liftFloatingMonop :: (Number -> Number) -> Builtin
+liftFloatingMonop f = asBuiltin
+  where asBuiltin [x] = do
+          nx <- unwrapNum x
+          return $ Number $ f nx
+        asBuiltin _ = panic "liftFloatingMonop arity"
+
+makeFloatingMonopPrim :: (String, Number -> Number) -> Primitive
+makeFloatingMonopPrim (name, f) = Prim name (Exactly 1) $ liftFloatingMonop f
+
+floatingMonopPs :: [Primitive]
+floatingMonopPs = map makeFloatingMonopPrim
+  [ ("exp", exp)
+  , ("sqrt", sqrt)
+  , ("sin", sin)
+  , ("cos", cos)
+  , ("tan", tan)
+  , ("asin", asin)
+  , ("acos", acos)
+  ]
+
+logP :: Primitive
+logP = Prim "log" (Between 1 2) $ \case
+  [z] -> Number . log <$> unwrapNum z
+  [z1, z2] -> do
+    z1' <- unwrapNum z1
+    z2' <- unwrapNum z2
+    return $ Number $ logBase z2' z1'
+  _ -> panic "logB arity"
+
+atanP :: Primitive
+atanP = Prim "atan" (Between 1 2) $ \case
+  [z] -> Number . atan <$> unwrapNum z
+  [y, x] -> do
+    y' <- unwrapRealNum y
+    x' <- unwrapRealNum x
+    return $ Number $ Real $ atan2 y' x'
+  _ -> panic "atanB arity"
+
+-------------------------------------------------------------------------------
 
 primitives :: [Primitive]
 primitives = [ addP
@@ -125,6 +224,15 @@ primitives = [ addP
              , evenCheck
 
              , inexactP
+             , rationalizeP
+             , atanP
+             , squareP
+             , exptP
 
              , makeRectangularP
+             , makePolarP
+             , realPartP, imagPartP
+             , magnitudeP, angleP
+             , logP
              ]
+             ++ floatingMonopPs

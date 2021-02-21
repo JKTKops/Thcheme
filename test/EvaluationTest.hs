@@ -18,7 +18,7 @@ import Parsers
 import Parsers.Internal
 import Bootstrap
 import Evaluation
-import EvaluationMonad (EM, stack, unsafeEMtoIO)
+import EvaluationMonad (EM, localEnv, stack, unsafeEMtoIO)
 import Options (noOpts)
 import Primitives.Comparison (equalSSH)
 import Primitives.WriteLib (showErrIO, writeSharedSH)

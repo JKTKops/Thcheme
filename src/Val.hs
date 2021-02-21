@@ -45,7 +45,7 @@ import Types
 import EvaluationMonad
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Data.Bits (shiftL, bit)
-import Data.Complex (Complex((:+)))
+import Data.Complex (Complex((:+)), magnitude)
 import Data.IORef (readIORef) -- for show in IO
 import Data.Foldable (foldrM)
 import Data.Ratio ((%), numerator, denominator)
@@ -774,7 +774,116 @@ instance Floating RealNumber where
 
   x ** y = Flonum (asFlonum x ** asFlonum y)
   logBase x y = Flonum (logBase (asFlonum x) (asFlonum y))
+
+realPart :: Number -> RealNumber
+realPart (Real r) = r
+realPart (Complex (x:+_)) = x
+inf, nan :: RealNumber
+inf = Flonum $ 1/0
+nan = Flonum $ 0/0
+
+numberIsInfinite :: Number -> Bool
+numberIsInfinite (Real r) = isInfinite r
+numberIsInfinite (Complex (x:+y)) = isInfinite x || isInfinite y
+
+-- | This works for sin, cos, tan, sinh, cosh, and tanh,
+-- which all have real results wherever they are defined
+-- on the real line.
+--
+-- It does not work for inverse trig functions, hence the name.
+forwardTrigFunction :: (forall a. Floating a => Monop a)
+                    -> Monop Number
+forwardTrigFunction f = \case
+  Real r    -> Real (f r)
+  Complex z -> Complex (f z)
+
+instance Floating Number where
+  pi = Real pi
   
+  exp (Real r) = Real (exp r)
+  exp (Complex (x:+y)) = Complex $ expx * cos y :+ expx * sin y
+    where expx = exp x
+  
+  log (Real r)
+    | r < 0 || isNegativeZero r = Complex $ log (abs r) :+ pi
+    | otherwise = Real $ log r
+  log (Complex z@(x:+y)) = Complex $ log (magnitude z) :+ atan2 y x
+
+  x ** y 
+    | isExactZero y = Real 1
+    | isExactZero x = case compare (realPart y) 0 of
+      GT -> Real 0
+      LT -> Real inf
+      EQ -> Real nan
+    | numberIsInfinite x = case compare (realPart y) 0 of
+      GT -> Real inf
+      LT -> Real 0
+      EQ -> Real nan
+      -- note that exp and log give real results when applied
+      -- to real arguments, when possible.
+    | otherwise = exp (log x * y)
+  
+  sqrt z | isExactZero z = 0
+  sqrt (Real r)
+    | r >= 0    = Real $ sqrt r
+    | otherwise = Complex $ 0 :+ sqrt r
+  sqrt (Complex z) = Complex $ sqrt z
+  
+  sin = forwardTrigFunction sin
+  cos = forwardTrigFunction cos
+  tan = forwardTrigFunction tan
+
+  sinh = forwardTrigFunction sinh
+  cosh = forwardTrigFunction cosh
+  tanh = forwardTrigFunction tanh
+
+  -- redefine these functions to use our definition of log which behaves
+  -- correctly at -0. Otherwise they are copies of Data.Complex.
+  asin (Real r)
+    | r >= -1 && r <= 1 = Real $ asin r
+    | otherwise = asin (Complex (r :+ 0))
+  asin z@(Complex (x:+y)) = Complex $ y' :+ (-x')
+    where Complex (x':+y') = log (iz + sqrt (1 - z * z))
+          -- take care to use log @Number and not @(Complex RealNumber)
+          iz = Complex ((-y) :+ x)
+  
+  acos (Real r)
+    | r >= -1 && r <= 1 = Real $ acos r
+    | otherwise = acos (Complex (r :+ 0))
+  acos z = Complex $ y'' :+ (-x'')
+    where Complex (x'':+y'') = log (z + Complex ((-y'):+x'))
+          Complex (x':+y')   = sqrt (1 - z * z)
+  
+  atan (Real r) = Real $ atan r
+  atan z@(Complex (x:+y)) = Complex $ y':+(-x')
+    where Complex (x':+y') = log (z' / sqrt (1 + z * z))
+          z' = Complex ((1-y) :+ x)
+
+  asinh z = log (z + sqrt (1 + z*z))
+  -- see comment in Data.Complex:
+  -- essentially, don't use the formula with a division because it is
+  -- undefined when z = -1.
+  acosh z = log (z + sqrt (z+1) * sqrt (z-1))
+  atanh z = 0.5 * log ((1+z) / (1-z))
+
+  log1p (Real r)
+    | abs r < 0.5 = Real (log1p r)
+    | otherwise = Real (log (1 + r))
+  log1p x@(Complex (a :+ b))
+    | abs a < 0.5 && abs b < 0.5 =
+      let u = 2*a + a*a + b*b
+      in Complex $ log1p (u/(1 + sqrt(u+1))) :+ atan2 (1+a) b
+    | otherwise = log (1 + x)
+  
+  expm1 (Real r) = Real (expm1 r)
+  expm1 x@(Complex (a :+ b))
+    | a*a + b*b < 1 =
+      let u = expm1 a
+          v = sin (b/2)
+          w = -2*v*v
+      in Complex $ (u*w + u + w) :+ (u+1)*sin b
+    | otherwise = exp x - 1
+
 -- distinct from numberDiv
 realNumberDivide :: Binop RealNumber
 realNumberDivide x y = case implicitRealConversion x y of
