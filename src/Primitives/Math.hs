@@ -123,7 +123,9 @@ exptP = Prim "expt" (Exactly 2) $
   \[z1, z2] -> do
     z1' <- unwrapNum z1
     z2' <- unwrapNum z2
-    return $ Number $ z1' ** z2'
+    return $ Number $ case (z1',z2') of
+      (Real x, Real y) -> Real $ x ** y
+      _ -> z1' ** z2'
 
 -------------------------------------------------------------------------------
 -- Complex functions

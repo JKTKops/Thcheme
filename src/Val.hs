@@ -772,6 +772,7 @@ instance Floating RealNumber where
   log1pexp = floatingOp log1pexp
   log1mexp = floatingOp log1mexp
 
+  x ** Bignum y = x ^^ y
   x ** y = Flonum (asFlonum x ** asFlonum y)
   logBase x y = Flonum (logBase (asFlonum x) (asFlonum y))
 
@@ -826,7 +827,7 @@ instance Floating Number where
   sqrt z | isExactZero z = 0
   sqrt (Real r)
     | r >= 0    = Real $ sqrt r
-    | otherwise = Complex $ 0 :+ sqrt r
+    | otherwise = Complex $ 0 :+ sqrt (-r)
   sqrt (Complex z) = Complex $ sqrt z
   
   sin = forwardTrigFunction sin
