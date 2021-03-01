@@ -143,7 +143,7 @@ instance Eq RealNumber where
           r2 = case bigOrRat of
             Bignum i -> i % 1
             Ratnum r -> r
-            Flonum{} -> error "(==)@Number: impossible flonum"
+            Flonum{} -> error "(==)@RealNumber: impossible flonum"
   bigOrRat == n@Flonum{} = n == bigOrRat
   Bignum i == Bignum j = i == j
   Bignum i == Ratnum r = i % 1 == r

@@ -16,7 +16,7 @@ import Primitives.Bool (predicate, predicateM)
 addP, mulP, divP, modP, quotP, remP :: Primitive
 addP = numericBinop "+" (+) 0
 mulP = numericBinop "*" (*) 1
-divP = guardDivZero $ numericBinop1 "/" (/) -- see Note: [divide]
+divP = guardDivZero $ numericBinop1 "/" (/)
 modP = realBinop1 "mod" mod
 quotP = realBinop1 "quotient" quot
 remP = realBinop1 "remainder" rem
@@ -84,18 +84,6 @@ oddCheck = numericPredicate "odd?" $ (0 /=) . mod 2
 
 evenCheck :: Primitive
 evenCheck = numericPredicate "even?" $ (0 ==) . mod 2
-
-{- Note: [divide]
-This has been commented out for a while now (12/6/2020) because we don't
-support non-integer numbers. The above definition of divP technically meets
-the standard, because we "fail nosily in an implementation-defined way" but
-it's unsatisfactory because we could just support more numeric types.
-
-divide :: RawPrimitive
-divide []     = throwError $ NumArgs 1 []
-divide [x]    = unwrapNum x >>= return . Number . ((Prelude./) 1)
-divide params = mapM unwrapNum params >>= return . Number . foldl1 (Prelude./)
--}
 
 -------------------------------------------------------------------------------
 -- typically useful math operations
