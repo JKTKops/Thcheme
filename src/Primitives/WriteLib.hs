@@ -1,7 +1,10 @@
 -- | This module defines the 'write-xx' style primitives.
 
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
-module Primitives.WriteLib where
+module Primitives.WriteLib 
+  ( writeSH, writeSimpleSH, writeSharedSH
+  , showErrIO
+  ) where
 
 import Val
 import Primitives.Vector (vectorElemsPH)
@@ -18,20 +21,25 @@ import qualified Data.HashSet as S
 import qualified Data.HashMap.Strict as M
 import GHC.Show (showLitChar)
 import Data.Char (isPrint)
+import Data.Complex (Complex(..))
+import Data.Ratio (numerator, denominator)
 
 writeSH :: Val -> IO String
 writeSH v = do
   labeling <- labelDatum CyclicOnly v
-  ($"") <$> runWrite labeling (writeShowS v)
+  runShowS <$> runWrite labeling (writeShowS v)
 
 writeSimpleSH :: Val -> IO String
 writeSimpleSH v =
-  ($"") <$> runWrite M.empty (writeShowS v)
+  runShowS <$> runWrite M.empty (writeShowS v)
 
 writeSharedSH :: Val -> IO String
 writeSharedSH v = do
   labeling <- labelDatum FullSharing v
-  ($"") <$> runWrite labeling (writeShowS v)
+  runShowS <$> runWrite labeling (writeShowS v)
+
+runShowS :: ShowS -> String
+runShowS f = f ""
 
 -- | Show a 'LispErr' in IO. Forms inside the error are shown with
 -- 'write-shared'.
@@ -139,6 +147,34 @@ writeShowS v
   | pairSH v = writePair v
   | vectorSH v = writeVector v
   | stringSH v = ushowString <$> unwrapStringPH v
+
+writeShowS (Symbol s) = pure $ showString s
+
+writeShowS (Number n) = pure $ writeNumber n
+  where writeNumber (Real (Bignum i)) = shows i
+        writeNumber (Real (Ratnum r))
+          | denominator r == 1 = shows $ numerator r
+          | otherwise = shows (numerator r)
+                      . showChar '/'
+                      . shows (denominator r)
+        writeNumber (Real (Flonum f))
+          | isInfinite f = showString $ sign : "inf.0"
+          | isNaN f      = showString "+nan.0"
+          | otherwise    = shows f
+          where sign = if f < 0 then '-' else '+'
+        writeNumber (Complex (r :+ i))
+          | isExactZero $ Real i = writeNumber (Real r)
+          | isExactZero $ Real r = writeNumber (Real i) . showChar 'i'
+
+          -- minus sign will be given since i is negative
+          | i < 0 || isNegativeZero i = writeNumber (Real r)
+                                      . writeNumber (Real i)
+                                      . showChar 'i'
+          | otherwise = writeNumber (Real r)
+                      . if isInfinite r || isNaN r then id else showChar '+'
+                      . writeNumber (Real i)
+                      . showChar 'i'
+
 writeShowS v = pure $ shows v
 
 writePair :: Val -> Write ShowS

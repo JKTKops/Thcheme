@@ -7,9 +7,11 @@ import Test.Tasty.SmallCheck as SC
 import Test.Tasty.QuickCheck as QC
 import Test.SmallCheck.Series
 
+import Data.Char (isAscii)
 import Data.Complex (Complex(..))
 import Data.List (isPrefixOf)
-import Data.IORef
+import Data.IORef (newIORef)
+import Data.Ratio (numerator, denominator)
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as Map
 import Control.Monad (liftM2, (>=>))
@@ -197,9 +199,9 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
     \input -> QC.ioProperty $
         (==) <$> unsafeEMtoIO (referenceShowV input) <*> writeSharedSH input
   where referenceShowV = freezeList >=> referenceShow
-      
+        -- im not sure that this is right if s has non-ascii characters
         referenceShow (FNotList (Symbol s)) = pure s
-        referenceShow (FNotList (Number n)) = pure $ show n
+        referenceShow (FNotList (Number n)) = pure $ showNumber n
         referenceShow (FNotList (IString s)) = pure $ ushowString s ""
         referenceShow (FNotList (Char c)) = pure $ case c of
             ' '  -> "#\\space"
@@ -219,6 +221,30 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
             (\es e -> "(" ++ unwords es ++ ". " ++ e ++ ")")
             <$> mapM referenceShowV vs <*> referenceShowV v
         --    "(" ++ unwords (map show vs) ++ " . " ++ show v ++ ")"
+
+        showNumber (Real (Bignum i)) = show i
+        showNumber (Real (Ratnum r))
+          | denominator r == 1 = show $ numerator r
+          | otherwise = show (numerator r)
+                      ++ "/"
+                      ++ show (denominator r)
+        showNumber (Real (Flonum f))
+          | isInfinite f = sign : "inf.0"
+          | isNaN f      = "+nan.0"
+          | otherwise    = show f
+          where sign = if f < 0 then '-' else '+'
+        showNumber (Complex (r :+ i))
+          | isExactZero $ Real i = showNumber (Real r)
+          | isExactZero $ Real r = showNumber (Real i) ++ "i"
+
+          -- minus sign will be given since i is negative
+          | i < 0 || isNegativeZero i = showNumber (Real r)
+                                      ++ showNumber (Real i)
+                                      ++ "i"
+          | otherwise = showNumber (Real r)
+                      ++ if isInfinite r || isNaN r then "" else "+"
+                      ++ showNumber (Real i)
+                      ++ "i"
 
 prop_ShowErrPrefix :: TestTree
 prop_ShowErrPrefix = SC.testProperty "Showing LispErr is prefixed with 'Error:'" $

@@ -35,6 +35,7 @@ module Val
   , makeBignum, makeFlonum, makeRatnum
   , approxToRatnum, realInexact
   , getExactInteger, isExactZero
+  , numberSH, complexSH, realSH, rationalSH, integerSH
   , implicitRealConversion, implicitNumericConversion
 
     -- * Showing 'Val' in IO
@@ -503,6 +504,35 @@ getExactInteger v = case v of
     Ratnum z -> if z == 0 then getExactInteger (Number (Real r)) else Nothing
     _notNplusZeroI -> Nothing
   _other -> Nothing
+
+mkNumericTypecheck :: (Number -> Bool) -> Val -> Bool
+mkNumericTypecheck p = f
+  where f (Number n) = p n
+        f _notNumber = False
+{-# INLINE mkNumericTypecheck #-}
+
+numberSH, complexSH, realSH, rationalSH, integerSH :: Val -> Bool
+numberSH = mkNumericTypecheck $ const True
+complexSH = numberSH -- see note on p35 of r7rs paper
+realSH = mkNumericTypecheck $ \case
+  Real{} -> True
+  Complex (_r :+ i)
+    | i == 0    -> True
+    | otherwise -> False
+rationalSH = mkNumericTypecheck test
+  where
+    test (Real (Flonum f))
+      | isInfinite f || isNaN f = False
+    test Real{} = True -- truncated real numbers are always rational!
+    test (Complex (r :+ i))
+      | i == 0 = test $ Real r
+      | otherwise = False
+integerSH = mkNumericTypecheck test
+  where
+    test (Real x) = x == round x -- (==)@RealNumber is Scheme =
+    test (Complex (r :+ i))
+      | i == 0 = test $ Real r
+      | otherwise = False
 
 implicitNumericConversion :: Number -> Number -> (Number, Number)
 implicitNumericConversion (Real x) (Real y) = (Real x, Real y)
