@@ -10,6 +10,7 @@ import Data.Function ((&))
 import Data.List (isPrefixOf, sort)
 
 import qualified System.Console.Haskeline as CLI
+import System.IO (hFlush, stdout)
 
 import Val
 import EvaluationMonad (EvalState (..), Env, Opts, noOpts)
@@ -37,9 +38,19 @@ replLoop :: Repl ()
 replLoop = until_
     (stop . fst)
     (getInput >>= replEval)
-    (Repl . (CLI.outputStrLn <=< liftIO . showResultIO))
+    (Repl . display)
   where stop Right{}  = False
         stop (Left e) = isTerminationError e
+
+        display result = do
+          -- if we don't hFlush, it seems like 'outputStrLn' misbehaves.
+          -- e.g.
+          -- >>> (write 5)
+          -- >>> #t
+          -- 5>>>
+          liftIO $ hFlush stdout
+          str <- liftIO $ showResultIO result
+          CLI.outputStrLn str
 
 getInputLine :: String -> Repl (Maybe String)
 getInputLine = Repl . CLI.getInputLine
@@ -86,7 +97,7 @@ replEval (Just inp) = Repl $
     CLI.withInterrupt $ 
     runRepl (evaluateTotalInput inp)
   where
-    interrupted = ( Right (Symbol "Interrupted.")
+    interrupted = ( Right (Symbol "interrupted.")
                   , error "state forced after interrupt, report a bug"
                   )
 

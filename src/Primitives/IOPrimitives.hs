@@ -2,7 +2,7 @@
 module Primitives.IOPrimitives (primitives) where
 
 import System.IO ( IOMode (..)
-                 , openFile, hClose, hGetLine, hPutStr
+                 , openFile, hClose, hGetLine, hPutStr, hPutChar
                  , getLine, stdin, stdout)
 
 import Val
@@ -18,6 +18,7 @@ primitives = [ openInputFile
              , readP
              , readLineP
              , writeP, writeSimpleP, writeSharedP
+             , newlineP
              , readContents
              , readAll
              ]
@@ -71,6 +72,13 @@ writeP, writeSimpleP, writeSharedP :: Primitive
   , ("write-shared", writeSharedSH)
   ]
   where make (name, writer) = Prim name (Between 1 2) $ mkWriter writer
+
+newlineP :: Primitive
+newlineP = Prim "newline" (Between 0 1) newlineB
+  where newlineB [] = newlineB [Port stdout]
+        newlineB [Port hdl] = liftIO $ hPutChar hdl '\n' >> return (Bool True)
+        newlineB [badArg] = throwError $ TypeMismatch "port" badArg
+        newlineB _ = panic "newline arity"
 
 -- TODO: lmao this is mega broken, need to use writeSH not show
 mkWriter :: (Val -> IO String) -> Builtin

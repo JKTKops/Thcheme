@@ -4,6 +4,8 @@
 module Primitives.WriteLib 
   ( writeSH, writeSimpleSH, writeSharedSH
   , showErrIO
+
+  , ushowString
   ) where
 
 import Val

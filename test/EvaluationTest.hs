@@ -507,15 +507,9 @@ applyTests = testGroup "Apply" $ map mkApplyTest
         }
     , ApplyTB
         { testNameA = "Empty apply IOPrimitive"
-        , funcIn = "write-port"
+        , funcIn = "write"
         , args = []
-        , expectedA = Left $ NumArgs (Exactly 2) []
-        }
-    , ApplyTB
-        { testNameA = "Under apply IOPrimitive"
-        , funcIn = "write-port"
-        , args = [Number 0]
-        , expectedA = Left $ NumArgs (Exactly 2) [Number 0]
+        , expectedA = Left $ NumArgs (Between 1 2) []
         }
     , ApplyTB
         { testNameA = "Fully apply func"
