@@ -158,7 +158,7 @@ showErr (TypeMismatch expected found) = "invalid type: expected " ++ expected
     ++ ", found " ++ show found
 showErr CircularList                  = "circular list"
 showErr EmptyBody                     = "attempt to define function with no body"
-showErr (Parser parseErr)             = "parse error at " ++ parseErr
+showErr (Parser parseErr)             = parseErr
 showErr (Default message)             = message
 showErr Quit                          = "quit invoked"
 
