@@ -37,16 +37,8 @@ eval tail expr = do
 
 handleSimpleDatum :: Val -> EM Val
 handleSimpleDatum obj = case obj of
-    val@String{}  -> return val
-    val@IString{} -> return val
-    val@Char{}    -> return val
-    val@Number{}  -> return val
-    val@Bool{}    -> return val
-    val@Vector{}  -> return val
-    val@IVector{} -> return val
     (Symbol id)   -> getVar id
-    Nil           -> return Nil
-    _other -> panic "handleSimpleDatum: datum is not simple!"
+    val           -> return val
 
 handleApp :: InTail -- ^ Is this application in tail position?
           -> Val -> [Val] -> EM Val

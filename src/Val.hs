@@ -9,7 +9,7 @@ module Val
   , Builtin, InTail, Arity (..)
 
     -- * Utilities for 'Val's
-  , truthy
+  , truthy, isConstant
   , makePrimitive
   , showArity, usePluralForArity, testArity
 
@@ -27,6 +27,7 @@ module Val
 
     -- * Vectors
   , vectorSH
+  , makeVector, makeByteVector
 
     -- * Test for immutable data
   , isImmutablePair, isImmutable
@@ -50,6 +51,7 @@ import Data.Complex (Complex((:+)), magnitude)
 import Data.IORef (readIORef) -- for show in IO
 import Data.Foldable (foldrM)
 import Data.Ratio ((%), numerator, denominator)
+import Data.Word (Word8)
 
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as U
@@ -65,6 +67,14 @@ makePrimitive (Prim name arity func) = Primitive arity func name
 truthy :: Val -> Bool
 truthy (Bool False) = False
 truthy _ = True
+
+-- | Is this 'Val' an atomic constant?
+isConstant :: Val -> Bool
+isConstant Number{} = True
+isConstant Bool{}   = True
+isConstant Char{}   = True
+isConstant Nil{}    = True
+isConstant _        = False
 
 -------------------------------------------------------------------------------
 --
@@ -148,7 +158,7 @@ showErr (TypeMismatch expected found) = "invalid type: expected " ++ expected
     ++ ", found " ++ show found
 showErr CircularList                  = "circular list"
 showErr EmptyBody                     = "attempt to define function with no body"
-showErr (Parser parseErr)             = "parse error at " ++ show parseErr
+showErr (Parser parseErr)             = "parse error at " ++ parseErr
 showErr (Default message)             = message
 showErr Quit                          = "quit invoked"
 
@@ -570,6 +580,12 @@ vectorSH Vector{} = True
 vectorSH IVector{} = True
 vectorSH _ = False
 
+makeVector :: [Val] -> Val
+makeVector = IVector . V.fromList
+
+makeByteVector :: [Word8] -> Val
+makeByteVector = IByteVector . U.fromList
+
 -- | Show a 'Val' in IO. This function loops forever
 -- on cyclic data; it's morally equivalent to write-simple.
 -- However we don't use it to _implement_ write-simple
@@ -852,7 +868,7 @@ instance Floating Number where
       EQ -> Real nan
       -- note that exp and log give real results when applied
       -- to real arguments, when possible.
-  Real x ** Real y = Real (x ** y)
+  Real x ** Real y | x >= 0 = Real (x ** y)
   x ** y = exp (log x * y)
   
   sqrt z | isExactZero z = 0

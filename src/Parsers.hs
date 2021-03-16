@@ -7,32 +7,27 @@ module Parsers
     , load
     ) where
 
-import Text.ParserCombinators.Parsec hiding (spaces)
 import Control.Monad.Except (MonadError, MonadIO, liftIO)
 
-import Parsers.Internal
+import Parsers.Parser
 import Val
 import EvaluationMonad (liftEither)
 
 labeledReadExpr :: String -> String -> Either LispErr Val
-labeledReadExpr label = liftEither . labeledReadOrThrow label do
-    whiteSpace
-    expr <- parseExpr
-    eof
-    return expr
+labeledReadExpr src inp = mapLeft Parser $ parseDatum src inp
 
 readExpr :: String -> Either LispErr Val
-readExpr = labeledReadExpr "Thcheme"
+readExpr = labeledReadExpr "thcheme"
 
 labeledReadExprList :: String -> String -> Either LispErr [Val]
-labeledReadExprList label = labeledReadOrThrow label do
-    whiteSpace
-    exprs <- many parseExpr
-    eof
-    return exprs
+labeledReadExprList src inp = mapLeft Parser $ parseDatumSeq src inp
 
 readExprList :: String -> Either LispErr [Val]
-readExprList = labeledReadExprList "Thcheme"
+readExprList = labeledReadExprList "thcheme"
 
 load :: (MonadIO m, MonadError LispErr m) => String -> m [Val]
 load filename = liftIO (readFile filename) >>= liftEither . readExprList
+
+mapLeft :: (e -> e') -> Either e a -> Either e' a
+mapLeft f (Left e)  = Left (f e)
+mapLeft _ (Right a) = Right a

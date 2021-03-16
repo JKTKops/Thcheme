@@ -7,7 +7,6 @@ module EvaluationTest
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Text.ParserCombinators.Parsec
 import Control.Monad.Except
 import Control.Monad.Loops (allM)
 import Data.Either
@@ -15,7 +14,6 @@ import Data.Vector (fromList)
 
 import Val
 import Parsers
-import Parsers.Internal
 import Bootstrap
 import Evaluation
 import EvaluationMonad (EM, localEnv, stack, unsafeEMtoIO)
@@ -565,7 +563,7 @@ data ApplyTB = ApplyTB
 
 mkApplyTest :: ApplyTB -> TestTree
 mkApplyTest tb = testCase (testNameA tb) $ do
-    let Right funcP = parse parseExpr "" $ funcIn tb
+    let Right funcP = labeledReadExpr "" $ funcIn tb
     primEnv <- primitiveBindings
     (Right func) <- fst <$> evaluateExpr primEnv noOpts funcP
     res <- runTest primEnv noOpts $ call func (args tb)

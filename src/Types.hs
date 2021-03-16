@@ -39,7 +39,6 @@ import qualified Data.Vector.Mutable as V
 import qualified Data.Vector.Unboxed as U
 import           Data.Word                      ( Word8 )
 import           System.IO                      ( Handle )
-import           Text.ParserCombinators.Parsec  ( ParseError )
 
 import Options
 
@@ -216,7 +215,7 @@ instance Eq Val where (==) = eqVal
 
 data LispErr = NumArgs Arity [Val]
              | TypeMismatch String Val
-             | Parser ParseError
+             | Parser String
              | BadSpecialForm Val
              | NotFunction String Val
              | UnboundVar String String

@@ -14,7 +14,7 @@ module EvaluationMonad
     , (Fish.>=>), (Fish.<=<)
 
       -- * Execute EM actions
-    , execEM, execAnyEM, unsafeEMtoIO
+    , execEM, execAnyEM, unsafeEMtoIO, emToIO
 
       -- * Adjusting the evaluation environment
     , pushFrame, popFrame
@@ -81,6 +81,13 @@ unsafeEMtoIO em = do
   ne <- Env.nullEnv
   Right a <- execAnyEM ne (setOpt Lint noOpts) em
   return a
+
+-- | Convert an EM action to an IO action, safely returning errors
+-- raised in the EM action. Useful in the REPL.
+emToIO :: EM a -> IO (Either LispErr a)
+emToIO em = do
+  ne <- Env.nullEnv
+  execAnyEM ne (setOpt Lint noOpts) em
 
 pushFrame :: StackFrame -> EM ()
 pushFrame frame@(StackFrame _ mlcl) = modify $ \s -> case mlcl of

@@ -7,7 +7,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 import Test.Tasty.QuickCheck
 
-import Text.ParserCombinators.Parsec
+import Data.Complex (Complex(..))
 import Data.Maybe
 import Data.Either
 import qualified Data.Vector as V
@@ -15,7 +15,6 @@ import qualified Data.Vector as V
 import Control.Arrow (first)
 
 import Parsers
-import Parsers.Internal
 import Val
 import LispValTest ()
 import EvaluationTest ((?=))
@@ -46,8 +45,7 @@ propTests = testGroup "Property tests" [qcTests]
 
 qcTests :: TestTree
 qcTests = testGroup "(QuickCheck)"
-    [ prop_CorrectSymbols
-    , prop_QuoteParser
+    [ prop_QuoteParser
     , prop_QuasiquoteParser
     , prop_UnquoteParser
     , prop_UnquoteSplicingParser
@@ -61,24 +59,19 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         , expectedContents = Just $ Number 12
         }
     , mkE2Etest
-        { testName = "#h, negative number"
-        , input = "-#hef"
+        { testName = "#x, negative number"
+        , input = "#x-ef"
         , expectedContents = Just $ Number (-239)
         }
     , mkE2Etest
         { testName = "#o, number with +"
-        , input = "+#o55"
+        , input = "#o+55"
         , expectedContents = Just $ Number 45
         }
     , mkE2Etest
         { testName = "Char"
         , input = "#\\f"
         , expectedContents = Just $ Char 'f'
-        }
-    , mkE2Etest
-        { testName = "Symbol that looks like a Char"
-        , input = "#\\ff"
-        , expectedContents = Just $ Symbol "#\\ff"
         }
     , mkE2Etest
         { testName = "Regular Symbol"
@@ -182,7 +175,7 @@ endToEndTests = testGroup "End to End" $ map testParseExpr
         }
     , mkE2Etest
         { testName = "Irregular spacing"
-        , input = "(f 5 #\\$(1 2 #h45) #b10(test))"
+        , input = "(f 5 #\\$(1 2 #x45) #b10(test))"
         , expectedContents = Just $
             IList
                 [Symbol "f", Number 5, Char '$', IList
@@ -225,7 +218,7 @@ testParseExpr testBuilder =
     testCaseSteps (testName testBuilder) $ \step -> do
         step "Parsing"
         let pInput = input testBuilder
-            parse = run (do v <- parseExpr; eof; return v) pInput
+            parse = run pInput
 
         if isJust $ expectedContents testBuilder
         then do
@@ -298,7 +291,6 @@ atomParserTests = testGroup "Parsing Symbols" $ map testSymbolParser
     , let symbol = "#name" in mkSymbolTest
         { testName = "Symbol with #"
         , input = symbol
-        , expectedContents = Just symbol
         }
     , let symbol = "!@#$%&*-_=+|:\\/?<>~" in mkSymbolTest
         { testName = "Symbol with all symbols"
@@ -331,6 +323,11 @@ atomParserTests = testGroup "Parsing Symbols" $ map testSymbolParser
         , input = symbol
         , expectedContents = Just symbol
         }
+    , mkSymbolTest
+        { testName = "vertical bar symbol"
+        , input = "|H\\x65;llo|"
+        , expectedContents = Just "Hello"
+        }
     ]
 
 numberParserTests :: TestTree
@@ -356,13 +353,13 @@ numberParserTests = testGroup "Parsing Numbers" $ map testNumberParser
         , expectedContents = Just 80915
         }
     , mkNumTest
-        { testName = "-#d100"
-        , input = "-#d100"
+        { testName = "#d-100"
+        , input = "#d-100"
         , expectedContents = Just (-100)
         }
     , mkNumTest
-        { testName = "+#d06"
-        , input = "+#d06"
+        { testName = "#d+06"
+        , input = "#d+06"
         , expectedContents = Just 6
         }
     , mkNumTest
@@ -371,13 +368,13 @@ numberParserTests = testGroup "Parsing Numbers" $ map testNumberParser
         , expectedContents = Just 10
         }
     , mkNumTest
-        { testName = "-#b11101"
-        , input = "-#b11101"
+        { testName = "#b-11101"
+        , input = "#b-11101"
         , expectedContents = Just (-29)
         }
     , mkNumTest
-        { testName = "+#b1011"
-        , input = "+#b1011"
+        { testName = "#b+1011"
+        , input = "#b+1011"
         , expectedContents = Just 11
         }
     , mkNumTest
@@ -386,29 +383,66 @@ numberParserTests = testGroup "Parsing Numbers" $ map testNumberParser
         , expectedContents = Just 335
         }
     , mkNumTest
-        { testName = "-#o24"
-        , input = "-#o24"
+        { testName = "#o-24"
+        , input = "#o-24"
         , expectedContents = Just (-20)
         }
     , mkNumTest
-        { testName = "+#o36"
-        , input = "+#o36"
+        { testName = "#o+36"
+        , input = "#o+36"
         , expectedContents = Just 30
         }
     , mkNumTest
-        { testName = "#hf4"
-        , input = "#hf4"
+        { testName = "#xf4"
+        , input = "#xf4"
         , expectedContents = Just 244
         }
     , mkNumTest
-        { testName = "-#hcb8"
-        , input = "-#hcb8"
+        { testName = "#x-cb8"
+        , input = "#x-cb8"
         , expectedContents = Just (-3256)
         }
     , mkNumTest
-        { testName = "+#haa1"
-        , input = "+#haa1"
+        { testName = "#x+aa1"
+        , input = "#x+aa1"
         , expectedContents = Just 2721
+        }
+    , mkNumTest
+        { testName = "0.5"
+        , input = "0.5"
+        , expectedContents = Just (Real (Flonum 0.5))
+        }
+    , mkNumTest
+        { testName = "#e0.5"
+        , input = "#e0.5"
+        , expectedContents = Just (Real (Ratnum 0.5))
+        }
+    , mkNumTest
+        { testName = "infinity"
+        , input = "+inf.0"
+        , expectedContents = Just (Real (Flonum (1/0)))
+        }
+    , mkNumTest
+        { testName = "rational"
+        , input = "3/5"
+        , expectedContents = Just (Real (Ratnum (3/5)))
+        }
+    , mkNumTest
+        { testName = "rectangular complex"
+        , input = "1+1i"
+        , expectedContents = Just (Complex (1 :+ 1))
+        }
+    , mkNumTest
+        { testName = "rectangular with scientific notation"
+        , input = "2e+5+3i"
+        , expectedContents = Just (Complex (2e+5 :+ 3))
+        }
+    , mkNumTest
+        -- this is _almost_ a peculiar identifier, but the dot subsequent
+        -- cannot be a number.
+        { testName = "werid rectangular 0"
+        , input = "-.0i"
+        , expectedContents = Just (Complex (0 :+ (-0.0)))
         }
     , mkNumTest
         { testName = "15a3"
@@ -431,8 +465,8 @@ numberParserTests = testGroup "Parsing Numbers" $ map testNumberParser
         , input = "#oa"
         }
     , mkNumTest
-        { testName = "#h54mk"
-        , input = "#h54mk"
+        { testName = "#x54mk"
+        , input = "#x54mk"
         }
     , mkNumTest
         { testName = "Empty string"
@@ -466,10 +500,6 @@ charParserTests = testGroup "Parsing Chars" $ map testCharParser
         , input = "#8"
         }
     , mkCharTest
-        { testName = "No #"
-        , input = "\\."
-        }
-    , mkCharTest
         { testName = "Space"
         , input = "#\\space"
         , expectedContents = Just ' '
@@ -481,7 +511,7 @@ charParserTests = testGroup "Parsing Chars" $ map testCharParser
         }
     , mkCharTest
         { testName = "Carriage return"
-        , input = "#\\carriage-return"
+        , input = "#\\return"
         , expectedContents = Just '\r'
         }
     , mkCharTest
@@ -489,31 +519,36 @@ charParserTests = testGroup "Parsing Chars" $ map testCharParser
         , input = "#\\tab"
         , expectedContents = Just '\t'
         }
+    , mkCharTest
+        { testName = "escaped unicode"
+        , input = "#\\x3bb"
+        , expectedContents = Just 'λ'
+        }
     ]
 
 listParserTests :: TestTree
 listParserTests = testGroup "Parsing Lists"
-    [ testCase "\"5 #a #\\a\"" $ do
-        let p = parse parseList "" "5 #a #\\a"
+    [ testCase "\"(5 a #\\a)\"" $ do
+        let p = run "(5 a #\\a)"
         isRight p @? "Parse failed."
         let val = unrollList $ fromRight undefined p
         isJust val @? "Parse did not return a list."
         let correct = case fromJust val of
-                [Number 5, Symbol "#a", Char 'a'] -> True
+                [Number 5, Symbol "a", Char 'a'] -> True
                 _ -> False
         correct @? "Contents of the list are wrong: " ++ show (fromJust val)
     ]
 
 dotListParserTests :: TestTree
 dotListParserTests = testGroup "Parsing Dotted Lists"
-    [ testCase "\"5 #a . #\\a\"" $ do
-        let p = parse parseDottedList "" "5 #a . #\\a"
+    [ testCase "\"(5 a . #\\a)\"" $ do
+        let p = run "(5 a . #\\a)"
         isRight p @? "Parse failed."
         let Right val = p
             mpair = unrollDList val
         isJust mpair @? "Parse did not return a dotted list."
         let correct = case fromJust mpair of
-              ([Number 5, Symbol "#a"], Char 'a') -> True
+              ([Number 5, Symbol "a"], Char 'a') -> True
               _ -> False
         correct @? "Contents of the dotted list are wrong: " ++ show val
     ]
@@ -521,11 +556,11 @@ dotListParserTests = testGroup "Parsing Dotted Lists"
 vectorParserTests :: TestTree
 vectorParserTests = testGroup "Parsing vectors"
     [ testCase "\"#(1 #\\x ())\"" $ do
-        let p = run parseVector "#(1 #\\x ())"
+        let p = run "#(1 #\\x ())"
         val <- verify p
         fromJust val @?= V.fromList [Number 1, Char 'x', Nil]
     , testCase "\"#()\"" $ do
-        let p = run parseVector "#()"
+        let p = run "#()"
         val <- verify p
         fromJust val @?= V.empty
     ]
@@ -538,28 +573,23 @@ vectorParserTests = testGroup "Parsing vectors"
             return val
 
 -- PROPERTY TESTS
-prop_CorrectSymbols = testProperty "Recognize correct set of symbols" $
-    \input ->
-        parseSucceeds symbol [input]
-        == (input `elem` "!@#$%^&*-_=+|:\\/?<>~")
-
 prop_QuoteParser = testProperty "tick always results in quote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" ('\'' : show (input :: Val))
+        let result = run ('\'' : show (input :: Val))
         in isRight result ==> case result of
             Right (IPair (Symbol "quote") _) -> True
             _ -> False
 
 prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" ('`' : show (input :: Val))
+        let result = run ('`' : show (input :: Val))
         in isRight result ==> case result of
             Right (IPair (Symbol "quasiquote") _)  -> True
             _ -> False
 
 prop_UnquoteParser = testProperty "comma always results in unquote" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" (',' : clean (show (input :: Val)))
+        let result = run (',' : clean (show (input :: Val)))
         in isRight result ==> case result of
             Right (IPair (Symbol "unquote") _)  -> True
             _ -> False
@@ -569,17 +599,16 @@ prop_UnquoteParser = testProperty "comma always results in unquote" $
 
 prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-splicing" $
     withMaxSuccess 50 $ \input ->
-        let result = parse parseQuoted "" (",@" ++ show (input :: Val))
+        let result = run (",@" ++ show (input :: Val))
         in isRight result ==> case result of
             Right (IPair (Symbol "unquote-splicing") _)  -> True
             _ -> False
 
--- HELPER
-run :: Parser a -> String -> Either ParseError a
-run p = parse p ""
+run :: String -> Either LispErr Val
+run = labeledReadExpr ""
 
-parseSucceeds :: Parser a -> String -> Bool
-parseSucceeds p s = isRight $ parse p "" s
+parseSucceeds :: String -> Bool
+parseSucceeds s = isRight $ run s
 
 testStringParser :: TestBuilder String -> TestTree
 testStringParser tb = testParser tb getString
@@ -587,8 +616,8 @@ testStringParser tb = testParser tb getString
 testSymbolParser :: TestBuilder String -> TestTree
 testSymbolParser tb = testParser tb getSymbol
 
-testNumberParser :: TestBuilder Integer -> TestTree
-testNumberParser tb = testParser tb getInteger
+testNumberParser :: TestBuilder Number -> TestTree
+testNumberParser tb = testParser tb getNumber
 
 testCharParser :: TestBuilder Char -> TestTree
 testCharParser tb = testParser tb getChar
@@ -617,16 +646,10 @@ testParser :: (Eq a, Show a)
            => TestBuilder a
            -> (Val -> Maybe a)
            -> TestTree
-testParser testBuilder decons = let
-    parser = case testType testBuilder of
-        TString -> parseString
-        TSymbol   -> parseSymbol
-        TNumber -> parseNumber
-        TChar   -> parseChar
-
-    in testCaseSteps (testName testBuilder) $ \step -> do
+testParser testBuilder decons =
+    testCaseSteps (testName testBuilder) $ \step -> do
         step "Parsing"
-        let parse = run (do{ v <- parser; eof; return v}) $ input testBuilder
+        let parse = run $ input testBuilder
 
         if isJust $ expectedContents testBuilder
         then do
@@ -653,9 +676,9 @@ getSymbol :: Val -> Maybe String
 getSymbol (Symbol s) = Just s
 getSymbol _        = Nothing
 
-getInteger :: Val -> Maybe Integer
-getInteger (Number (Real (Bignum n))) = Just n
-getInteger _ = Nothing
+getNumber :: Val -> Maybe Number
+getNumber (Number n) = Just n
+getNumber _ = Nothing
 
 getChar :: Val -> Maybe Char
 getChar (Char c) = Just c

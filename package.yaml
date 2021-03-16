@@ -27,12 +27,13 @@ default-extensions:
 # are being used where.
 dependencies:
 - base >= 4.7 && < 5
+- array # needed by Happy
+- case-insensitive
 - containers
 - hashtables
 - haskeline
 - monad-loops
 - mtl
-- parsec
 - random
 - transformers
 - union-find
