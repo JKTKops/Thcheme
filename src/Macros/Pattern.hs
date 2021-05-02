@@ -6,6 +6,7 @@ module Macros.Pattern where
 
 import Control.Monad
 import Control.Monad.State
+import Control.Monad.Writer
 import Control.Monad.Trans.Maybe (MaybeT(..))
 import Data.Functor (($>))
 import Data.List (foldl', transpose)
@@ -15,6 +16,7 @@ import qualified Data.HashMap.Strict as M
 import Val
 import Primitives.Vector
 import Primitives.Comparison (equalSSH)
+import Primitives.String (stringSH)
 import EvaluationMonad
 
 data Pattern
@@ -34,11 +36,13 @@ data Pattern
       [Pattern]
   deriving Show
 
-data CompileConfig = CompileConfig
-  { ellipsis :: String }
+data CompileConfig 
+  = PatCompileConfig { ellipsis :: String }
+  | TemCompileConfig { ellipsis :: String, patVars :: S.Set PatternVar }
 
-compilePattern :: CompileConfig -> Val -> EM Pattern
-compilePattern CompileConfig{ellipsis = dots} v = evalStateT (compile v) S.empty
+compilePattern :: CompileConfig -> Val -> EM (Pattern, S.Set PatternVar)
+compilePattern TemCompileConfig{} _ = panic "compilePattern: wrong config"
+compilePattern PatCompileConfig{ellipsis = dots} v = runStateT (compile v) S.empty
   where
     compile datum = case datum of
       Symbol s
@@ -54,32 +58,33 @@ compilePattern CompileConfig{ellipsis = dots} v = evalStateT (compile v) S.empty
         -- todo: if s is in the list of literals, make a ConstPat instead
       datum
         | isConstant datum -> pure $ ConstPat datum
+        | stringSH datum   -> pure $ ConstPat datum
         | vectorSH datum   -> compileVectorPat datum
         | pairSH datum     -> compileListPat datum
       badDatum -> throwError $ TypeMismatch "pattern" badDatum
 
-    compileVectorPat vec = vectorElemsPH vec >>= go (pure . VectorPat)
-      where go k [] = k []
-            go k (v : Symbol maybeDots : rest)
+    compileVectorPat vec = vectorElemsPH vec >>= compileElemList (pure . VectorPat)
+      where compileElemList k [] = k []
+            compileElemList k (v : Symbol maybeDots : rest)
               | maybeDots == dots = do
                   pat <- compile v
-                  go (newK pat) rest
+                  compileElemList (newK pat) rest
               where newK pat tl = k [] >>= \case
                       VectorPat ps -> pure $ EllipsisVectorPat ps pat tl
                       _ -> lift $ throwError $ 
                         Default "multiple ellipses in vector pattern"
-            go k (v : rest) = do
+            compileElemList k (v : rest) = do
               vp <- compile v
-              go (k . (vp:)) rest
+              compileElemList (k . (vp:)) rest
     
     compileListPat lst = do
         fl <- lift (freezeList lst)
         case fl of
-          FList vals -> go vals ([], Nothing, [], Nothing)
-          FDottedList vals dot -> go vals ([], Nothing, [], Just dot)
+          FList vals -> compileElemList vals ([], Nothing, [], Nothing)
+          FDottedList vals dot -> compileElemList vals ([], Nothing, [], Just dot)
           FNotList datum ->
             panic $ "compilePattern.compileListPat: not list " ++ show datum
-      where go [] ~(bf, el, af, dot) = do
+      where compileElemList [] ~(bf, el, af, dot) = do
               dotp <- case dot of
                 Nothing -> pure Nothing
                 Just d  -> Just <$> compile d
@@ -89,16 +94,16 @@ compilePattern CompileConfig{ellipsis = dots} v = evalStateT (compile v) S.empty
                 -- don't have to write separate loops that do the same thing
                 -- so now we have to swap them back.
                 Just elp -> EllipsisListPat (reverse af) elp (reverse bf) dotp
-            go (v : Symbol maybeDots : rest) ~(bf, el, _af, dot)
+            compileElemList (v : Symbol maybeDots : rest) ~(bf, el, _af, dot)
               | maybeDots == dots = case el of
                   Nothing -> do
                     pat <- compile v
-                    go rest ([], Just pat, bf, dot)
+                    compileElemList rest ([], Just pat, bf, dot)
                   Just{} -> lift $ throwError $ 
                     Default "multiple ellipses in list pattern"
-            go (v : rest) ~(bf, el, af, dot) = do
+            compileElemList (v : rest) ~(bf, el, af, dot) = do
               vp <- compile v
-              go rest (vp:bf, el, af, dot)
+              compileElemList rest (vp:bf, el, af, dot)
 
 type PatternVar = String
 data Match a = Here a | Deeper [Match a] deriving Show
@@ -177,8 +182,52 @@ data Template
 data Element 
   = Plain Template 
   | WithEllipsis (S.Set PatternVar) Template
-    -- set of pattern vars that appear in the template 
+    -- set of pattern vars that appear in the template
+    -- used to work out if we'll be able to transcribe
+    -- as specified.
   deriving Show
+
+compileTemplate :: CompileConfig -> Val -> EM Template
+compileTemplate PatCompileConfig{} = panic "compileTemplate: wrong config"
+compileTemplate TemCompileConfig{ellipsis = dots, patVars = patVars} 
+  = fmap fst . runWriterT . compile
+  where
+    compile :: Val -> WriterT (S.Set PatternVar) EM Template
+    compile (Symbol s)
+      | s == dots = throwError $ Default "unexpected ellipsis in template"
+      | otherwise = do
+        tell $ S.intersection (S.singleton s) patVars
+        return $ IdentTemplate s
+    compile datum
+      | isConstant datum = pure (ConstantTemplate datum)
+      | stringSH datum   = pure (ConstantTemplate datum)
+      | pairSH datum     = compileListTemplate datum
+      | vectorSH datum   = compileVectorTemplate datum
+    compile badDatum = throwError $ TypeMismatch "template" badDatum
+
+    compileListTemplate p = do
+      fl <- lift $ freezeList p
+      case fl of
+        FList es         -> ListTemplate <$> compileElemList es <*> pure Nothing
+        FDottedList es d -> ListTemplate <$> compileElemList es <*> (Just <$> compile d)
+        FNotList _       -> panic "compileListTemplate: not a pair!"
+    
+    compileVectorTemplate v = do
+      vs <- vectorElemsPH v
+      elems <- compileElemList vs
+      return $ VectorTemplate elems
+
+    compileElemList [] = pure []
+    compileElemList (t : Symbol d : rest)
+      | d == dots = do
+        (template, vars) <- listen $ compile t
+        let elem = WithEllipsis vars template
+        restElems <- compileElemList rest
+        return $ elem : restElems
+    compileElemList (t : rest) = do
+      elem <- Plain <$> compile t
+      restElems <- compileElemList rest
+      return $ elem : restElems
 
 {- HLINT ignore "Use section" -}
 transcribe :: Template -> Matching -> EM Val
@@ -214,7 +263,7 @@ transcribe t outerMatching = template t outerMatching
           pushDownKeys xs = [ [(i,y) | y <- ys] | (i,ys) <- xs ]
           lstM = map M.fromList $ transpose $ pushDownKeys mlst
       mapM (template t) lstM
-    
+
     guardAllDeeper :: Matching -> EM ()
     guardAllDeeper m = pure ()
 
