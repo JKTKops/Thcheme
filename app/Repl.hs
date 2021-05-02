@@ -78,9 +78,12 @@ getInput = runMaybeT $ go id 0
         line <- MaybeT $ getInputLine prompt
         if balance == 0 && all isSpace line
         then go prevLines balance
-        else do let inp = prevLines . showString ('\n':line)
+        else do let inp = prevLines . showString line
                 case balance + bracketBalance line of
-                  n | n > 0     -> go inp n
+                  -- add the newline here, rather than to the beginning of
+                  -- line, so that parse errors give the right line number
+                  -- 3/16/21
+                  n | n > 0     -> go (inp . ('\n':)) n
                     | otherwise -> return $ inp ""
       where prompt = case balance of
        -- balance is only 0 on the first input, otherwise we
