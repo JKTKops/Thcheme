@@ -35,6 +35,7 @@ macros = [ ("quote", quote)
          , ("define", define)
          , ("lambda", lambda)
          , ("defmacro", defmacro)
+         , ("macroexpand", macroexpand)
          , ("begin", begin)
          ]
 
@@ -169,6 +170,32 @@ defmacro = Macro (AtLeast 2) $ const $
     lam <- lambdaB (ps : body)
     macro <- makeImproperMutableList [Symbol "macro"] lam
     defineVar name macro
+
+macroexpand :: Macro
+macroexpand = Macro (Exactly 1) $ const macroExpandB
+
+macroExpandB :: [Val] -> EM Val
+macroExpandB [syntaxForm] = do
+  (Symbol keyword : args) <- getListOrError syntaxForm
+  macro <- evalBody (Symbol keyword)
+  case macro of
+    MacroTransformer _ transformer -> 
+      expandTransformer transformer (Symbol keyword:args)
+    p@Pair{} -> do
+      fp <- freezeList p
+      case fp of
+        FDottedList [Symbol "macro"] macro@Closure{} -> expandMacro macro args
+        _ -> notMacro
+    PrimMacro{} -> throwError $
+      Default $ "can't expand primitive macro " ++ keyword
+    _ -> notMacro
+  where
+    notMacro = throwError $ TypeMismatch "macro" syntaxForm
+    -- see Note: [keywords in patterns] in Macro.Transformer
+    expandTransformer transformer forms = transformer (makeImmutableList forms)
+    expandMacro macro args = call macro args
+macroExpandB _ = panic "macroexpand arity"
+
 
 begin :: Macro
 begin = Macro (AtLeast 1) $ \tail stmts -> evalSeq tail stmts

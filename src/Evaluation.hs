@@ -55,6 +55,7 @@ handleApp tail function args = do
         Continuation{} -> evalCall func
         Closure{}      -> evalCall func
         PrimMacro{}    -> evalPMacro func
+        MacroTransformer _ transformer -> evalTransformer transformer
         -- TODO: this doesn't play well with the introduction of mutable
         -- lists, so it really is time to make a proper distinction between
         -- functions and low-level macros.
@@ -81,6 +82,10 @@ handleApp tail function args = do
         -- the current environment and then the expansion should be evaluated
         -- as though the macro was never there.
         evalPMacro pmacro = apply tail pmacro args
+        evalTransformer transformer = do
+          -- see Note: [keywords in patterns] in Macro.Transformer
+          expansion <- transformer (makeImmutableList $ function:args)
+          eval tail expansion
         evalMacro macro = do
             expansion <- call macro args
             eval tail expansion

@@ -2,7 +2,11 @@
 -- I make no guarantees about the efficiency of this implementation.
 -- I can't find any papers about implementing these algorithms anywhere,
 -- so mainly I just want something that works for now.
-module Macros.Pattern where
+module Macro.Transformer 
+  ( compileSyntaxRules -- eventually we'll want to export config as well
+                       -- and make syntax rules take configs for dots and literals
+  ) 
+  where
 
 import Control.Monad
 import Control.Monad.State
@@ -148,20 +152,8 @@ match p v = runMaybeT $ match' p v
                                           -- the guard always fails; we just
                                           -- need it because of guard's type.
       let n = length vs
-          k = length before
-          m = length after
-      guard $ n >= k + m
-      let (bvs, vs') = splitAt k vs
-          (evs, avs) = splitAt (n-k-m) vs'
-      matchingBefore <- zipWithM match' before bvs
-      matchingEs     <- zipWithM match' (repeat e) evs
-      matchingAfter  <- zipWithM match' after avs
-      let matchingESingletons = fmap (fmap (:[])) matchingEs
-          matchingELists = foldl' (M.unionWith (++)) M.empty matchingESingletons
-          finalEMatching = Deeper <$> matchingELists
-      return $ M.unions $ dotMatching
-                        : finalEMatching
-                        : matchingBefore ++ matchingAfter
+      mainMatching <- matchEllipsisPatterns before e after vs n
+      return $ mainMatching `M.union` dotMatching
     
     match' (VectorPat ps) v = do
       guard $ vectorSH v
@@ -170,7 +162,32 @@ match p v = runMaybeT $ match' p v
       matchings <- zipWithM match' ps vs
       return $ M.unions matchings
     
-    match' (EllipsisVectorPat{}) v = panic "ellipses vector pattern matching not implemented"
+    match' (EllipsisVectorPat b e a) v = do
+      guard $ vectorSH v
+      vs <- vectorElemsPH v
+      let n = vectorLengthPH v
+      matchEllipsisPatterns b e a vs n
+    
+    matchEllipsisPatterns
+      :: [Pattern] -- before the ellipsis
+      -> Pattern   -- attached to the ellipsis
+      -> [Pattern] -- after the ellipsis
+      -> [Val] -- (haskell) list of values to match
+      -> Int   -- length of vs because we can calculate it faster for vectors
+      -> MaybeT EM Matching
+    matchEllipsisPatterns b e a vs n = do
+      let k = length b
+          m = length a
+      guard $ n >= k + m
+      let (bvs, vs') = splitAt k vs
+          (evs, avs) = splitAt (n-k-m) vs'
+      matchingBefore <- zipWithM match' b bvs
+      matchingEs     <- zipWithM match' (repeat e) evs
+      matchingAfter  <- zipWithM match' a avs
+      let matchingESingletons = fmap (fmap (:[])) matchingEs
+          matchingELists = foldl' (M.unionWith (++)) M.empty matchingESingletons
+          finalEMatching = Deeper <$> matchingELists
+      return $ M.unions $ finalEMatching : matchingBefore ++ matchingAfter
 
 data Template
   = IdentTemplate String
@@ -208,6 +225,8 @@ compileTemplate TemCompileConfig{ellipsis = dots, patVars = patVars}
     compileListTemplate p = do
       fl <- lift $ freezeList p
       case fl of
+        FList [Symbol a, Symbol b]
+          | a == dots && b == dots -> pure $ IdentTemplate dots
         FList es         -> ListTemplate <$> compileElemList es <*> pure Nothing
         FDottedList es d -> ListTemplate <$> compileElemList es <*> (Just <$> compile d)
         FNotList _       -> panic "compileListTemplate: not a pair!"
@@ -230,7 +249,7 @@ compileTemplate TemCompileConfig{ellipsis = dots, patVars = patVars}
       return $ elem : restElems
 
 {- HLINT ignore "Use section" -}
-transcribe :: Template -> Matching -> EM Val
+transcribe :: Template -> Transcriber
 transcribe t outerMatching = template t outerMatching
   where
     template :: Template -> Matching -> EM Val
@@ -265,7 +284,75 @@ transcribe t outerMatching = template t outerMatching
       mapM (template t) lstM
 
     guardAllDeeper :: Matching -> EM ()
-    guardAllDeeper m = pure ()
+    guardAllDeeper m
+      | good = pure ()
+      | otherwise = throwError $ 
+        Default "badly nested pattern variable in template"
+      where good = all isDeeper m
+            isDeeper Deeper{} = True
+            isDeeper Here{}   = False
 
     guardSameLength :: M.HashMap PatternVar [Match Val] -> EM ()
-    guardSameLength m = pure ()
+    guardSameLength m
+      | good = pure ()
+      | otherwise = throwError $
+        Default "Different number of matches for a zip-template"
+      where vals = M.elems m
+            lengths = map length vals
+            good = case lengths of
+              [] -> True
+              ls -> all (== head ls) (tail ls)
+
+{- | Compile one case of a macro transformer.
+The syntax of a syntax rule is:
+(<pattern> <template>)
+where <pattern> is a list whose first element is
+the macro keyword or a wildcard.
+-}
+{- Note: [keywords in patterns]
+The first element of that list pattern
+is not used in matching. It syntactically matches the keyword either as 
+wild or as a literal, but the spec says to ignore it entirely. Therefore,
+we remove it from the value-pattern before compiling it. We also remove
+the keyword from syntax forms before matching them.
+
+Note that when we apply a transformer, we will apply it to the whole syntax
+form and not just to the arguments. This way, if we need to throw a
+BadSpecialForm error, we will still see the keyword.
+-}
+compileSyntaxRule :: Val -> EM (Matcher, Transcriber)
+compileSyntaxRule v = do
+  (vpat, vtemp) <- getSyntaxRule v
+  guardPair vpat
+  vpat' <- cdrPS vpat -- remove the first element of the pattern
+  (pat, patVars) <- compilePattern (PatCompileConfig "...") vpat'
+  template <- compileTemplate (TemCompileConfig "..." patVars) vtemp
+  return (dropKeywordThenMatch pat, transcribe template)
+  where
+    getSyntaxRule v = do
+      lst <- getListOrError v
+      case lst of
+        [x,y] -> pure (x,y)
+        _ -> throwError $ TypeMismatch "syntax rule" v
+    
+    guardPair v
+      | pairSH v = pure ()
+      | otherwise = throwError $ TypeMismatch "non-empty pattern" v
+    
+    -- if this function is being called, then the value to match is
+    -- necessarily a syntax form, hence a nonempty list. We want
+    -- to drop the keyword before matching the pattern.
+    dropKeywordThenMatch pat = cdrPS >=> match pat
+
+compileSyntaxRules :: [Val] -> EM Transformer
+compileSyntaxRules rules = do
+  compiledRules <- mapM compileSyntaxRule rules
+  return $ makeTransformer compiledRules
+
+makeTransformer :: [(Matcher, Transcriber)] -> Val -> EM Val
+makeTransformer [] v = throwError $ BadSpecialForm v
+makeTransformer ((m,t):rules) v = do
+  mmatch <- m v
+  case mmatch of
+    Nothing -> makeTransformer rules v
+    Just match -> t match

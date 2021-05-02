@@ -95,6 +95,7 @@ data Val
   | IString String
   | Char Char
   | Bool Bool
+
   | Primitive Arity Builtin String
   | PrimMacro Arity (InTail -> Builtin) String
   | Continuation (Val -> EM Val)
@@ -105,6 +106,8 @@ data Val
      , cloEnv :: LocalEnv
      , name   :: Maybe String
      }
+  | MacroTransformer String (Val -> EM Val)
+    
   | Port Handle
   | Undefined
 
