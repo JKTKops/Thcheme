@@ -131,9 +131,6 @@ $delimiter = [$white \| \( \) \[ \] \{ \} \; \"]
 -------------------------------------------------------------------------------
 -- finally, rules!
 
--- TODO: some lexemes must be followed by a delimiter,
--- use Alex's right-context support.
-
 tokens :-
 
 <0> {
