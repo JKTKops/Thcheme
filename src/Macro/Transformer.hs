@@ -1,11 +1,11 @@
-{-# LANGUAGE LambdaCase, TupleSections #-}
+{-# LANGUAGE LambdaCase, TupleSections, DuplicateRecordFields #-}
 -- I make no guarantees about the efficiency of this implementation.
 -- I can't find any papers about implementing these algorithms anywhere,
 -- so mainly I just want something that works for now.
 module Macro.Transformer 
-  ( compileSyntaxRules -- eventually we'll want to export config as well
-                       -- and make syntax rules take configs for dots and literals
-  ) 
+  ( CompileConfig(..) 
+  , compileSyntaxRules
+  )
   where
 
 import Control.Monad
@@ -40,19 +40,19 @@ data Pattern
       [Pattern]
   deriving Show
 
-data CompileConfig 
-  = PatCompileConfig { ellipsis :: String }
-  | TemCompileConfig { ellipsis :: String, patVars :: S.Set PatternVar }
+data CompileConfig = CompileConfig { ellipsis :: String, literals :: S.Set String }
+data TemCompileConfig = TemCompileConfig { ellipsis :: String, patVars :: S.Set PatternVar }
 
 compilePattern :: CompileConfig -> Val -> EM (Pattern, S.Set PatternVar)
-compilePattern TemCompileConfig{} _ = panic "compilePattern: wrong config"
-compilePattern PatCompileConfig{ellipsis = dots} v = runStateT (compile v) S.empty
+compilePattern CompileConfig{ellipsis = dots, literals = lits} v
+  = runStateT (compile v) S.empty
   where
     compile datum = case datum of
       Symbol s
         | s == dots -> lift $ throwError $ 
             Default "unexpected ellipsis in pattern"
         | s == "_" -> pure WildPat
+        | s `S.member` lits -> pure $ ConstPat (Symbol s)
         | otherwise -> do
             test <- gets (S.member s)
             if test
@@ -204,8 +204,7 @@ data Element
     -- as specified.
   deriving Show
 
-compileTemplate :: CompileConfig -> Val -> EM Template
-compileTemplate PatCompileConfig{} = panic "compileTemplate: wrong config"
+compileTemplate :: TemCompileConfig -> Val -> EM Template
 compileTemplate TemCompileConfig{ellipsis = dots, patVars = patVars} 
   = fmap fst . runWriterT . compile
   where
@@ -280,8 +279,8 @@ transcribe t outerMatching = template t outerMatching
       guardSameLength m''
       let mlst = M.toList m''
           pushDownKeys xs = [ [(i,y) | y <- ys] | (i,ys) <- xs ]
-          lstM = map M.fromList $ transpose $ pushDownKeys mlst
-      mapM (template t) lstM
+          lstm = map M.fromList $ transpose $ pushDownKeys mlst
+      mapM (template t) lstm
 
     guardAllDeeper :: Matching -> EM ()
     guardAllDeeper m
@@ -320,13 +319,13 @@ Note that when we apply a transformer, we will apply it to the whole syntax
 form and not just to the arguments. This way, if we need to throw a
 BadSpecialForm error, we will still see the keyword.
 -}
-compileSyntaxRule :: Val -> EM (Matcher, Transcriber)
-compileSyntaxRule v = do
+compileSyntaxRule :: CompileConfig -> Val -> EM (Matcher, Transcriber)
+compileSyntaxRule config@CompileConfig{ellipsis = dots} v = do
   (vpat, vtemp) <- getSyntaxRule v
   guardPair vpat
   vpat' <- cdrPS vpat -- remove the first element of the pattern
-  (pat, patVars) <- compilePattern (PatCompileConfig "...") vpat'
-  template <- compileTemplate (TemCompileConfig "..." patVars) vtemp
+  (pat, patVars) <- compilePattern config vpat'
+  template <- compileTemplate (TemCompileConfig dots patVars) vtemp
   return (dropKeywordThenMatch pat, transcribe template)
   where
     getSyntaxRule v = do
@@ -344,9 +343,9 @@ compileSyntaxRule v = do
     -- to drop the keyword before matching the pattern.
     dropKeywordThenMatch pat = cdrPS >=> match pat
 
-compileSyntaxRules :: [Val] -> EM Transformer
-compileSyntaxRules rules = do
-  compiledRules <- mapM compileSyntaxRule rules
+compileSyntaxRules :: CompileConfig -> [Val] -> EM Transformer
+compileSyntaxRules config rules = do
+  compiledRules <- mapM (compileSyntaxRule config) rules
   return $ makeTransformer compiledRules
 
 makeTransformer :: [(Matcher, Transcriber)] -> Val -> EM Val

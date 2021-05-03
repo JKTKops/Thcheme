@@ -106,7 +106,7 @@ data Val
      , cloEnv :: LocalEnv
      , name   :: Maybe String
      }
-  | MacroTransformer String (Val -> EM Val)
+  | MacroTransformer (Maybe String) (Val -> EM Val)
     
   | Port Handle
   | Undefined

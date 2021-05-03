@@ -17,6 +17,10 @@ unwrapExactInteger v = case getExactInteger v of
   Just i -> return i
   Nothing -> throwError $ TypeMismatch "exact integer" v
 
+unwrapSymbol :: Val -> EM String
+unwrapSymbol (Symbol s) = pure s
+unwrapSymbol notSymbol = throwError $ TypeMismatch "symbol" notSymbol
+
 unwrapStr :: Val -> EM String
 unwrapStr (IString s) = return s
 unwrapStr (String ref) = readRef ref
