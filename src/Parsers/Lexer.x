@@ -424,7 +424,7 @@ instance Show Token where
     TokLByteVector -> "#u8(";
     TokQuote -> "'"; TokBackquote -> "`"; TokComma -> ","; TokCommaAt -> ",@";
     TokDot -> ".";
-    TokLabelDef i -> "#" ++ show i ++ "#=";
+    TokLabelDef i -> "#" ++ show i ++ "=";
     TokLabelRef i -> "#" ++ show i ++ "#";
     TokDatumComment -> "#;"
     TokEOF -> "EOF";
