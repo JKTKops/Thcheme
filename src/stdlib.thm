@@ -62,32 +62,50 @@
         ((symbol? args) `(define ,name (lambda ,args ,@body)))
         (else (error "defun: Invalid type: expected symbol or pair"))))
 
-(defmacro let (lst body1 . body*) ; must have at least one body form
-  (if (null? lst) 
-      `(begin ,body1 ,@body*)
-      `((lambda ,(map car lst) ,body1 ,@body*) ,@(map cadr lst))))
+; (defmacro let (lst body1 . body*) ; must have at least one body form
+;   (if (null? lst) 
+;       `(begin ,body1 ,@body*)
+;       `((lambda ,(map car lst) ,body1 ,@body*) ,@(map cadr lst))))
 
-(defmacro let* (lst body1 . body*) ; same as above
-  (if (null? lst)
-      `(let () ,body1 ,@body*)
-      `(let ((,(first (car lst)) ,(second (car lst))))
-         (let* ,(cdr lst) ,body1 ,@body*))))
+(define-syntax let
+  (syntax-rules ()
+    ((let ((var val) ...) body1 body* ...)
+     ((lambda (var ...) body1 body* ...) val ...))
+    ((let tag ((var val) ...) body1 body* ...)
+     (letrec ([tag (lambda (var ...) body1 body* ...)])
+       (tag val ...)))))
 
-(defmacro letrec (lst body1 . body*)
-  (let* ((make-define (lambda (pair)
-           (if (not (pair? pair))
-             (error "letrec: binding is not a pair")
-             (cons 'define pair))))
-         (dfns (map make-define lst)))
-    `(begin ,@dfns ,body1 ,@body*)))
+; (defmacro let* (lst body1 . body*) ; same as above
+;   (if (null? lst)
+;       `(let () ,body1 ,@body*)
+;       `(let ((,(first (car lst)) ,(second (car lst))))
+;          (let* ,(cdr lst) ,body1 ,@body*))))
 
-(defmacro named-let (name lst body1 . body*) ; convenient for making loops
-  `(letrec ([,name (lambda ,(map car lst) ,body1 ,@body*)])
-     (,name ,@(map cadr lst))))
+(define-syntax let*
+  (syntax-rules ()
+    ((let* (binding1 binding* ...) body1 body* ...)
+     (let (binding1) (let* (binding* ...) body1 body* ...)))
+    ((let* () body1 body* ...)
+     (begin body1 body* ...))))
+
+; (defmacro letrec (lst body1 . body*)
+;   (let* ((make-define (lambda (pair)
+;            (if (not (pair? pair))
+;              (error "letrec: binding is not a pair")
+;              (cons 'define pair))))
+;          (dfns (map make-define lst)))
+;     `(begin ,@dfns ,body1 ,@body*)))
+
+(define-syntax letrec
+  (syntax-rules ()
+    ((letrec ((var val) ...) body1 body* ...)
+     ((lambda () (define var val) ... body1 body* ...)))))
 
 ; I don't really know if this one is entirely safe because of
 ; hygiene concerns. Really, once the hygienic system is in place,
 ; the local macro should be defined with let-syntax instead.
+; Also, recursive case-lambda functions are quite slow as long
+; as macros expansion still happens during evaluation.
 (define-syntax case-lambda
   (syntax-rules ()
     ((case-lambda (params body0 ...) ...)
