@@ -242,7 +242,7 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
                                       ++ showNumber (Real i)
                                       ++ "i"
           | otherwise = showNumber (Real r)
-                      ++ if isInfinite r || isNaN r then "" else "+"
+                      ++ (if isInfinite i || isNaN i then "" else "+")
                       ++ showNumber (Real i)
                       ++ "i"
 

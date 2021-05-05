@@ -173,7 +173,7 @@ writeShowS (Number n) = pure $ writeNumber n
                                       . writeNumber (Real i)
                                       . showChar 'i'
           | otherwise = writeNumber (Real r)
-                      . if isInfinite r || isNaN r then id else showChar '+'
+                      . (if isInfinite i || isNaN i then id else showChar '+')
                       . writeNumber (Real i)
                       . showChar 'i'
 

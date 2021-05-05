@@ -4,33 +4,56 @@
 (define define-macro defmacro)
 
 ;;; MACROS
-(defmacro or cases
-  (if (null? cases)
-      #f
-      `(if ,(car cases)
-          #t
-          (or ,@(cdr cases)))))
+(define-syntax or
+  (syntax-rules ()
+    ((or) #f)
+    ((or test) test)
+    ((or test1 test2 ...)
+     (let ((x### test1)) ; best we can do until hygiene
+       (if x### x### (or test2 ...))))))
 
-(defmacro and cases
-  (if (null? cases)
-       #t
-       `(if (not ,(car cases))
-           #f
-           (and ,@(cdr cases)))))
+(define-syntax and
+  (syntax-rules ()
+    ((and) #t)
+    ((and test) test)
+    ((and test1 test2 ...)
+     (if test1 (and test2 ...) #f))))
 
-(defmacro cond cases
-  (if (null? cases) (error "cond: unexhaustive cases")
-      (if (eq? 'else (car (car cases)))
-          `(begin ,@(cdr (car cases)))
-          `(if ,(car (car cases))
-               (begin ,@(cdr (car cases)))
-               (cond ,@(cdr cases))))))
+(define-syntax cond
+  (syntax-rules (else =>)
+    ((cond (else result1 result2 ...))
+     (begin result1 result2 ...))
+    ((cond (test => result))
+     (let ((temp test))
+       (if temp (result temp))))
+    ((cond (test => result) clause1 clause2 ...)
+     (let ((temp test))
+       (if temp
+           (result temp)
+           (cond clause1 clause2 ...))))
+    ((cond (test)) test)
+    ((cond (test) clause1 clause2 ...)
+     (let ((temp test))
+       (if temp
+           temp
+           (cond clause1 clause2 ...))))
+    ((cond (test result1 result2 ...))
+     (if test (begin result1 result2 ...)))
+    ((cond (test result1 result2 ...) clause1 clause2 ...)
+     (if test
+         (begin result1 result2 ...)
+         (cond clause1 clause2 ...)))))
 
-(defmacro unless (test-expr body1 . body*)
-  `(if ,test-expr () ,body1 ,@body*))
+(define-syntax when
+  (syntax-rules ()
+    ((when test result1 result2 ...)
+     (if test (begin result1 result2 ...)))))
 
-(defmacro when (test-expr body1 . body*)
-  `(unless (not ,test-expr) ,body1 ,@body*))
+(define-syntax unless
+  (syntax-rules ()
+    ((unless test result1 result2 ...)
+     (if (not test)
+         (begin result1 result2 ...)))))
 
 ;;; BINDINGS
 
@@ -62,10 +85,39 @@
   `(letrec ([,name (lambda ,(map car lst) ,body1 ,@body*)])
      (,name ,@(map cadr lst))))
 
+; I don't really know if this one is entirely safe because of
+; hygiene concerns. Really, once the hygienic system is in place,
+; the local macro should be defined with let-syntax instead.
+(define-syntax case-lambda
+  (syntax-rules ()
+    ((case-lambda (params body0 ...) ...)
+     (lambda args
+       (let ([len### (length args)])
+         (define-syntax cl###
+           (syntax-rules ::: ()
+             ((cl###)
+              (error "no matching clause"))
+             ((cl### ((p :::) . body) . rest)
+              (if (= len### (length '(p :::)))
+                  (apply (lambda (p :::) . body) args)
+                  (cl### . rest)))
+             ((cl### ((p ::: . tail) . body) . rest)
+              (if (>= len (length '(p :::)))
+                  (apply
+                   (lambda (p ::: . tail) . body)
+                   args)
+                  (cl### . rest)))))
+         (cl### (params body0 ...) ...))))))
+
 ;;; LIST FUNCTIONS
 (define first car)
 (define second cadr)
 (define third caddr)
+
+(define (length xs)
+  (if (null? xs)
+      0
+      (+ 1 (length (cdr xs)))))
 
 (define (map f xs)
   (if (null? xs)

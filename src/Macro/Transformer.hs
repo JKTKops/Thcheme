@@ -225,6 +225,9 @@ compileTemplate TemCompileConfig{ellipsis = dots, patVars = patVars}
       fl <- lift $ freezeList p
       case fl of
         FList [Symbol a, Symbol b]
+          -- TODO: this isn't right: if a is dots, then we should compile b
+          -- as though dots had no special meaning. This works only for
+          -- the most common case, (... ...) => ...
           | a == dots && b == dots -> pure $ IdentTemplate dots
         FList es         -> ListTemplate <$> compileElemList es <*> pure Nothing
         FDottedList es d -> ListTemplate <$> compileElemList es <*> (Just <$> compile d)
