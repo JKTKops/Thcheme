@@ -136,7 +136,10 @@ showVal p@IPair{} = showParen True $ showDList $ fromList p
 
 showVal Vector{} = showString "<can't show mutable vector>"
 showVal (IVector v) = showChar '#' . showParen True (unwordsList (V.toList v))
-showVal (IByteVector v) = showString "#u8" . showParen True (showList (U.toList v))
+showVal (IByteVector v) = showString "#u8" . showParen True (showBytes (U.toList v))
+  where showBytes [] = id
+        showBytes [b] = shows b
+        showBytes (b:bs) = shows b . showChar ' ' . showBytes bs
 showVal Nil = showString "()"
 
 -- | Can't show mutable things.
