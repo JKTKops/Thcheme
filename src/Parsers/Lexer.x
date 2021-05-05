@@ -414,14 +414,30 @@ data Token
                     -- The actual token is just '#;'.
 
   | TokEOF
-  deriving Show
+
+instance Show Token where
+  show tok = case tok of
+    TokSymbol s -> s; TokBool True -> "#t"; TokBool False -> "#f";
+    TokNumber n -> show n; TokChar c -> show c; TokString s -> show s;
+    TokLParen -> "("; TokRParen -> ")"; TokLBracket -> "["; TokRBracket -> "]";
+    TokLBrace -> "{"; TokRBrace -> "}"; TokLVector -> "#(";
+    TokLByteVector -> "#u8(";
+    TokQuote -> "'"; TokBackquote -> "`"; TokComma -> ","; TokCommaAt -> ",@";
+    TokDot -> ".";
+    TokLabelDef i -> "#" ++ show i ++ "#=";
+    TokLabelRef i -> "#" ++ show i ++ "#";
+    TokDatumComment -> "#;"
+    TokEOF -> "EOF";
 
 data Numeric
   = LitInteger  Integer
   | LitFloating Double
   | LitRational Rational
   | LitComplex  Numeric Numeric
-  deriving Show
+
+instance Show Numeric where
+  show (LitInteger i) = show i -- this one is diff bc it appears in byte errors
+  show _ = "NumericToken"
 
 lex :: (String -> Token) -> AlexAction Lexeme
 lex f = \(p,_,_,s) i -> return $ L p (f (take i s))

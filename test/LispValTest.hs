@@ -179,7 +179,7 @@ testShowFunctions = testCase "Functions show correctly" $
        show (Closure [] Nothing [] emptyEnv Nothing) @?= "(lambda () ...)"
        show (Closure ["x"] Nothing [] emptyEnv Nothing) @?= "(lambda (x) ...)"
        show (Closure [] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
-            "(testFunc ( . xs) ...)"
+            "(testFunc xs ...)"
        show (Closure ["x"] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
             "(testFunc (x . xs) ...)"
        show (Closure ["x"] (Just "xs") [] emptyEnv Nothing) @?= "(lambda (x . xs) ...)"

@@ -104,6 +104,11 @@ showVal Port{} = showString "#<port>"
 showVal Undefined = showString "#<undefined>"
 showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
 showVal Continuation{} = showString "#<cont>"
+showVal (Closure [] (Just varargs) _body _env name) =
+  showParen True $
+      showString (fromMaybe "lambda" name)
+    . showChar ' ' . showString varargs
+    . showString " ..." 
 showVal (Closure args varargs _body _env name) = 
     showParen True $
         displayName . showChar ' '
