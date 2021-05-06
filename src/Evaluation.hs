@@ -1,7 +1,9 @@
 {-# LANGUAGE TupleSections #-}
 module Evaluation
-    ( -- | evaluate a string
-      evaluate
+    ( -- | Initialize an EvalState
+      initEvalState
+      -- | evaluate a string
+    , evaluate
       -- | evaluate a given expression
     , evaluateExpr
       -- | evaluate inside EM monad
@@ -10,7 +12,7 @@ module Evaluation
       -- | Convert the evaluation output into a meaningful string
     , showResultIO
       -- | Function application, not sure why this is here rn
-    , call, tailCall
+    , call, tailCall, rerootDynPoint
     ) where
 
 import Data.Maybe
@@ -133,7 +135,9 @@ apply tail (PrimMacro arity func _) args = do
   func tail args
 
 -- Application of continuation
-apply _ (Continuation func) [arg] = func arg
+apply _ (Continuation point func) [arg] = do
+  rerootDynPoint point
+  func arg
 apply _ Continuation{} badArgs = throwError $ NumArgs (Exactly 1) badArgs
 
 -- Applications of user-defined functions
@@ -179,16 +183,39 @@ makeStackFrame head args =
 buildFrame :: String -> [Val] -> Maybe LocalEnv -> StackFrame
 buildFrame name args = StackFrame (makeImmutableList (Symbol name : args))
 
-evaluate :: String -> Env -> Opts -> String -> IO (Either LispErr Val, EvalState)
-evaluate label initEnv opts input = execEM initEnv opts $
+rerootDynPoint :: DynamicPoint -> EM ()
+rerootDynPoint Sentinel = panic "rerootDynPoint: sentinel!"
+rerootDynPoint there@(Point dataRef parentRef) = do
+  hereRef <- gets dynPoint
+  here <- readRef hereRef
+  unless (here == there) $ do
+    readRef parentRef >>= rerootDynPoint
+    here <- readRef hereRef
+    let Point hereDataRef hereParentRef = here
+    (before, after) <- readRef dataRef
+    writeRef hereDataRef (after, before)
+    writeRef hereParentRef there
+    writeRef dataRef (Nil, Nil)
+    writeRef parentRef Sentinel
+    writeRef hereRef there
+    _ <- call before []
+    return ()
+
+-------------------------------------------------------------------------------
+-- Primary entrypoints
+-------------------------------------------------------------------------------
+evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
+evaluate label state input = execEM state $
   liftEither (labeledReadExpr label input) >>= evalBody
 
-evaluateExpr :: Env -> Opts -> Val -> IO (Either LispErr Val, EvalState)
-evaluateExpr env opts v = execEM env opts $ evalBody v
+evaluateExpr :: EvalState -> Val -> IO (Either LispErr Val, EvalState)
+evaluateExpr state v = execEM state $ evalBody v
 
 -- | Provided for backwards compatibility.
 runTest :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
-runTest = execEM
+runTest env opts m = do
+  s <- initEvalState env opts
+  execEM s m
 
 showResultIO :: (Either LispErr Val, EvalState) -> IO String
 showResultIO res = case res of

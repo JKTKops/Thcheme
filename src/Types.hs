@@ -19,6 +19,7 @@ module Types
     , EM (..)
     , EvalState (..)
     , StackFrame (..)
+    , DynamicPoint (..)
     , Opts
    -- , TraceType
     , liftIOThrows
@@ -98,7 +99,7 @@ data Val
 
   | Primitive Arity Builtin String
   | PrimMacro Arity (InTail -> Builtin) String
-  | Continuation (Val -> EM Val)
+  | Continuation DynamicPoint (Val -> EM Val)
   | Closure
      { params :: [String]
      , vararg :: Maybe String
@@ -344,8 +345,30 @@ liftIOThrows = liftEither <=< liftIO . runExceptT
 data EvalState = ES { globalEnv  :: GlobalEnv
                     , localEnv   :: LocalEnv
                     , stack      :: [StackFrame]
+                    , dynPoint   :: Ref DynamicPoint
                     , options    :: Opts
                     }
 
 -- | Associate a call in the callTrace with its captured local environment.
 data StackFrame = StackFrame Val (Maybe LocalEnv)
+
+-- | Dynamic points; this is the core of the implementation of dynamic-wind.
+--
+-- Each dynamic point stores the "before" and "after" thunks from the
+-- dynamic-wind call, as well as the "parent" node, which is either the
+-- root, or the dynamic point of the next innermost dynamic-wind call.
+-- The root is the Point whose parent is the Sentinel, and its
+-- before/after ref contains unspecified values that should not be called.
+--
+-- The implementation of dynamic-wind spans a couple of modules.
+-- Here, continuation objects are defined as holding a DynamicPoint as
+-- well as a function; this is the dynamic point of the dynamic extent in
+-- which that continuation was captured. When a continuation is captured
+-- by callWithCurrentContinuation in Misc.hs, it captures the current value of
+-- dereferencing dynPoint as well. When a continuation is applied by
+-- 'call' in Evaluation.hs, dynPoint is rerooted to the captured DynamicPoint
+-- before the continuation's function itself is called. The implementation of
+-- dynamicWind in Misc.hs contains two more rerootDynPoint calls that
+-- cause the normal enter-and-exit calls to before and after.
+data DynamicPoint = Sentinel | Point (Ref (Val, Val)) (Ref DynamicPoint)
+  deriving Eq

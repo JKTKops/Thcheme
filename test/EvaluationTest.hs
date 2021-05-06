@@ -462,6 +462,7 @@ mkEvalTest :: EvalTest -> TestTree
 mkEvalTest tb = let exprs = lines $ input tb
                  in testCaseSteps (testName tb) $ \step -> do
     primEnv <- primitiveBindings
+    initState <- initEvalState primEnv noOpts
     evaluations <- fmap (map fst) . forM exprs $ \input -> do
         step $ "input: " ++ input
         step "Parsing input"
@@ -470,7 +471,7 @@ mkEvalTest tb = let exprs = lines $ input tb
         let Right expr = pExpr
 
         step "Evaluating input"
-        evaluateExpr primEnv noOpts expr
+        evaluateExpr initState expr
 
     step "Verifying evaluation"
     let evaluation = last evaluations
@@ -565,7 +566,8 @@ mkApplyTest :: ApplyTB -> TestTree
 mkApplyTest tb = testCase (testNameA tb) $ do
     let Right funcP = labeledReadExpr "" $ funcIn tb
     primEnv <- primitiveBindings
-    (Right func) <- fst <$> evaluateExpr primEnv noOpts funcP
+    initState <- initEvalState primEnv noOpts
+    (Right func) <- fst <$> evaluateExpr initState funcP
     res <- runTest primEnv noOpts $ call func (args tb)
     fst res ?= expectedA tb
 
@@ -580,9 +582,10 @@ facConstantSpace = testCase "factorial executes in constant space" $ do
           , "  (go 1 n))"
           ]
         Right exec = readExpr "(fac 10)"
-    primEnv <- primitiveBindings 
-    evaluateExpr primEnv noOpts defFac
-    (r, s) <- evaluateExpr primEnv noOpts exec
+    primEnv <- primitiveBindings
+    initState <- initEvalState primEnv noOpts
+    evaluateExpr initState defFac
+    (r, s) <- evaluateExpr initState exec
     r @?= Left (Default "3628800")
     assertBool "stack is too big" $ length (stack s) == 1
     -- every call is a tail call

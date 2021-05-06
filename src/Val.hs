@@ -348,9 +348,7 @@ testCircularList v = next v >>= \case
             (lift2 go (next t) (next2 h))
       | otherwise = return False
 
-    -- takes a ref to a pair obj (mut. or immut. via Either)
-    -- and gets Just a ref to the cdr PairObj if the cdr is a pair,
-    -- otherwise Nothing.
+    -- takes a val and returns the cdr if it is a pair, else Nothing
     next p@Pair{}  = Just <$> cdrPS p
     next p@IPair{} = Just <$> cdrPS p
     next _ = pure Nothing

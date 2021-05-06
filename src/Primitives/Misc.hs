@@ -2,7 +2,6 @@
 module Primitives.Misc (primitives, macros) where
 
 -- TODO split into Control and Syntax
-
 import Text.Read (readMaybe)
 
 import Parsers (load)
@@ -24,6 +23,7 @@ primitives = [ identityFunction
              , quit
              , loadP
              , callWithCurrentContinuation
+             , dynamicWind
              ]
 
 macros :: [(String, Macro)]
@@ -47,9 +47,24 @@ callWithCurrentContinuation =
   Prim "call-with-current-continuation" (Exactly 1) callcc
   where
     callcc :: [Val] -> EM Val
-    callcc [func] = callCC $ \k ->
-        tailCall func [Continuation k]
+    callcc [func] = do
+      here <- gets dynPoint >>= readRef
+      callCC $ \k ->
+        tailCall func [Continuation here k]
     callcc _ = panic "callcc arity"
+
+dynamicWind :: Primitive
+dynamicWind = Prim "dynamic-wind" (Exactly 3) $ 
+  \[before, during, after] -> do
+    here <- gets dynPoint >>= readRef
+    let procs = (before, after)
+    procRef   <- newRef procs
+    parentRef <- newRef here
+    let point = Point procRef parentRef
+    rerootDynPoint point
+    dv <- call during []
+    rerootDynPoint here
+    return dv
 
 -- compose?
 
@@ -224,7 +239,15 @@ loadP = Prim "load" (Exactly 1) $ \case
             Right ls -> do
               state <- get
               -- put (interaction-environment)
-              put $ ES (globalEnv state) [] [] (options state)
+              -- note that this will execute the loaded file outside
+              -- the dynamic extent of the caller but without moving
+              -- dynamic points; merely using a new root.
+              -- I'm pretty sure this is wrong. We probably
+              -- really want to reroot the dynamic points to the
+              -- original root before evaluating and then reroot back
+              -- after.
+              init <- liftIO $ initEvalState (globalEnv state) (options state)
+              put init
               r <- evalBodySeq ls
               put state
               return r

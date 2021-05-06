@@ -3,7 +3,7 @@ module EvaluationMonad
     -- * re-exported from Types
       EM (..)
     , EvalState (..)
-    , StackFrame (..)
+    , StackFrame (..), DynamicPoint (..)
     , Env, GlobalEnv, LocalEnv
     , Opts
 
@@ -13,6 +13,9 @@ module EvaluationMonad
     , module Control.Monad.State.Lazy
     , (Fish.>=>), (Fish.<=<)
 
+      -- * Construct the initial EvalState
+    , initEvalState
+    
       -- * Execute EM actions
     , execEM, execAnyEM, unsafeEMtoIO, emToIO
 
@@ -49,18 +52,23 @@ import qualified Environment as Env
 
 import GHC.Stack (HasCallStack) -- for panic
 
+initEvalState :: Env -> Opts -> IO EvalState
+initEvalState initEnv opts = do
+  let garbage = (Nil, Nil)
+  root <- Point <$> newIORef garbage <*> newIORef Sentinel
+  rootRef <- newIORef root
+  return $ ES initEnv [] [] rootRef opts
 
-execEM :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)
-execEM initEnv opts (EM m) = runCont m (\v s -> pure (Right v, s)) $
-                                ES initEnv [] [] opts
+execEM :: EvalState -> EM Val -> IO (Either LispErr Val, EvalState)
+execEM state (EM m) = runCont m (\v s -> pure (Right v, s)) state
 
 -- | Useful for testing etc.
-execAnyEM :: Env -> Opts -> EM a -> IO (Either LispErr a)
-execAnyEM env opts m = do
+execAnyEM :: EvalState -> EM a -> IO (Either LispErr a)
+execAnyEM state m = do
   -- This hack looks very weird if you don't know what's going on here.
   -- See Note: [EM return types] in Types.hs.
   store <- newIORef (error "execAnyEM: forced store")
-  (either, _) <- execEM env opts $ do
+  (either, _) <- execEM state $ do
     a <- m
     writeRef store a
     return Undefined
@@ -79,7 +87,8 @@ execAnyEM env opts m = do
 unsafeEMtoIO :: EM a -> IO a
 unsafeEMtoIO em = do
   ne <- Env.nullEnv
-  Right a <- execAnyEM ne (setOpt Lint noOpts) em
+  es <- initEvalState ne (setOpt Lint noOpts)
+  Right a <- execAnyEM es em
   return a
 
 -- | Convert an EM action to an IO action, safely returning errors
@@ -87,7 +96,8 @@ unsafeEMtoIO em = do
 emToIO :: EM a -> IO (Either LispErr a)
 emToIO em = do
   ne <- Env.nullEnv
-  execAnyEM ne (setOpt Lint noOpts) em
+  es <- initEvalState ne (setOpt Lint noOpts)
+  execAnyEM es em
 
 pushFrame :: StackFrame -> EM ()
 pushFrame frame@(StackFrame _ mlcl) = modify $ \s -> case mlcl of

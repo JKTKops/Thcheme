@@ -3,7 +3,7 @@ module Main (main) where
 import System.Environment
 
 import Val
-import Evaluation (evaluateExpr, showResultIO)
+import Evaluation (evaluateExpr, initEvalState, showResultIO)
 import Environment (bindVar)
 import Bootstrap (primitiveBindings)
 import Options (noOpts)
@@ -19,8 +19,9 @@ main = do
 runOne :: [String] -> IO ()
 runOne (filename : args) = do
     primEnv <- primitiveBindings
-    env' <- bindVar primEnv "args" $ makeImmutableList $ map IString $ args
-    result <- evaluateExpr env' noOpts $
+    env' <- bindVar primEnv "args" $ makeImmutableList $ map IString args
+    initState <- initEvalState env' noOpts
+    result <- evaluateExpr initState $
         makeImmutableList [Symbol "load", IString filename]
     case result of
         (Left{},_) -> 

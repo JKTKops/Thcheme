@@ -18,9 +18,7 @@ import Evaluation
 import Bootstrap
 import qualified Environment as Env (keys)
 
-data ReplState = RS { env      :: Env
-                    , replOpts :: Opts
-                    }
+data ReplState = RS { replEvalState :: EvalState }
 
 newtype Repl a = Repl { runRepl :: CLI.InputT (StateT ReplState IO) a }
   deriving (Monad, Functor, Applicative, MonadIO, MonadState ReplState)
@@ -29,10 +27,11 @@ repl :: IO ()
 repl = do
     env <- primitiveBindings
     putStrLn "loaded: stdlib.thm"
+    estate <- initEvalState env noOpts
     replLoop
       & runRepl
       & CLI.runInputT settings
-      & flip evalStateT (RS env noOpts)
+      & flip evalStateT (RS estate)
 
 replLoop :: Repl ()
 replLoop = until_
@@ -107,13 +106,9 @@ replEval (Just inp) = Repl $
 evaluateTotalInput :: String -> Repl (Either LispErr Val, EvalState)
 evaluateTotalInput input = do
     replState <- get
-    let cEnv = env replState
-        cOpts = replOpts replState
-    result@(_, evalState) <- liftIO (evaluate "<interactive>" cEnv cOpts input)
-    -- since Env = IORef (HashMap...), executing the 'evaluate' action has already
-    -- updated everything in the env in the replState! The 'EvalState' is returned
-    -- so that we can print the stack.
-    put $ replState { replOpts = options evalState }
+    let RS s = replState
+    result@(_, evalState) <- liftIO (evaluate "<interactive>" s input)
+    put $ RS evalState
     return result
 
 until_ :: Monad m
@@ -138,7 +133,7 @@ bracketBalance = go 0
 type M = StateT ReplState IO
 searchFunc :: String -> M [CLI.Completion]
 searchFunc str = do
-  env <- gets env
+  env <- gets (globalEnv . replEvalState)
   keys <- liftIO $ Env.keys env
   let candidates = filter (str `isPrefixOf`) $ sort keys
       completions = map CLI.simpleCompletion candidates
