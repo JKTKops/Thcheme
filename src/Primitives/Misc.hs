@@ -10,6 +10,7 @@ import Evaluation
 import EvaluationMonad
 import Primitives.String (stringSH, unwrapStringPH)
 -- r7rs errors probably don't need this
+-- r7rs errors probably don't need this
 import Primitives.WriteLib (writeSharedSH)
 import Control.Monad.Reader -- for qq
 
@@ -245,7 +246,7 @@ loadP = Prim "load" (Exactly 1) $ \case
               -- I'm pretty sure this is wrong. We probably
               -- really want to reroot the dynamic points to the
               -- original root before evaluating and then reroot back
-              -- after.
+              -- after, or use the current dynamic point.
               init <- liftIO $ initEvalState (globalEnv state) (options state)
               put init
               r <- evalBodySeq ls

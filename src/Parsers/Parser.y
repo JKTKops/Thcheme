@@ -205,7 +205,7 @@ parseDatum :: String -> String -> Either String Val
 parseDatum = runAlex' parse
 
 parseDatumSeq :: String -> String -> Either String [Val]
-parseDatumSeq = runAlex' parseSeq
+parseDatumSeq = runAlex' (reverse <$> parseSeq)
 
 prefix :: Token -> Val -> Val
 prefix tok v = makeImmutableList [Symbol (desugar tok), v]

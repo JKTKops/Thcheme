@@ -296,13 +296,12 @@ emCont = EM . cont
 emThrow :: LispErr -> EM a
 emThrow e = emCont $ \_k s -> pure (Left e, s)
 
--- | State is recovered from the point that the error was thrown, rather
--- than from the point 'emCatch' is invoked.
+-- | State is recovered from the point that 'emCatch' was invoked.
 emCatch :: EM a -> (LispErr -> EM a) -> EM a
 emCatch (EM m) restore = emCont $ \k s -> do
     mr <- runCont m k s
     case mr of
-        (Left e, s0)   -> runCont (unEM (restore e)) k s0
+        (Left e, _s0)  -> runCont (unEM (restore e)) k s
         (Right _v, _s) -> pure mr
 
 emGet :: EM EvalState
@@ -353,6 +352,8 @@ data EvalState = ES { globalEnv  :: GlobalEnv
 data StackFrame = StackFrame Val (Maybe LocalEnv)
 
 -- | Dynamic points; this is the core of the implementation of dynamic-wind.
+-- The details of the implementation are mainly sourced from
+-- https://www.cs.hmc.edu/~fleck/envision/scheme48/meeting/node7.html
 --
 -- Each dynamic point stores the "before" and "after" thunks from the
 -- dynamic-wind call, as well as the "parent" node, which is either the
