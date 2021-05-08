@@ -1,9 +1,10 @@
+{-# LANGUAGE NamedFieldPuns #-}
 module EvaluationMonad
     (
     -- * re-exported from Types
       EM (..)
     , EvalState (..)
-    , StackFrame (..), DynamicPoint (..)
+    , StackFrame (..), DynamicPoint (..), ContArity (..)
     , Env, GlobalEnv, LocalEnv
     , Opts
 
@@ -14,10 +15,13 @@ module EvaluationMonad
     , (Fish.>=>), (Fish.<=<)
 
       -- * Construct the initial EvalState
-    , initEvalState
+    , initEvalState, resetEvalState
     
       -- * Execute EM actions
     , execEM, execAnyEM, unsafeEMtoIO, emToIO
+
+      -- * Set up call-with-values
+    , allowMultipleValues, withArity
 
       -- * Adjusting the evaluation environment
     , pushFrame, popFrame
@@ -42,7 +46,7 @@ import Data.Functor ((<&>))
 
 import Control.Monad (unless, void)
 import qualified Control.Monad as Fish ((>=>), (<=<))
-import Control.Monad.Cont (callCC, runCont)
+import Control.Monad.Cont (callCC)
 import Control.Monad.Except (MonadError (..), liftEither, runExceptT)
 import Control.Monad.State.Lazy (MonadIO (..), MonadState (..), modify, gets)
 
@@ -59,8 +63,21 @@ initEvalState initEnv opts = do
   rootRef <- newIORef root
   return $ ES initEnv [] [] rootRef opts
 
+resetEvalState :: EvalState -> EvalState
+resetEvalState ES{ globalEnv
+                 , localEnv = _
+                 , stack = _
+                 , dynPoint
+                 , options}
+  = ES { globalEnv
+       , localEnv = []
+       , stack = []
+       , dynPoint
+       , options
+       }
+
 execEM :: EvalState -> EM Val -> IO (Either LispErr Val, EvalState)
-execEM state (EM m) = runCont m (\v s -> pure (Right v, s)) state
+execEM state m = runEM m (\v s -> pure (Right v, s)) One state
 
 -- | Useful for testing etc.
 execAnyEM :: EvalState -> EM a -> IO (Either LispErr a)
@@ -104,7 +121,7 @@ pushFrame frame@(StackFrame _ mlcl) = modify $ \s -> case mlcl of
   Just lcl -> s { localEnv = lcl, stack = frame : stack s }
   Nothing  -> s { localEnv = [],  stack = frame : stack s }
 
-popFrame :: EM ()
+popFrame :: HasCallStack => EM ()
 popFrame = do
   frameStack <- gets stack
   case frameStack of

@@ -13,7 +13,9 @@ import qualified System.Console.Haskeline as CLI
 import System.IO (hFlush, stdout)
 
 import Val
-import EvaluationMonad (EvalState (..), Env, Opts, noOpts)
+import EvaluationMonad ( EvalState (..), initEvalState, resetEvalState
+                       , Env, Opts, noOpts
+                       )
 import Evaluation
 import Bootstrap
 import qualified Environment as Env (keys)
@@ -108,7 +110,7 @@ evaluateTotalInput input = do
     replState <- get
     let RS s = replState
     result@(_, evalState) <- liftIO (evaluate "<interactive>" s input)
-    put $ RS evalState
+    put $ RS $ resetEvalState evalState
     return result
 
 until_ :: Monad m

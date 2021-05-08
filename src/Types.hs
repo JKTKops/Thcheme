@@ -1,4 +1,3 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 module Types
     ( Env, GlobalEnv, LocalEnv
@@ -20,13 +19,14 @@ module Types
     , EvalState (..)
     , StackFrame (..)
     , DynamicPoint (..)
+    , ContArity (..), allowMultipleValues, withArity
     , Opts
    -- , TraceType
     , liftIOThrows
     ) where
 
-import Control.Monad.Cont ( (<=<), Cont, ContT(ContT), MonadCont(..)
-                          , MonadIO(..), cont, runCont )
+import Control.Monad.Cont ( (<=<), MonadCont(..)
+                          , MonadIO(..))
 import Control.Monad.Except           ( ExceptT, MonadError(..), liftEither
                                       , runExceptT )
 import Control.Monad.Fail             ( MonadFail(..) )
@@ -99,7 +99,7 @@ data Val
 
   | Primitive Arity Builtin String
   | PrimMacro Arity (InTail -> Builtin) String
-  | Continuation DynamicPoint (Val -> EM Val)
+  | Continuation DynamicPoint ContArity (Val -> EM Val)
   | Closure
      { params :: [String]
      , vararg :: Maybe String
@@ -119,6 +119,11 @@ data Val
   | Vector  !(V.IOVector Val)
   | IVector !(V.Vector Val)
   | IByteVector !(U.Vector Word8)
+
+    -- | Implements multiple values for the purposes of call-with-values.
+    -- If one of these ever appears somewhere that it shouldn't, it will
+    -- eventually get sent through `eval`, which will raise an error.
+  | MultipleValues [Val]
 
 -- | Scheme numbers. Note that there is no Ord Number instance;
 -- complex numbers are not orderable and Scheme comparisons of
@@ -284,67 +289,110 @@ instance. However, this type can.
 Cont r a ~ (a -> r) -> r, so
 EM a ~ (a -> EvalState -> IO (...)) -> EvalState -> IO (...).
 -}
-
 type EMCont = EvalState -> IO (Either LispErr Val, EvalState)
--- | The Evaluation Monad
-newtype EM a = EM { unEM :: Cont EMCont a }
-  deriving (Functor, Applicative, Monad)
+newtype EM a = EM { runEM :: (a -> EMCont) -> ContArity -> EMCont }
 
-emCont :: ((a -> EMCont) -> EMCont) -> EM a
-emCont = EM . cont
+instance Functor EM where
+  fmap f m = EM $ \c -> runEM m (c . f)
+  {-# INLINE fmap #-}
+
+instance Applicative EM where
+  pure x = EM $ \k _a -> k x
+  {-# INLINE pure #-}
+  f <*> v = EM $ \c a -> runEM f (\ g -> runEM v (c . g) a) a
+  {-# INLINE (<*>) #-}
+
+-- | This instance breaks the monad laws.
+--
+-- Specifically, there is an indicator of whether or not the current
+-- continuation should accept "multiple values" in the state. Whenever
+-- a bind builds a new continuation, it sets that flag to false.
+-- Thus, @allowMultipleValues $ valuesB []@ works as expected, but
+-- @allowMultipleValues $ valuesB [] >>= return@ will cause 'valuesB' to
+-- raise an error.
+instance Monad EM where
+  m >>= k = emCont $ \c a s ->
+    -- because of how messy this is, it might be better to pass the contArity
+    -- as an extra argument of EMCont than as a component of the state.
+    runEM m (\x -> runEM (k x) c a) One s
+  {-# INLINE (>>=) #-}
+
+emCont :: ((a -> EMCont) -> ContArity -> EMCont) -> EM a
+emCont = EM
+--{-# INLINE emCont #-}
 
 emThrow :: LispErr -> EM a
-emThrow e = emCont $ \_k s -> pure (Left e, s)
+emThrow e = emCont $ \_k _a s -> pure (Left e, s)
 
 -- | State is recovered from the point that 'emCatch' was invoked.
 emCatch :: EM a -> (LispErr -> EM a) -> EM a
-emCatch (EM m) restore = emCont $ \k s -> do
-    mr <- runCont m k s
+emCatch m restore = emCont $ \k a s -> do
+    mr <- runEM m k a s
     case mr of
-        (Left e, _s0)  -> runCont (unEM (restore e)) k s
+        (Left e, _s0)  -> runEM (restore e) k a s
         (Right _v, _s) -> pure mr
 
 emGet :: EM EvalState
-emGet = emCont $ \k s -> k s s
+emGet = emCont $ \k _a s -> k s s
+--{-# INLINE emGet #-}
 
 emPut :: EvalState -> EM ()
-emPut s = emCont $ \k _s -> k () s
+emPut s = emCont $ \k _a _s -> k () s
+--{-# INLINE emPut #-}
 
 emLiftIO :: IO a -> EM a
-emLiftIO io = emCont $ \k s -> io >>= flip k s
+emLiftIO io = emCont $ \k _a s -> io >>= flip k s
+--{-# INLINE emLiftIO #-}
+
+-- | Set the flag that indicates that the continuation of an EM action
+-- will accept MultipleValues. If you care about the flag, make sure
+-- that there are no calls to '>>=' after inspecting it, because the
+-- definition of '>>=' breaks the monad laws with respect to this flag.
+allowMultipleValues :: EM Val -> EM Val
+allowMultipleValues m = emCont $ \c _arity s -> runEM m c Any s
+
+withArity :: (ContArity -> EM a) -> EM a
+withArity f = emCont $ \k a s -> runEM (f a) k a s
 
 -- | Invoking a continuation restores the state to when it was captured.
 instance MonadCont EM where
-    callCC f = emCont $ \k s -> 
-        runCont (unEM (f (\x -> emCont $ \_ _ -> k x s))) k s
+  callCC f = emCont $ \k a s -> 
+    runEM (f (\x -> emCont $ \ _ _ _ -> k x s)) k a s
+  --{-# INLINE callCC #-}
 
 instance MonadState EvalState EM where
-    get = emGet
-    put = emPut
+  get = emGet
+  --{-# INLINE get #-}
+  put = emPut
+  --{-# INLINE put #-}
 
 instance MonadError LispErr EM where
-    throwError = emThrow
-    catchError = emCatch
+  throwError = emThrow
+  catchError = emCatch
 
 instance MonadIO EM where
-    liftIO = emLiftIO
+  liftIO = emLiftIO
+  --{-# INLINE liftIO #-}
 
 instance MonadFail EM where
-    fail s = throwError . Default $ 
-        "The following error occurred, please report a bug.\n" ++ s
+  fail s = throwError . Default $ 
+    "The following error occurred, please report a bug.\n" ++ s
+  --{-# INLINE fail #-}
 
 instance HasOpts EM where
-    getOpts = gets options
-    setOpts opts = modify $ \s -> s { options = opts }
+  getOpts = gets options
+  setOpts opts = modify $ \s -> s { options = opts }
 
 liftIOThrows :: IOThrowsError a -> EM a
 liftIOThrows = liftEither <=< liftIO . runExceptT
 
+data ContArity = One | Any
 -- | The current state of evaluation
 data EvalState = ES { globalEnv  :: GlobalEnv
                     , localEnv   :: LocalEnv
                     , stack      :: [StackFrame]
                     , dynPoint   :: Ref DynamicPoint
+                    --, contArity  :: ContArity
                     , options    :: Opts
                     }
 

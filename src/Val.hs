@@ -146,6 +146,7 @@ showVal (IByteVector v) = showString "#u8" . showParen True (showBytes (U.toList
         showBytes [b] = shows b
         showBytes (b:bs) = shows b . showChar ' ' . showBytes bs
 showVal Nil = showString "()"
+showVal MultipleValues{} = error "panic! MultipleValues in showVal"
 
 -- | Can't show mutable things.
 instance Show Val where

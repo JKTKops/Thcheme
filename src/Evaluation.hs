@@ -112,9 +112,10 @@ evalTailSeq = evalSeq True
 call :: Val -> [Val] -> EM Val
 call f args = do
   makeStackFrame f args >>= pushFrame
-  v <- apply False f args
-  popFrame
-  return v
+  -- The use of the Applicative <* operator here is absolutely crucial for
+  -- call-with-values - if we instead bound the result of apply with '>>=',
+  -- f would lose the knowledge that it is allowed to return MultipleValues.
+  apply False f args <* popFrame
 
 tailCall :: Val -> [Val] -> EM Val
 tailCall f args =
@@ -135,9 +136,12 @@ apply tail (PrimMacro arity func _) args = do
   func tail args
 
 -- Application of continuation
-apply _ (Continuation point func) [arg] = do
+apply _ (Continuation point One func) [arg] = do
   rerootDynPoint point
   func arg
+apply _ (Continuation point Any func) args = do
+  rerootDynPoint point
+  func $ MultipleValues args
 apply _ Continuation{} badArgs = throwError $ NumArgs (Exactly 1) badArgs
 
 -- Applications of user-defined functions

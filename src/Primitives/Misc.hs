@@ -25,6 +25,8 @@ primitives = [ identityFunction
              , loadP
              , callWithCurrentContinuation
              , dynamicWind
+             , values
+             , callWithValues
              ]
 
 macros :: [(String, Macro)]
@@ -50,8 +52,8 @@ callWithCurrentContinuation =
     callcc :: [Val] -> EM Val
     callcc [func] = do
       here <- gets dynPoint >>= readRef
-      callCC $ \k ->
-        tailCall func [Continuation here k]
+      withArity $ \arity -> callCC $ \k ->
+        tailCall func [Continuation here arity k]
     callcc _ = panic "callcc arity"
 
 dynamicWind :: Primitive
@@ -66,6 +68,21 @@ dynamicWind = Prim "dynamic-wind" (Exactly 3) $
     dv <- call during []
     rerootDynPoint here
     return dv
+
+values :: Primitive
+values = Prim "values" (AtLeast 0) $
+  \args -> withArity $ \arity -> case (args, arity) of
+    ([arg], _) -> return arg
+    (args, One) -> throwError $ NumArgs (Exactly 1) args
+    (args, Any) -> return $ MultipleValues args
+
+callWithValues :: Primitive
+callWithValues = Prim "call-with-values" (Exactly 2) $
+  \[producer, consumer] -> do
+    result <- allowMultipleValues $ call producer []
+    case result of
+      MultipleValues vs -> tailCall consumer vs
+      singleVal -> tailCall consumer [singleVal]
 
 -- compose?
 
