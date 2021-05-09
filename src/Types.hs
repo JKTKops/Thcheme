@@ -287,7 +287,13 @@ ConT r (ErrorT e m) a doesn't (and in fact, can't!) provide a MonadError
 instance. However, this type can.
 
 Cont r a ~ (a -> r) -> r, so
-EM a ~ (a -> EvalState -> IO (...)) -> EvalState -> IO (...).
+Cont EMCont a ~ (a -> EvalState -> IO (...)) -> EvalState -> IO (...)
+EM a ~ (a -> EvalState -> IO (...)) -> ContArity -> EvalState -> IO (...).
+
+Essentially, you can imagine that EM is (Cont EMCont), except that it
+additionally keeps track of the arity of the current continuation. The
+arity is always One, unless it is explicitly set to Any by
+'allowMultipleValues.'
 -}
 type EMCont = EvalState -> IO (Either LispErr Val, EvalState)
 newtype EM a = EM { runEM :: (a -> EMCont) -> ContArity -> EMCont }
@@ -304,16 +310,14 @@ instance Applicative EM where
 
 -- | This instance breaks the monad laws.
 --
--- Specifically, there is an indicator of whether or not the current
--- continuation should accept "multiple values" in the state. Whenever
--- a bind builds a new continuation, it sets that flag to false.
+-- Specifically, the Arity passed along with the "built-up" continuation
+-- is set to One for the built-up continuation regardless of the
+-- Arity of the current continuation.
 -- Thus, @allowMultipleValues $ valuesB []@ works as expected, but
 -- @allowMultipleValues $ valuesB [] >>= return@ will cause 'valuesB' to
 -- raise an error.
 instance Monad EM where
   m >>= k = emCont $ \c a s ->
-    -- because of how messy this is, it might be better to pass the contArity
-    -- as an extra argument of EMCont than as a component of the state.
     runEM m (\x -> runEM (k x) c a) One s
   {-# INLINE (>>=) #-}
 
@@ -392,7 +396,6 @@ data EvalState = ES { globalEnv  :: GlobalEnv
                     , localEnv   :: LocalEnv
                     , stack      :: [StackFrame]
                     , dynPoint   :: Ref DynamicPoint
-                    --, contArity  :: ContArity
                     , options    :: Opts
                     }
 
