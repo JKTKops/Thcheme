@@ -44,16 +44,11 @@
          (begin result1 result2 ...)
          (cond clause1 clause2 ...)))))
 
-(define-syntax when
-  (syntax-rules ()
-    ((when test result1 result2 ...)
-     (if test (begin result1 result2 ...)))))
+(define-syntax-rule (when test result result* ...)
+  (if test (begin result result* ...)))
 
-(define-syntax unless
-  (syntax-rules ()
-    ((unless test result1 result2 ...)
-     (if (not test)
-         (begin result1 result2 ...)))))
+(define-syntax-rule (unless test result result* ...)
+  (if (not test) (begin result result* ...)))
 
 ;;; BINDINGS
 
@@ -101,6 +96,42 @@
     ((letrec ((var val) ...) body1 body* ...)
      ((lambda () (define var val) ... body1 body* ...)))))
 
+; These macros appear to be correct, but are currently
+; commented out because they rely on hygiene.
+; (define-syntax let-values
+;   (syntax-rules ()
+;     ((let-values (binding ...) body1 body* ...)
+;      (let-values "bind"
+;        (binding ...) () (begin body1 body* ...)))
+;     
+;     ((let-values "bind" () tmps body)
+;      (let tmps body))
+;     
+;     ((let-values "bind" ((b0 e0) binding ...) tmps body)
+;      (let-values "mktmp" b0 e0 () (binding ...) tmps body))
+;     
+;     ((let-values "mktmp" () e0 args bindings tmps body)
+;      (call-with-values
+;        (lambda () e0)
+;        (lambda args
+;          (let-values "bind" bindings tmps body))))
+;     
+;     ((let-values "mktmp" (a . b) e0 (arg ...) bindings (tmp ...) body)
+;      (let-values "mktmp" b e0 (arg ... x) bindings (tmp ... (a x)) body))
+;   
+;     ((let-values "mktmp" a e0 (arg ...) bindings (tmp ...) body)
+;      (call-with-values
+;        (lambda () e0)
+;        (lambda (arg ... . x)
+;          (let-values "bind" bindings (tmp ... (a x)) body))))))
+; 
+; (define-syntax let*-values
+;   (syntax-rules ()
+;     ((let*-values () body body* ...)
+;      (let () body body* ...))
+;     ((let*-values (binding binding* ...) body body* ...)
+;      (let-values (binding) (let*-values (binding* ...) body body* ...)))))
+; 
 ; I don't really know if this one is entirely safe because of
 ; hygiene concerns. Really, once the hygienic system is in place,
 ; the local macro should be defined with let-syntax instead.
