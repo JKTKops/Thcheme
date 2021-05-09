@@ -276,21 +276,27 @@ transcribe t outerMatching = template t outerMatching
     element (WithEllipsis varsUsed t) m = do
       let m' = M.filterWithKey (\k _ -> k `S.member` varsUsed) m
           m'' = fmap unwrapDeeper m'
+          len = deeperLength $ head $ filter isDeeper $ M.elems m'
           unwrapDeeper (Deeper lst) = lst
-          unwrapDeeper Here{} = panic "transcribe: impossible case"
-      guardAllDeeper m'
+          unwrapDeeper (Here v) = replicate len (Here v)
+          
+          isDeeper Deeper{} = True
+          isDeeper Here{} = False
+          deeperLength (Deeper xs) = length xs
+          deeperLength Here{} = panic "transcribe: impossible case"
+      guardAnyDeeper m'
       guardSameLength m''
       let mlst = M.toList m''
           pushDownKeys xs = [ [(i,y) | y <- ys] | (i,ys) <- xs ]
           lstm = map M.fromList $ transpose $ pushDownKeys mlst
       mapM (template t) lstm
 
-    guardAllDeeper :: Matching -> EM ()
-    guardAllDeeper m
+    guardAnyDeeper :: Matching -> EM ()
+    guardAnyDeeper m
       | good = pure ()
       | otherwise = throwError $ 
         Default "badly nested pattern variable in template"
-      where good = all isDeeper m
+      where good = any isDeeper m
             isDeeper Deeper{} = True
             isDeeper Here{}   = False
 
