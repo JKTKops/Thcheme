@@ -276,6 +276,10 @@ transcribe t outerMatching = template t outerMatching
     element (WithEllipsis varsUsed t) m = do
       let m' = M.filterWithKey (\k _ -> k `S.member` varsUsed) m
           m'' = fmap unwrapDeeper m'
+          -- note that len will only be forced if m' contains any
+          -- Deeper matches (because of 'guardAnyDeeper') AND m'
+          -- contains any Here matches (because it is only used in
+          -- 'unwrapDeeper'). So 'head' here is safe.
           len = deeperLength $ head $ filter isDeeper $ M.elems m'
           unwrapDeeper (Deeper lst) = lst
           unwrapDeeper (Here v) = replicate len (Here v)
@@ -296,7 +300,7 @@ transcribe t outerMatching = template t outerMatching
       | good = pure ()
       | otherwise = throwError $ 
         Default "badly nested pattern variable in template"
-      where good = any isDeeper m
+      where good = any isDeeper m || null m
             isDeeper Deeper{} = True
             isDeeper Here{}   = False
 
