@@ -140,10 +140,10 @@ tokens :-
   
   \)                        { lex' TokRParen }
   \(                        { lex' TokLParen }
-  \[                        { lex' TokLBrace }
-  \]                        { lex' TokRBrace }
-  \{                        { lex' TokLBracket }
-  \}                        { lex' TokRBracket }
+  \[                        { lex' TokLBracket }
+  \]                        { lex' TokRBracket }
+  \{                        { lex' TokLBrace }
+  \}                        { lex' TokRBrace }
   \# \(                     { lex' TokLVector }
   \# "u8" \(                { lex' TokLByteVector }
   "'"                       { lex' TokQuote }
