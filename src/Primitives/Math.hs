@@ -13,10 +13,9 @@ import EvaluationMonad (throwError, panic)
 import Primitives.Unwrappers (unwrapNum, unwrapRealNum)
 import Primitives.Bool (predicate, predicateM)
 
-addP, mulP, divP, modP, quotP, remP :: Primitive
+addP, mulP, modP, quotP, remP :: Primitive
 addP = numericBinop "+" (+) 0
 mulP = numericBinop "*" (*) 1
-divP = guardDivZero $ numericBinop1 "/" (/)
 modP = realBinop1 "mod" mod
 quotP = realBinop1 "quotient" quot
 remP = realBinop1 "remainder" rem
@@ -33,15 +32,9 @@ numericBinop name op start = Prim name (AtLeast 0) $
   fmap (Number . foldl' op start) . mapM unwrapNum
 
 -- | Same as numericBinop, except at least one arg must be given.
-numericBinop1 :: String
-              -> (Number -> Number -> Number)
-              -> Primitive
-numericBinop1 name op = Prim name (AtLeast 1) $
-  fmap (Number . foldl1' op) . mapM unwrapNum
-
 realBinop1 :: String
-           -> (RealNumber -> RealNumber -> RealNumber)
-           -> Primitive
+              -> (RealNumber -> RealNumber -> RealNumber)
+              -> Primitive
 realBinop1 name op = Prim name (AtLeast 1) $
   fmap (Number . Real . foldl1' op) . mapM unwrapRealNum
 
@@ -60,8 +53,15 @@ guardDivZero (Prim name arity f) = Prim name arity $ \args ->
 subP :: Primitive
 subP = Prim "-" (AtLeast 1) $ \case
   [x]      -> Number . negate <$> unwrapNum x
-  as@(_:_) -> Number . foldl1 (-) <$> mapM unwrapNum as
+  as@(_:_) -> Number . foldl1' (-) <$> mapM unwrapNum as
   _ -> panic "sub arity"
+
+-- | r7rs: (/ n) is 1/n, (/ x y z) is ((x / y) / z)
+divP :: Primitive
+divP = guardDivZero $ Prim "/" (AtLeast 1) $ \case
+  [] -> panic "div arity"
+  [x] -> Number . (1 /) <$> unwrapNum x
+  as  -> Number . foldl1' (/) <$> mapM unwrapNum as
 
 negateP :: Primitive
 negateP = Prim "negate" (Exactly 1) $
