@@ -158,7 +158,7 @@ scTests = testGroup "(SmallCheck)"
 -- UNIT TESTS
 testShowPort :: TestTree
 testShowPort = testCase "Ports show correctly" $
-    show (Port stdout) @?= "#<port>"
+    (show :: Val -> String) (Port stdout) @?= "#<port>"
 
 testShowPrimitives :: TestTree
 testShowPrimitives = testCase "Primitives show correctly" $
@@ -173,18 +173,20 @@ testShowPrimitives = testCase "Primitives show correctly" $
 testShowFunctions :: TestTree
 testShowFunctions = testCase "Functions show correctly" $
     do let emptyEnv = []
-       show (Closure [] Nothing [] emptyEnv (Just "testFunc")) @?= "(testFunc () ...)"
-       show (Closure ["x"] Nothing [] emptyEnv (Just "testFunc")) @?=
-            "(testFunc (x) ...)"
-       show (Closure [] Nothing [] emptyEnv Nothing) @?= "(lambda () ...)"
-       show (Closure ["x"] Nothing [] emptyEnv Nothing) @?= "(lambda (x) ...)"
-       show (Closure [] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
-            "(testFunc xs ...)"
-       show (Closure ["x"] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
-            "(testFunc (x . xs) ...)"
-       show (Closure ["x"] (Just "xs") [] emptyEnv Nothing) @?= "(lambda (x . xs) ...)"
-       show (Closure ["x", "y", "z"] (Just "others") [] emptyEnv Nothing) @?=
-            "(lambda (x y z . others) ...)"
+           show' :: Val -> String
+           show' = show
+       show' (Closure [] Nothing [] emptyEnv (Just "testFunc")) @?= "(testFunc () ...)"
+       show' (Closure ["x"] Nothing [] emptyEnv (Just "testFunc")) @?=
+             "(testFunc (x) ...)"
+       show' (Closure [] Nothing [] emptyEnv Nothing) @?= "(lambda () ...)"
+       show' (Closure ["x"] Nothing [] emptyEnv Nothing) @?= "(lambda (x) ...)"
+       show' (Closure [] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
+             "(testFunc xs ...)"
+       show' (Closure ["x"] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
+             "(testFunc (x . xs) ...)"
+       show' (Closure ["x"] (Just "xs") [] emptyEnv Nothing) @?= "(lambda (x . xs) ...)"
+       show' (Closure ["x", "y", "z"] (Just "others") [] emptyEnv Nothing) @?=
+             "(lambda (x y z . others) ...)"
 
 -- PROPERTY TESTS
 prop_TerminationErrors :: TestTree

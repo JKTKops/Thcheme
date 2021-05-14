@@ -1,4 +1,8 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE GADTs #-} -- this is so that we can use an equational
+                       -- constraint instead of TypeSynonymInstances
+                       -- since those could lead to programmer error.
+{-# LANGUAGE DeriveFunctor #-}
 module Types
     ( Env, GlobalEnv, LocalEnv
     , Arity (..)
@@ -6,7 +10,8 @@ module Types
     , Builtin
     , Primitive (..)
     , Macro (..)
-    , Val (..), RealNumber (..), Number (..)
+    , Val, ValF (..), RealNumber (..), Number (..)
+    , Identifier (..)
     , Ref
     , LispErr (..)
     , ThrowsError
@@ -85,10 +90,18 @@ data Macro = Macro Arity (InTail -> Builtin)
 -- Some Scheme values can be either mutable or immutable. These are strings,
 -- lists, and vectors. The immutable variant begins with I, where applicable.
 --
+-- Some values are interpreter control structures (Continuation, Primitive,
+-- MultipleValues, etc.) while others are real data. Since, in the interpreter
+-- itself, we always have ident ~ String, control structures enforce this.
+-- Additionally, the mutable data structures are interpreter-only as well;
+-- The parser cannot construct them.
+-- The immutable data constructors are parameterized and the functor instance
+-- maps them.
+--
 -- Invariant: All objects contained in an IPair or IVector are immutable.
 --   Note that this is implicitly transitive.
-data Val
-  = Symbol String
+data ValF ident
+  = Symbol ident
 
   | Number !Number
 
@@ -108,22 +121,30 @@ data Val
      , name   :: Maybe String
      }
   | MacroTransformer (Maybe String) (Val -> EM Val)
-    
+
   | Port Handle
   | Undefined
 
   | Nil
   | Pair !(Ref Val) !(Ref Val)
-  | IPair Val Val
+  | IPair (ValF ident) (ValF ident)
 
   | Vector  !(V.IOVector Val)
-  | IVector !(V.Vector Val)
+  | IVector !(V.Vector (ValF ident))
   | IByteVector !(U.Vector Word8)
 
     -- | Implements multiple values for the purposes of call-with-values.
     -- If one of these ever appears somewhere that it shouldn't, it will
     -- eventually get sent through `eval`, which will raise an error.
   | MultipleValues [Val]
+  deriving Functor
+type Val = ValF String
+
+class Identifier ident where
+  nameOf :: ident -> String
+
+instance (a ~ Char) => Identifier [a] where
+  nameOf = id
 
 -- | Scheme numbers. Note that there is no Ord Number instance;
 -- complex numbers are not orderable and Scheme comparisons of
@@ -180,7 +201,7 @@ instance Show RealNumber where
 -- (1) 'eqSSH':    referential equality
 -- (2) 'eqvSSH':   value equality for atoms, otherwise referential
 -- (3) 'equalSSH': structural equality
-eqVal :: Val -> Val -> Bool
+eqVal :: Eq i => ValF i -> ValF i -> Bool
 eqVal (Symbol s) (Symbol s') = s == s'
 eqVal (Number n) (Number n') = n == n'
 eqVal (IString s) (IString s') = s == s'
@@ -204,7 +225,7 @@ eqVal Nil Nil = True
 eqVal p@IPair{} q@IPair{} =
     fromList p == fromList q
   where
-    fromList :: Val -> ([Val], Val)
+    fromList :: ValF a -> ([ValF a], ValF a)
     fromList (IPair c d) =
       first (c:) $ fromList d
     fromList obj = ([], obj)
@@ -220,7 +241,7 @@ eqVal _ _ = False
 -- | Compares closures by shape rather than only by name/location tag.
 -- Can't compare continuations (because they currently aren't tagged).
 -- Can't compare mutable pairs (use 'valsSameShape' instead).
-instance Eq Val where (==) = eqVal
+instance Eq i => Eq (ValF i) where (==) = eqVal
 
 data LispErr = NumArgs Arity [Val]
              | TypeMismatch String Val

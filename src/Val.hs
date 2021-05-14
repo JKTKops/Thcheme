@@ -2,7 +2,7 @@
 
 module Val
   ( -- * Val and support types
-    Val (..), Number (..), RealNumber (..)
+    ValF (..), Val, Number (..), RealNumber (..)
   , LispErr (..), isTerminationError
   , Primitive (..)
   , Macro (..)
@@ -87,8 +87,8 @@ isConstant _        = False
 -- it's a good escape hatch if you need a pure way to display a 'Val'
 -- but it doesn't display unicode characters in strings properly,
 -- can't display anything mutable, and loops on cyclic immutable data.
-showVal :: Val -> ShowS
-showVal (Symbol s) = showString s
+showVal :: Identifier ident => ValF ident -> ShowS
+showVal (Symbol s) = showString $ nameOf s
 showVal (Number n) = shows n
 showVal (String _s) = showString "<can't show mutable string>"
 showVal (IString s) = shows s
@@ -128,7 +128,7 @@ showVal (MacroTransformer mname _) = showString $ "#<macro" ++ name ++ ">"
 showVal Pair{} = showString "<can't show mutable pair>"
 showVal p@IPair{} = showParen True $ showDList $ fromList p
   where
-    fromList :: Val -> ([Val], Val)
+    fromList :: ValF i -> ([ValF i], ValF i)
     fromList (IPair c d) =
       first (c:) $ fromList d
     fromList obj = ([], obj)
@@ -136,8 +136,8 @@ showVal p@IPair{} = showParen True $ showDList $ fromList p
     first f (a, b) = (f a, b)
 
     showDList (vs, v) = unwordsList vs . case v of
-        Nil -> id
-        obj -> showString " . " . shows obj
+      Nil -> id
+      obj -> showString " . " . shows obj
 
 showVal Vector{} = showString "<can't show mutable vector>"
 showVal (IVector v) = showChar '#' . showParen True (unwordsList (V.toList v))
@@ -149,7 +149,7 @@ showVal Nil = showString "()"
 showVal MultipleValues{} = error "panic! MultipleValues in showVal"
 
 -- | Can't show mutable things.
-instance Show Val where
+instance Identifier i => Show (ValF i) where
     showsPrec _ v s = showVal v s
 
 -- | Doesn't display exactness indicators and always uses base 10.
@@ -186,7 +186,7 @@ intercalateS sep = go
         go [s]    = s
         go (s:ss) = s . showString sep . go ss
 
-unwordsList :: [Val] -> ShowS
+unwordsList :: Identifier ident => [ValF ident] -> ShowS
 unwordsList = intercalateS " " . map shows
 
 showArity :: Arity -> String
@@ -879,6 +879,7 @@ instance Floating Number where
       EQ -> Real nan
       -- note that exp and log give real results when applied
       -- to real arguments, when possible.
+  Real x ** Real (Bignum y) = Real (x ** Bignum y)
   Real x ** Real y | x >= 0 = Real (x ** y)
   x ** y = exp (log x * y)
   
