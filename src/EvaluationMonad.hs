@@ -37,7 +37,7 @@ module EvaluationMonad
     , setVarForCapture, defineVar
 
       -- * Manipulating IORefs
-    , newRef, readRef, writeRef, modifyRef
+    , Ref, newRef, readRef, writeRef, modifyRef, modifyRef'
     ) where
 
 import Data.IORef
@@ -228,3 +228,7 @@ writeRef ref x = liftIO $ writeIORef ref x
 modifyRef :: IORef a -> (a -> a) -> EM ()
 modifyRef ref f = liftIO $ modifyIORef ref f
 {-# INLINE modifyRef #-}
+
+modifyRef' :: IORef a -> (a -> a) -> EM ()
+modifyRef' ref f = liftIO $ modifyIORef' ref f
+{-# INLINE modifyRef' #-}

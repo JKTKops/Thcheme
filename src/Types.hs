@@ -123,7 +123,6 @@ data ValF ident
   | MacroTransformer (Maybe String) (Val -> EM Val)
 
   | Port Handle
-  | Undefined
 
   | Nil
   | Pair !(Ref Val) !(Ref Val)
@@ -133,6 +132,11 @@ data ValF ident
   | IVector !(V.Vector (ValF ident))
   | IByteVector !(U.Vector Word8)
 
+    -- | Used to identify when a recursive binding refers to itself during
+    -- initialization, which is an error.
+    -- If 'unspecified' or 'void' are added in the future, they should be
+    -- distinct from this.
+  | Undefined
     -- | Implements multiple values for the purposes of call-with-values.
     -- If one of these ever appears somewhere that it shouldn't, it will
     -- eventually get sent through `eval`, which will raise an error.
