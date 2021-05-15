@@ -15,6 +15,7 @@ module Evaluation
     , call, tailCall, rerootDynPoint
     ) where
 
+import Data.List (intercalate)
 import Data.Maybe
 import Control.Monad
 import qualified Data.HashMap.Strict as Map
@@ -210,7 +211,7 @@ rerootDynPoint there@(Point dataRef parentRef) = do
 -------------------------------------------------------------------------------
 evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
 evaluate label state input = execEM state $
-  liftEither (labeledReadExpr label input) >>= evalBody
+  liftEither (labeledReadExpr label input) >>= allowMultipleValues . evalBody
 
 evaluateExpr :: EvalState -> Val -> IO (Either LispErr Val, EvalState)
 evaluateExpr state v = execEM state $ evalBody v
@@ -225,7 +226,10 @@ showResultIO :: (Either LispErr Val, EvalState) -> IO String
 showResultIO res = case res of
     (Left e@(Parser _), _) -> pure $ show e ++ "\n"
     (Left err, s) -> diffLines <$> showErrIO err <*> showEvalState s
-    (Right v, _)  -> writeSharedSH v
+    (Right (MultipleValues vs), _) -> do
+      strs <- mapM writeSharedSH vs
+      return $ intercalate "\n" strs
+    (Right v, _) -> writeSharedSH v
   where diffLines s r = s ++ "\n" ++ r
 
 -- I'd rather this was in EvaluationMonad, but this is almost as good.
