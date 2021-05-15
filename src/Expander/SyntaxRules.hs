@@ -1,6 +1,6 @@
 module Expander.SyntaxRules (macros) where
 
-import Macro.Transformer (CompileConfig(..), compileSyntaxRules)
+import Expander.Transformer (CompileConfig(..), compileSyntaxRules)
 import Primitives.Unwrappers (unwrapSymbol)
 import Val
 import EvaluationMonad

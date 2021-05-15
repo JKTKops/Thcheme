@@ -15,7 +15,7 @@ import qualified Primitives.TypeCheck        as TypeCheck
 import qualified Primitives.TypeTransformers as TypeCast
 import qualified Primitives.Vector           as Vector
 import qualified Primitives.IOPrimitives     as IO
-import qualified Macro.SyntaxRules           as CaseMacro
+import qualified Expander.SyntaxRules        as SyntaxRules
 
 -- temporary
 import Types
@@ -46,7 +46,7 @@ primitives = foldr1 Map.union
       ]
 
 macros :: HashMap String Macro
-macros = Map.fromList $ CaseMacro.macros ++ Misc.macros
+macros = Map.fromList $ SyntaxRules.macros ++ Misc.macros
 
 makeMacroPrimitive :: String -> Macro -> Val
 makeMacroPrimitive name (Macro arity func) = PrimMacro arity func name

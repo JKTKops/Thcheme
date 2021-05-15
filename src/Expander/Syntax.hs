@@ -22,7 +22,7 @@ module Expander.Syntax
   ) where
 
 
-import Macro.Scopes
+import Expander.Scopes
 import Types (ValF, Val, Identifier(..))
 
 type Syntax = ValF Name
