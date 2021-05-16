@@ -14,7 +14,7 @@ import System.IO (hFlush, stdout)
 
 import Val
 import EvaluationMonad ( EvalState (..), initEvalState, resetEvalState
-                       , Env, Opts, noOpts
+                       , noOpts
                        )
 import Evaluation
 import Bootstrap
