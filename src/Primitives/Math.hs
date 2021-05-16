@@ -10,8 +10,9 @@ import Data.Ratio (approxRational)
 
 import Val
 import EvaluationMonad (throwError, panic)
-import Primitives.Unwrappers (unwrapNum, unwrapRealNum)
+import Primitives.Unwrappers (unwrapNum, unwrapRealNum, unwrapExactInteger)
 import Primitives.Bool (predicate, predicateM)
+import Primitives.Misc (valuesB)
 
 addP, mulP, modP, quotP, remP :: Primitive
 addP = numericBinop "+" (+) 0
@@ -105,6 +106,32 @@ rationalizeP = Prim "rationalize" (Exactly 2) $
 squareP :: Primitive
 squareP = Prim "square" (Exactly 1) $
   \[x] -> Number . (\n -> n*n) <$> unwrapNum x
+
+-- | specialize ^ to Int powers
+(^!) :: Num a => a -> Int -> a
+x ^! n = x ^ n
+
+exactIntegerSqrtP :: Primitive
+exactIntegerSqrtP = Prim "exact-integer-sqrt" (Exactly 1) $
+  \[k] -> do
+    kN <- unwrapExactInteger k
+    let root = squareRoot kN
+        residual = kN - root ^! 2
+    valuesB [makeBignum root, makeBignum residual]
+  where
+    -- This impl of the standard integer square root algorithm is from
+    -- https://wiki.haskell.org/Generic_number_type#squareRoot
+    squareRoot :: Integer -> Integer
+    squareRoot 0 = 0
+    squareRoot 1 = 1
+    squareRoot n =
+      let twopows = iterate (^! 2) 2
+          (lowerRoot, lowerN) =
+            last $ takeWhile ((n >=) . snd) $ zip (1:twopows) twopows
+          newtonStep x = div (x + n `div` x) 2
+          iters = iterate newtonStep (squareRoot (div n lowerN) * lowerRoot)
+          isRoot r = r ^! 2 <= n && n < (r+1) ^! 2
+       in head $ dropWhile (not . isRoot) iters
 
 exptP :: Primitive
 exptP = Prim "expt" (Exactly 2) $
@@ -214,6 +241,7 @@ primitives = [ addP
              , inexactP
              , rationalizeP
              , atanP
+             , exactIntegerSqrtP
              , squareP
              , exptP
 

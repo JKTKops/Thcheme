@@ -1,5 +1,5 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Misc (primitives, macros) where
+module Primitives.Misc (primitives, macros, valuesB) where
 
 -- TODO split into Control and Syntax
 import Text.Read (readMaybe)
@@ -25,7 +25,7 @@ primitives = [ identityFunction
              , loadP
              , callWithCurrentContinuation
              , dynamicWind
-             , values
+             , valuesP
              , callWithValues
              ]
 
@@ -69,12 +69,15 @@ dynamicWind = Prim "dynamic-wind" (Exactly 3) $
     rerootDynPoint here
     return dv
 
-values :: Primitive
-values = Prim "values" (AtLeast 0) $
-  \args -> withArity $ \arity -> case (args, arity) of
+valuesP :: Primitive
+valuesP = Prim "values" (AtLeast 0) valuesB
+
+valuesB :: Builtin
+valuesB args = withArity $ \arity -> case (args, arity) of
     ([arg], _) -> return arg
     (args, One) -> throwError $ NumArgs (Exactly 1) args
     (args, Any) -> return $ MultipleValues args
+{-# INLINE valuesB #-}
 
 callWithValues :: Primitive
 callWithValues = Prim "call-with-values" (Exactly 2) $
