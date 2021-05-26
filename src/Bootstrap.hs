@@ -1,13 +1,13 @@
-{-# LANGUAGE TemplateHaskell #-}
 module Bootstrap 
-    (
-      primitiveBindings
+    ( primitiveBindings
     , stdlib -- for testing... might want to move to Bootstrap.Internal
     ) where
 
-import Data.FileEmbed (embedStringFile)
+import Control.Monad.IO.Class
 
-import Types   ( ThrowsError, Val )
+import Paths_Thcheme
+
+import Types (LispErr, Val)
 import Parsers (labeledReadExprList)
 
 import Primitives (primitives)
@@ -24,7 +24,7 @@ primitiveBindings = do
     -- root dynamic point than the REPL. That /shouldn't/ cause any
     -- problems, but be aware if weird bugs are happening.
     s <- initEvalState env noOpts
-    let (Right exprs) = stdlib
+    (Right exprs) <- stdlib
     mapM_ (evaluateExpr s) exprs
     return env
 
@@ -32,5 +32,8 @@ primitiveBindings = do
 -- and do away with this embed file. It puts a _haskell string literal_
 -- containing the entire contents of the file into the executable!
 
-stdlib :: ThrowsError [Val]
-stdlib = labeledReadExprList "stdlib" $(embedStringFile "src/stdlib.thm")
+stdlib :: IO (Either LispErr [Val])
+stdlib = do
+  stdlib_scm <- liftIO $ getDataFileName "lib/stdlib.scm"
+  stdlib_source <- liftIO $ readFile stdlib_scm
+  return $ labeledReadExprList "stdlib" stdlib_source
