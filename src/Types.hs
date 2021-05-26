@@ -1,8 +1,4 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE GADTs #-} -- this is so that we can use an equational
-                       -- constraint instead of TypeSynonymInstances
-                       -- since those could lead to programmer error.
-{-# LANGUAGE DeriveFunctor #-}
 module Types
     ( Env, GlobalEnv, LocalEnv
     , Arity (..)
@@ -10,8 +6,7 @@ module Types
     , Builtin
     , Primitive (..)
     , Macro (..)
-    , Val, ValF (..), RealNumber (..), Number (..)
-    , Identifier (..)
+    , Val (..), RealNumber (..), Number (..)
     , Ref
     , LispErr (..)
     , ThrowsError
@@ -69,9 +64,9 @@ type Ref = IORef
 
 -- * Function types and components
 --type Arity = Int
-data Arity 
-  = Exactly Int 
-  | AtLeast Int 
+data Arity
+  = Exactly Int
+  | AtLeast Int
   | Between Int Int
   deriving (Eq, Ord)
 type InTail = Bool
@@ -100,8 +95,8 @@ data Macro = Macro Arity (InTail -> Builtin)
 --
 -- Invariant: All objects contained in an IPair or IVector are immutable.
 --   Note that this is implicitly transitive.
-data ValF ident
-  = Symbol ident
+data Val
+  = Symbol String
 
   | Number !Number
 
@@ -126,10 +121,10 @@ data ValF ident
 
   | Nil
   | Pair !(Ref Val) !(Ref Val)
-  | IPair (ValF ident) (ValF ident)
+  | IPair Val Val
 
   | Vector  !(V.IOVector Val)
-  | IVector !(V.Vector (ValF ident))
+  | IVector !(V.Vector Val)
   | IByteVector !(U.Vector Word8)
 
     -- | Used to identify when a recursive binding refers to itself during
@@ -141,14 +136,6 @@ data ValF ident
     -- If one of these ever appears somewhere that it shouldn't, it will
     -- eventually get sent through `eval`, which will raise an error.
   | MultipleValues [Val]
-  deriving Functor
-type Val = ValF String
-
-class Identifier ident where
-  nameOf :: ident -> String
-
-instance (a ~ Char) => Identifier [a] where
-  nameOf = id
 
 -- | Scheme numbers. Note that there is no Ord Number instance;
 -- complex numbers are not orderable and Scheme comparisons of
@@ -193,7 +180,7 @@ instance Show RealNumber where
   show (Bignum i) = show i
   show (Flonum f)
     | isInfinite f = sign : "inf.0"
-    | isNaN f      = "+nan.0" 
+    | isNaN f      = "+nan.0"
     | otherwise    = show f
     where sign = if f < 0 then '-' else '+'
   show (Ratnum r)
@@ -205,7 +192,7 @@ instance Show RealNumber where
 -- (1) 'eqSSH':    referential equality
 -- (2) 'eqvSSH':   value equality for atoms, otherwise referential
 -- (3) 'equalSSH': structural equality
-eqVal :: Eq i => ValF i -> ValF i -> Bool
+eqVal :: Val -> Val -> Bool
 eqVal (Symbol s) (Symbol s') = s == s'
 eqVal (Number n) (Number n') = n == n'
 eqVal (IString s) (IString s') = s == s'
@@ -219,21 +206,21 @@ eqVal _ Continuation{} = False -- unique identifiers to make this work.
                                -- However... why? 'eq?' works fine by just
                                -- comparing their StableNames and anything we
                                -- might want to test can be tested with 'eq?'.
-eqVal (Closure p v b _ n) (Closure p' v' b' _ n') = 
+eqVal (Closure p v b _ n) (Closure p' v' b' _ n') =
     and [ p == p'
         , v == v'
         , b == b'
         , n == n'
-        ] 
+        ]
 eqVal Nil Nil = True
 eqVal p@IPair{} q@IPair{} =
     fromList p == fromList q
   where
-    fromList :: ValF a -> ([ValF a], ValF a)
+    fromList :: Val -> ([Val], Val)
     fromList (IPair c d) =
       first (c:) $ fromList d
     fromList obj = ([], obj)
-    
+
     first f (a, b) = (f a, b)
 eqVal _ _ = False
 
@@ -245,7 +232,7 @@ eqVal _ _ = False
 -- | Compares closures by shape rather than only by name/location tag.
 -- Can't compare continuations (because they currently aren't tagged).
 -- Can't compare mutable pairs (use 'valsSameShape' instead).
-instance Eq i => Eq (ValF i) where (==) = eqVal
+instance Eq Val where (==) = eqVal
 
 data LispErr = NumArgs Arity [Val]
              | TypeMismatch String Val
@@ -253,7 +240,7 @@ data LispErr = NumArgs Arity [Val]
              | BadSpecialForm Val
              | NotFunction String Val
              | UnboundVar String String
-             | EvaluateDuringInit String 
+             | EvaluateDuringInit String
              | SetImmutable String -- type name
              | CircularList
              | EmptyBody
@@ -356,6 +343,14 @@ emThrow e = emCont $ \_k _a s -> pure (Left e, s)
 -- | State is recovered from the point that 'emCatch' was invoked.
 emCatch :: EM a -> (LispErr -> EM a) -> EM a
 emCatch m restore = emCont $ \k a s -> do
+    -- this leaves the catch frame around until the entire continuation
+    -- chain, including the continuation of the catch itself, is done.
+    -- That seems wrong, so perhaps this should be:
+    {- mr <- runEM m (\x s -> pure (Right x, s)) a s
+       case mr of
+         (Left e, _s0) -> runEM (restore e) k a s
+         (Right v, s') -> runEM (return v)  k a s'
+    -}
     mr <- runEM m k a s
     case mr of
         (Left e, _s0)  -> runEM (restore e) k a s
@@ -385,7 +380,7 @@ withArity f = emCont $ \k a s -> runEM (f a) k a s
 
 -- | Invoking a continuation restores the state to when it was captured.
 instance MonadCont EM where
-  callCC f = emCont $ \k a s -> 
+  callCC f = emCont $ \k a s ->
     runEM (f (\x -> emCont $ \ _ _ _ -> k x s)) k a s
   --{-# INLINE callCC #-}
 
@@ -404,7 +399,7 @@ instance MonadIO EM where
   --{-# INLINE liftIO #-}
 
 instance MonadFail EM where
-  fail s = throwError . Default $ 
+  fail s = throwError . Default $
     "The following error occurred, please report a bug.\n" ++ s
   --{-# INLINE fail #-}
 

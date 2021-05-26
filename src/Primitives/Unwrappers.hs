@@ -1,6 +1,6 @@
 module Primitives.Unwrappers where
 
-import Val ( ValF (..), Val, Number (..), RealNumber (..)
+import Val ( Val (..), Number (..), RealNumber (..)
            , LispErr(TypeMismatch), getExactInteger )
 import EvaluationMonad (EM, throwError, readRef)
 
