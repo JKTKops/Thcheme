@@ -29,7 +29,7 @@ testNullEnvEmpty = testCase "Null environment is empty" $
 testPrimitiveBindingsSize :: TestTree
 testPrimitiveBindingsSize = testCase "Prim. env has correct size" $
     do env <- primitiveBindings >>= readIORef
-       let (Right stdlibExprs) = stdlib
+       (Right stdlibExprs) <- stdlib
        Map.size env @?= length primitives + length stdlibExprs
 
 testPrimitiveEnvSameKeys :: TestTree

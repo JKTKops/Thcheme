@@ -18,19 +18,15 @@ import Evaluation (evaluateExpr, initEvalState)
 
 primitiveBindings :: IO Env
 primitiveBindings = do
-    ne <- nullEnv
-    env <- bindVars ne primitives
-    -- warning! This means the stdlib is evaluated with a different
-    -- root dynamic point than the REPL. That /shouldn't/ cause any
-    -- problems, but be aware if weird bugs are happening.
-    s <- initEvalState env noOpts
-    (Right exprs) <- stdlib
-    mapM_ (evaluateExpr s) exprs
-    return env
-
--- we absolutely need to set up a data dir for "installing" packages
--- and do away with this embed file. It puts a _haskell string literal_
--- containing the entire contents of the file into the executable!
+  ne <- nullEnv
+  env <- bindVars ne primitives
+  -- warning! This means the stdlib is evaluated with a different
+  -- root dynamic point than the REPL. That /shouldn't/ cause any
+  -- problems, but be aware if weird bugs are happening.
+  s <- initEvalState env noOpts
+  (Right exprs) <- stdlib
+  mapM_ (evaluateExpr s) exprs
+  return env
 
 stdlib :: IO (Either LispErr [Val])
 stdlib = do
