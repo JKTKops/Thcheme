@@ -177,6 +177,10 @@ writeShowS (Number n) = pure $ writeNumber n
                       . writeNumber (Real i)
                       . showChar 'i'
 
+writeShowS (MultipleValues vs) = fmt <$> writeList (makeImmutableList vs)
+  where
+    fmt vsStr = showString "#<values: " . vsStr . showChar '>'
+
 writeShowS v = pure $ shows v
 
 writePair :: Val -> Write ShowS

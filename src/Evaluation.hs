@@ -101,7 +101,7 @@ evalSeq :: InTail -> [Val] -> EM Val
 evalSeq tail = go
   where go [] = error "evalSeq: no forms"
         go [form] = eval tail form
-        go (s:ss) = allowMultipleValues (evalBody s) >> go ss
+        go (s:ss) = evalBody s >> go ss
 
 -- | Evaluate a sequence in either tail or non-tail position.
 -- I'm not sure if 'evalBodySeq' actually has any application,
@@ -137,13 +137,12 @@ apply tail (PrimMacro arity func _) args = do
   func tail args
 
 -- Application of continuation
-apply _ (Continuation point One func) [arg] = do
+apply _ (Continuation point func) [arg] = do
   rerootDynPoint point
   func arg
-apply _ (Continuation point Any func) args = do
+apply _ (Continuation point func) args = do
   rerootDynPoint point
   func $ MultipleValues args
-apply _ Continuation{} badArgs = throwError $ NumArgs (Exactly 1) badArgs
 
 -- Applications of user-defined functions
 -- We check arity here instead of in 'makeStackFrame' so that this
@@ -211,7 +210,7 @@ rerootDynPoint there@(Point dataRef parentRef) = do
 -------------------------------------------------------------------------------
 evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
 evaluate label state input = execEM state $
-  liftEither (labeledReadExpr label input) >>= allowMultipleValues . evalBody
+  liftEither (labeledReadExpr label input) >>= evalBody
 
 evaluateExpr :: EvalState -> Val -> IO (Either LispErr Val, EvalState)
 evaluateExpr state v = execEM state $ evalBody v

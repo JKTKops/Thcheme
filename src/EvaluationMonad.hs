@@ -4,7 +4,7 @@ module EvaluationMonad
     -- * re-exported from Types
       EM (..)
     , EvalState (..)
-    , StackFrame (..), DynamicPoint (..), ContArity (..)
+    , StackFrame (..), DynamicPoint (..)
     , Env, GlobalEnv, LocalEnv
     , Opts
 
@@ -19,9 +19,6 @@ module EvaluationMonad
     
       -- * Execute EM actions
     , execEM, execAnyEM, unsafeEMtoIO, emToIO
-
-      -- * Set up call-with-values
-    , allowMultipleValues, withArity
 
       -- * Adjusting the evaluation environment
     , pushFrame, popFrame
@@ -46,7 +43,7 @@ import Data.Functor ((<&>))
 
 import Control.Monad (unless, void)
 import qualified Control.Monad as Fish ((>=>), (<=<))
-import Control.Monad.Cont (callCC)
+import Control.Monad.Cont (callCC, runCont)
 import Control.Monad.Except (MonadError (..), liftEither, runExceptT)
 import Control.Monad.State.Lazy (MonadIO (..), MonadState (..), modify, gets)
 
@@ -77,7 +74,7 @@ resetEvalState ES{ globalEnv
        }
 
 execEM :: EvalState -> EM Val -> IO (Either LispErr Val, EvalState)
-execEM state m = runEM m (\v s -> pure (Right v, s)) One state
+execEM state (EM m) = runCont m (\v s -> pure (Right v, s)) state
 
 -- | Useful for testing etc.
 execAnyEM :: EvalState -> EM a -> IO (Either LispErr a)

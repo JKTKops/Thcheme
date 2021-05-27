@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 module Types
     ( Env, GlobalEnv, LocalEnv
     , Arity (..)
@@ -19,14 +20,19 @@ module Types
     , EvalState (..)
     , StackFrame (..)
     , DynamicPoint (..)
-    , ContArity (..), allowMultipleValues, withArity
     , Opts
    -- , TraceType
     , liftIOThrows
     ) where
 
-import Control.Monad.Cont ( (<=<), MonadCont(..)
-                          , MonadIO(..))
+import Control.Monad.Cont
+    ( (<=<),
+      MonadIO(..),
+      MonadCont(..),
+      ContT(ContT),
+      cont,
+      runCont,
+      Cont )
 import Control.Monad.Except           ( ExceptT, MonadError(..), liftEither
                                       , runExceptT )
 import Control.Monad.Fail             ( MonadFail(..) )
@@ -107,7 +113,7 @@ data Val
 
   | Primitive Arity Builtin String
   | PrimMacro Arity (InTail -> Builtin) String
-  | Continuation DynamicPoint ContArity (Val -> EM Val)
+  | Continuation DynamicPoint (Val -> EM Val)
   | Closure
      { params :: [String]
      , vararg :: Maybe String
@@ -308,41 +314,19 @@ arity is always One, unless it is explicitly set to Any by
 'allowMultipleValues.'
 -}
 type EMCont = EvalState -> IO (Either LispErr Val, EvalState)
-newtype EM a = EM { runEM :: (a -> EMCont) -> ContArity -> EMCont }
+-- | The Evaluation Monad
+newtype EM a = EM { unEM :: Cont EMCont a }
+  deriving (Functor, Applicative, Monad)
 
-instance Functor EM where
-  fmap f m = EM $ \c -> runEM m (c . f)
-  {-# INLINE fmap #-}
-
-instance Applicative EM where
-  pure x = EM $ \k _a -> k x
-  {-# INLINE pure #-}
-  f <*> v = EM $ \c a -> runEM f (\ g -> runEM v (c . g) a) a
-  {-# INLINE (<*>) #-}
-
--- | This instance breaks the monad laws.
---
--- Specifically, the Arity passed along with the "built-up" continuation
--- is set to One for the built-up continuation regardless of the
--- Arity of the current continuation.
--- Thus, @allowMultipleValues $ valuesB []@ works as expected, but
--- @allowMultipleValues $ valuesB [] >>= return@ will cause 'valuesB' to
--- raise an error.
-instance Monad EM where
-  m >>= k = emCont $ \c a s ->
-    runEM m (\x -> runEM (k x) c a) One s
-  {-# INLINE (>>=) #-}
-
-emCont :: ((a -> EMCont) -> ContArity -> EMCont) -> EM a
-emCont = EM
---{-# INLINE emCont #-}
+emCont :: ((a -> EMCont) -> EMCont) -> EM a
+emCont = EM . cont
 
 emThrow :: LispErr -> EM a
-emThrow e = emCont $ \_k _a s -> pure (Left e, s)
+emThrow e = emCont $ \_k s -> pure (Left e, s)
 
 -- | State is recovered from the point that 'emCatch' was invoked.
 emCatch :: EM a -> (LispErr -> EM a) -> EM a
-emCatch m restore = emCont $ \k a s -> do
+emCatch (EM m) restore = emCont $ \k s -> do
     -- this leaves the catch frame around until the entire continuation
     -- chain, including the continuation of the catch itself, is done.
     -- That seems wrong, so perhaps this should be:
@@ -351,37 +335,24 @@ emCatch m restore = emCont $ \k a s -> do
          (Left e, _s0) -> runEM (restore e) k a s
          (Right v, s') -> runEM (return v)  k a s'
     -}
-    mr <- runEM m k a s
+    mr <- runCont m k s
     case mr of
-        (Left e, _s0)  -> runEM (restore e) k a s
+        (Left e, _s0)  -> runCont (unEM (restore e)) k s
         (Right _v, _s) -> pure mr
 
 emGet :: EM EvalState
-emGet = emCont $ \k _a s -> k s s
---{-# INLINE emGet #-}
+emGet = emCont $ \k s -> k s s
 
 emPut :: EvalState -> EM ()
-emPut s = emCont $ \k _a _s -> k () s
---{-# INLINE emPut #-}
+emPut s = emCont $ \k _s -> k () s
 
 emLiftIO :: IO a -> EM a
-emLiftIO io = emCont $ \k _a s -> io >>= flip k s
---{-# INLINE emLiftIO #-}
-
--- | Set the flag that indicates that the continuation of an EM action
--- will accept MultipleValues. If you care about the flag, make sure
--- that there are no calls to '>>=' after inspecting it, because the
--- definition of '>>=' breaks the monad laws with respect to this flag.
-allowMultipleValues :: EM Val -> EM Val
-allowMultipleValues m = emCont $ \c _arity s -> runEM m c Any s
-
-withArity :: (ContArity -> EM a) -> EM a
-withArity f = emCont $ \k a s -> runEM (f a) k a s
+emLiftIO io = emCont $ \k s -> io >>= flip k s
 
 -- | Invoking a continuation restores the state to when it was captured.
 instance MonadCont EM where
-  callCC f = emCont $ \k a s ->
-    runEM (f (\x -> emCont $ \ _ _ _ -> k x s)) k a s
+  callCC f = emCont $ \k s ->
+    runCont (unEM $ f (\x -> emCont $ \ _ _ -> k x s)) k s
   --{-# INLINE callCC #-}
 
 instance MonadState EvalState EM where
@@ -410,7 +381,6 @@ instance HasOpts EM where
 liftIOThrows :: IOThrowsError a -> EM a
 liftIOThrows = liftEither <=< liftIO . runExceptT
 
-data ContArity = One | Any
 -- | The current state of evaluation
 data EvalState = ES { globalEnv  :: GlobalEnv
                     , localEnv   :: LocalEnv

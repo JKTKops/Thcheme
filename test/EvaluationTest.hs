@@ -395,7 +395,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         }
     ]
 
-data EvalTest 
+data EvalTest
   = ImpureEvalTest 
     { testName       :: String
     , input          :: String

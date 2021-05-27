@@ -52,8 +52,8 @@ callWithCurrentContinuation =
     callcc :: [Val] -> EM Val
     callcc [func] = do
       here <- gets dynPoint >>= readRef
-      withArity $ \arity -> callCC $ \k ->
-        tailCall func [Continuation here arity k]
+      callCC $ \k ->
+        tailCall func [Continuation here k]
     callcc _ = panic "callcc arity"
 
 dynamicWind :: Primitive
@@ -73,16 +73,14 @@ valuesP :: Primitive
 valuesP = Prim "values" (AtLeast 0) valuesB
 
 valuesB :: Builtin
-valuesB args = withArity $ \arity -> case (args, arity) of
-    ([arg], _) -> return arg
-    (args, One) -> throwError $ NumArgs (Exactly 1) args
-    (args, Any) -> return $ MultipleValues args
+valuesB [arg] = return arg
+valuesB args  = return $ MultipleValues args
 {-# INLINE valuesB #-}
 
 callWithValues :: Primitive
 callWithValues = Prim "call-with-values" (Exactly 2) $
   \[producer, consumer] -> do
-    result <- allowMultipleValues $ call producer []
+    result <- call producer []
     case result of
       MultipleValues vs -> tailCall consumer vs
       singleVal -> tailCall consumer [singleVal]
