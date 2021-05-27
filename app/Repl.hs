@@ -51,7 +51,9 @@ replLoop = until_
           -- 5>>>
           liftIO $ hFlush stdout
           str <- liftIO $ showResultIO result
-          CLI.outputStrLn str
+          case str of
+            "" -> pure ()
+            _  -> CLI.outputStrLn str
 
 getInputLine :: String -> Repl (Maybe String)
 getInputLine = Repl . CLI.getInputLine

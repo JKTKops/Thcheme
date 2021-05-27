@@ -160,9 +160,16 @@
 
 ;;; LIST FUNCTIONS
 ;;; not currently organized...
-;;; the expander will need very little / none of this,
+;;; the expander will need very little of this,
 ;;; which means it should be moved into the appropriate
 ;;; build-up libraries once we have them.
+;;;
+;;; The parts that the expander requires will need to be
+;;; expanded by hand.
+;;;
+;;; None of the functions that accept multiple lists are standard,
+;;; because they should terminate when the shortest one runs out
+;;; but these terminate when the first one runs out.
 (define first car)
 (define second cadr)
 (define third caddr)
@@ -172,17 +179,18 @@
       0
       (+ 1 (length (cdr xs)))))
 
-(define (map f xs)
-  (if (null? xs)
-      ()
-      (cons (f (car xs))
-            (map f (cdr xs)))))
+(define (reverse xs)
+  (let loop ([xs xs] [acc ()])
+    (if (null? xs)
+        acc
+        (loop (cdr xs) (cons (car xs) acc)))))
 
-(define (map* f . xss)
-  (if (null? (car xss))
-      ()
-      (cons (apply f (map car xss))
-            (apply map* (cons f (map cdr xss))))))
+(define (map f xs . xss)
+  (let loop ([xs xs] [xss xss])
+    (if (null? xs)
+        ()
+        (cons (apply f (car xs) (map car xss))
+              (loop (cdr xs) (map cdr xss))))))
 
 (define (filter p xs)
   (if (null? xs)
@@ -191,12 +199,10 @@
           (cons (car xs) (filter p (cdr xs)))
           (filter p (cdr xs)))))
 
-(define (all p? lst) ;; is (p x) truthy for each x in lst?
-  (cond [(null? lst) #t]
-        [(pair? lst)
-         (and (p? (car lst))
-              (all p? (cdr lst)))]
-        [else (p? lst)]))
+(define (all p? lst . lsts) ;; is (p x) truthy for each x in lst?
+  (or (null? lst)
+      (and (apply p? (car lst) (map car lsts))
+           (apply all p? (cdr lst) (map cdr lsts)))))
 
 (define (memp p? lst)
   (let loop ([lst lst])
@@ -235,8 +241,28 @@
 (define (assv obj alist) (assoc obj alist eqv?))
 (define (assq obj alist) (assoc obj alist eq?))
 
+;; This is not the standard for-each since it does not validate
+;; its inputs and stops only when the _first_ list runs out.
+(define (for-each proc list1 . lists)
+  (let loop ([xs list1] [xss lists])
+    (if (null? xs)
+        (values)
+        (begin (apply proc (car xs) (map car xss))
+               (loop (cdr xs) (map cdr xss))))))
+
 ;;; String functions that should arguably be primitive but we just need for now
 (define (string-append . strs)
   (list->string
-    (append
+    (apply append
       (map string->list strs))))
+
+;;; Smallest possible subset of R7RS 'eval' spec so that the expander can run
+(let ([prim-eval eval]
+      [new-eval #f])
+  (let () ;; silly funging to get the correct procedure name into the closure
+    (define (eval expr env)
+      (prim-eval expr))
+    (set! new-eval eval))
+  (set! eval new-eval))
+
+(define (interaction-environment) 'interaction-environment)

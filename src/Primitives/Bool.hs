@@ -1,7 +1,7 @@
 module Primitives.Bool (primitives, predicate, predicateM, boolBinop) where
 
 import Val
-import EvaluationMonad (EM)
+import EvaluationMonad (EM, panic)
 import Primitives.Unwrappers (unwrapBool)
 
 primitives :: [Primitive]
@@ -28,7 +28,10 @@ predicateM name p = Prim name (Exactly 1) $
   \ [val] -> Bool <$> p val
 
 boolNot :: Primitive
-boolNot = predicate "not" unwrapBool not
+boolNot = Prim "not" (Exactly 1) $ \case
+  [Bool False] -> pure (Bool True)
+  [_]          -> pure (Bool False)
+  _ -> panic "primitive 'not' arity"
 
 -- | Evaluate a binary boolean function on two 'Val's. See 'predicate'.
 boolBinop :: String            -- ^ name of resulting 'Primitive'

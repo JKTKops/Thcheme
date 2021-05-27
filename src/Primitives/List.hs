@@ -9,6 +9,7 @@ import EvaluationMonad
 primitives :: [Primitive]
 primitives =
   [ isListP
+  , isCircularListP
   , consP
   , listP
   , appendP
@@ -20,6 +21,10 @@ primitives =
 
 isListP :: Primitive
 isListP = Prim "list?" (Exactly 1) $ \[x] -> Bool <$> isListSH x
+
+isCircularListP :: Primitive
+isCircularListP = Prim "circular-list?" (Exactly 1) $
+  \[x] -> Bool <$> testCircularList x
 
 consP :: Primitive
 consP = Prim "cons" (Exactly 2) $ \[x, y]  -> consSSS x y

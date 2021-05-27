@@ -3,6 +3,7 @@ module Primitives.TypeCheck (primitives) where
 
 import Val
 import EvaluationMonad (panic)
+import Primitives.String (stringSH)
 
 primitives :: [Primitive]
 primitives = [ typePred name func 
@@ -29,8 +30,7 @@ symbol (Symbol _) = Bool True
 symbol _          = Bool False
 
 string :: Val -> Val
-string (String _) = Bool True
-string _          = Bool False
+string = Bool . stringSH
 
 char :: Val -> Val
 char (Char _) = Bool True
@@ -48,8 +48,7 @@ pair :: Val -> Val
 pair = Bool . pairSH
 
 vector :: Val -> Val
-vector (Vector _) = Bool True
-vector _          = Bool False
+vector = Bool . vectorSH
 
 procedure :: Val -> Val
 procedure Primitive{}    = Bool True

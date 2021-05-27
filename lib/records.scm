@@ -6,6 +6,15 @@
 ; primitive construct, this is merely a prototype.
 (define define-record-type #f)
 
+; secondary exports; a minimal, partial implementation of
+; R6RS procedural records. Used by the earliest version of the expander.
+; We'll get rid of this eventually.
+(define records:make-record-type-descriptor #f)
+(define (records:make-record-constructor-descriptor rtd . _) rtd)
+(define records:record-accessor #f)
+(define records:record-constructor #f)
+(define records:record-predicate #f)
+
 ; additional exports for debugging
 ; (define records:field-spec? #f)
 ; (define records:normalize-field-spec #f)
@@ -30,21 +39,19 @@
   ;; instead of ERROR: invalid type to record function.
   (define record-token (list 'record))
   (define (make-record-type-descriptor name)
-    ; eqv. to (list record-token name)
-    ; but the spirit is to wrap the name and then make a cons cell.
-    (cons record-token (list name))) ;; using list here is to make the
-                                     ;; macro generative (see R7RS).
+    (list name)) ;; using list here is to make the
+                 ;; macro generative (see R7RS).
   (define (record? x)
     (and (old-vector? x)
-         (eq? (car (vector-ref x 0)) record-token)
+         (eq? (vector-ref x 0) record-token)
          #t))
   ;; redefine vector? to reject records, thus making record types
   ;; disjoint from all other types.
   (set! vector?
     (lambda (x)
       (and (old-vector? x)
-           (not (eq? (car (vector-ref x 0)) record-token))
-           #t)))
+           (or (= 0 (vector-length x))
+               (not (eq? (vector-ref x 0) record-token))))))
 
   ;; Given the type descriptor,
   ;; produce a type predicate that determines if an object
@@ -56,8 +63,7 @@
   (define (make-record-predicate+assertion descriptor)
     (let* ([pred (lambda (record)
                    (and (record? record)
-                        (eq? (cdr (vector-ref record 0)) (cdr descriptor))
-                        #t))]
+                        (eq? (vector-ref record 1) descriptor)))]
            [assert (lambda (record)
                      (if (pred record)
                          'all-good
@@ -69,11 +75,11 @@
   (define (make-indexed-record-get i asserter)
     (lambda (r)
       (asserter r)
-      (vector-ref r (+ i 1))))
+      (vector-ref r (+ i 2))))
   (define (make-indexed-record-set i asserter)
     (lambda (r v)
       (asserter r)
-      (vector-set! r (+ i 1) v)))
+      (vector-set! r (+ i 2) v)))
 
   ;; Valid field-specs are (name getter-name)
   ;; and (name getter-name setter-name) only.
@@ -149,12 +155,12 @@
     (lambda (record args) ;; args already packaged,
                           ;; see specs+make->constructor-definition
       (let loop ([args args] [ixs indices])
-               (if (null? args)
-                   record
-                   (begin (vector-set! record
-                                       (+ 1 (car ixs))
-                                       (car args))
-                          (loop (cdr args) (cdr ixs)))))))
+        (if (null? args)
+            record
+            (begin (vector-set! record
+                                (+ 2 (car ixs))
+                                (car args))
+                   (loop (cdr args) (cdr ixs)))))))
 
   ;; Given a single field spec and the type assertion for its type,
   ;; produce the code to define the field's getter and setter.
@@ -221,20 +227,36 @@
     (define fields (process-field-specs orig-fields))
     (define num-fields (length fields))
     (define (make)
-      (define r (make-vector (+ 1 num-fields) #f))
-      (vector-set! r 0 token)
+      (define r (make-vector (+ 2 num-fields) #f))
+      (vector-set! r 0 record-token)
+      (vector-set! r 1 token)
       r)
     (if (not (symbol? pred)) (error "invalid predicate name"))
             ;; bind the name to the (name) object in the token,
             ;; which is unique to this record type even if other
             ;; record types have the same name.
-    `(begin (define ,name ',(cdr token))
+    `(begin (define ,name ',token)
             (define ,pred ,predicate)
             ,(specs+make->constructor-definition constr fields make)
             ,@(field-specs+asserter->definitions fields assertion)
             ',name))
   ;; export.
-  (set! define-record-type real-define-record-type))
+  (set! define-record-type real-define-record-type)
+  
+  ;; secondary exports
+  (set! records:make-record-type-descriptor
+    (lambda (name . _)
+      (make-record-type-descriptor name)))
+  (set! records:record-accessor
+    (lambda (rtd k)
+      (make-indexed-record-get k (lambda (_) #t))))
+  (set! records:record-constructor
+    (lambda (cd)
+      (lambda args
+        (apply vector record-token cd args))))
+  (set! records:record-predicate
+    (lambda (rtd)
+      (car (make-record-predicate+assertion rtd)))))
 
   ; export for debugging
   ; (set! records:field-spec? field-spec?)
