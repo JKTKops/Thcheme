@@ -159,6 +159,10 @@
          (cl### (params body0 ...) ...))))))
 
 ;;; LIST FUNCTIONS
+;;; not currently organized...
+;;; the expander will need very little / none of this,
+;;; which means it should be moved into the appropriate
+;;; build-up libraries once we have them.
 (define first car)
 (define second cadr)
 (define third caddr)
@@ -186,3 +190,53 @@
       (if (p (car xs))
           (cons (car xs) (filter p (cdr xs)))
           (filter p (cdr xs)))))
+
+(define (all p? lst) ;; is (p x) truthy for each x in lst?
+  (cond [(null? lst) #t]
+        [(pair? lst)
+         (and (p? (car lst))
+              (all p? (cdr lst)))]
+        [else (p? lst)]))
+
+(define (memp p? lst)
+  (let loop ([lst lst])
+    (cond [(null? lst) #f]
+          [(p? (car lst)) lst]
+          [else (loop (cdr lst))])))
+
+(define (member obj lst . compare)
+  (cond [(null? compare) (member obj lst equal?)]
+        [(not (null? (cdr compare)))
+         (error "too many arguments to member")]
+        [else
+         (set! compare (car compare))
+         (define (e? m) (compare obj m))
+         (memp e? lst)]))
+
+(define (memq obj lst) (member obj lst eq?))
+(define (memv obj lst) (member obj lst eqv?))
+
+(define (assp p? alist)
+  (let loop ([alist alist])
+    (cond [(null? alist) #f]
+          [(p? (caar alist))
+           (car alist)]
+          [else (loop (cdr alist))])))
+
+(define (assoc obj alist . compare)
+  (cond [(null? compare) (assoc obj alist equal?)]
+        [(not (null? (cdr compare)))
+         (error "too many arguments to assoc")]
+        [else
+         (set! compare (car compare))
+         (define (e? key) (compare obj key))
+         (assp e? alist)]))
+
+(define (assv obj alist) (assoc obj alist eqv?))
+(define (assq obj alist) (assoc obj alist eq?))
+
+;;; String functions that should arguably be primitive but we just need for now
+(define (string-append . strs)
+  (list->string
+    (append
+      (map string->list strs))))

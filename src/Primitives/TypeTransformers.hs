@@ -18,8 +18,10 @@ primitives = [ typeTransformer name transform
                  , ("list->vector", listToVector)
                  , ("number->string", numberToString)
                  , ("number->char", numberToChar)
+                 , ("string->symbol", stringToSymbol)
                  , ("string->list", stringToList)
                  , ("string->number", stringToNumber)
+                 , ("symbol->string", symbolToString)
                  , ("vector->list", vectorToList)
                  ]
              ]
@@ -55,6 +57,15 @@ numberToChar :: Val -> EM Val
 numberToChar v = do
   i <- unwrapExactInteger v
   return $ Char $ chr $ fromIntegral i
+
+stringToSymbol :: Val -> EM Val
+stringToSymbol val
+  | stringSH val = Symbol <$> unwrapStringPH val
+  | otherwise = throwError $ TypeMismatch "string" val
+
+symbolToString :: Val -> EM Val
+symbolToString (Symbol s) = pure $ IString s
+symbolToString v = throwError $ TypeMismatch "symbol" v
 
 -- R7RS is unclear if these strings should be mutable. I'm guessing that in
 -- the absence of an explicit suggestion, we should make them mutable.
