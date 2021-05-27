@@ -236,19 +236,45 @@ macroExpandB _ = panic "macroexpand arity"
 begin :: Macro
 begin = Macro (AtLeast 1) $ \tail stmts -> evalSeq tail stmts
 
+-- | In @inInteractionEnv m@, the continuation of m is the
+-- continuation of inInteractionEnv. However, 'm' is executed
+-- in the EvalState that represents the top level.
+inInteractionEnv :: EM a -> EM a
+inInteractionEnv m = do
+  state <- get
+  -- put (interaction-environment)
+  -- note that this will execute m outside
+  -- the dynamic extent of the caller but without moving
+  -- dynamic points; merely using a new root.
+  -- I'm pretty sure this is wrong. We probably
+  -- really want to reroot the dynamic points to the
+  -- original root before evaluating and then reroot back
+  -- after, or use the current dynamic point.
+  -- edit: actually, I think this is unspecified, and this
+  -- behavior is probably what I would predict in the wild.
+  init <- liftIO $ initEvalState (globalEnv state) (options state)
+  put init
+  m <* put state
+
 evalP :: Primitive
-evalP = Prim "eval" (Exactly 1) $ \[form] -> evalTail form
+evalP = Prim "eval" (Exactly 1) $ \[form] -> inInteractionEnv $ evalBody form
 
 -- TODO: [r7rs]
 applyP :: Primitive
-applyP = Prim "apply" (AtLeast 1) $ \case
-  [func, form] -> do
-    frozenForm <- freezeList form
-    case frozenForm of
-      FList args -> tailCall func args
-      _bad -> throwError $ TypeMismatch "list" form
-  (func : args) -> tailCall func args
-  _ -> panic "apply arity"
+applyP = Prim "apply" (AtLeast 2) $
+  \(func : rest@(_:_)) -> do
+    args <- processApplyArgs rest
+    tailCall func args
+  where
+    processApplyArgs [form] = do
+      frozenForm <- freezeList form
+      case frozenForm of
+        FList args -> return args
+        _bad -> throwError $ TypeMismatch "list" form
+    processApplyArgs (arg : args) = do
+      tl <- processApplyArgs args
+      return $ arg : tl
+    processApplyArgs [] = panic "apply arity"
 
 loadP :: Primitive
 loadP = Prim "load" (Exactly 1) $ \case
@@ -257,21 +283,7 @@ loadP = Prim "load" (Exactly 1) $ \case
           file <- liftIO . runExceptT $ load filename
           case file of
             Left e   -> throwError e
-            Right ls -> do
-              state <- get
-              -- put (interaction-environment)
-              -- note that this will execute the loaded file outside
-              -- the dynamic extent of the caller but without moving
-              -- dynamic points; merely using a new root.
-              -- I'm pretty sure this is wrong. We probably
-              -- really want to reroot the dynamic points to the
-              -- original root before evaluating and then reroot back
-              -- after, or use the current dynamic point.
-              init <- liftIO $ initEvalState (globalEnv state) (options state)
-              put init
-              r <- evalBodySeq ls
-              put state
-              return r
+            Right ls -> inInteractionEnv $ evalBodySeq ls
         | otherwise -> throwError $ TypeMismatch "string" val
   _ -> panic "load arity"
 
