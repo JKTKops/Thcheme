@@ -163,28 +163,51 @@ testShowPort = testCase "Ports show correctly" $
 testShowPrimitives :: TestTree
 testShowPrimitives = testCase "Primitives show correctly" $
     mapM_
-        (\(key, func) -> let pType = case func of
-                                 Primitive {} -> "function"
-                                 PrimMacro {} -> "macro"
-                         in show func @?= "#<" ++ pType ++ " " ++ key ++ ">")
+        (\(key, func) -> 
+            let str = case func of
+                  Primitive arity _ _ -> "#<procedure "
+                                           ++ key ++ " "
+                                           ++ displayArity arity
+                                           ++ ">"
+                  PrimMacro {} -> "#<macro " ++ key ++ ">"
+
+            in show func @?= str)
         -- Test only some of the primitives list as eventually it will be quite large
         . take 50 $ Map.toList primitives
+  where                  
+    displayArity (Exactly n) = "(" ++ simple n ++ ")"
+    displayArity (Between lo hi) = "(" ++ between lo hi ++ ")"
+    displayArity (AtLeast 0) = "_"
+    displayArity (AtLeast n) = "(" ++ simple n ++ " . _)"
+
+    simple 0 = ""
+    simple 1 = "_"
+    simple n = "_ " ++ simple (n - 1)
+
+    between 0 0  = ""
+    between 0 1  = "[_]"
+    between 0 hi = "[_] " ++ between 0 (hi - 1)
+    between n hi = "_ " ++ between (n-1) hi
 
 testShowFunctions :: TestTree
 testShowFunctions = testCase "Functions show correctly" $
     do let emptyEnv = []
-       show (Closure [] Nothing [] emptyEnv (Just "testFunc")) @?= "(testFunc () ...)"
-       show (Closure ["x"] Nothing [] emptyEnv (Just "testFunc")) @?=
-             "(testFunc (x) ...)"
-       show (Closure [] Nothing [] emptyEnv Nothing) @?= "(lambda () ...)"
-       show (Closure ["x"] Nothing [] emptyEnv Nothing) @?= "(lambda (x) ...)"
-       show (Closure [] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
-             "(testFunc xs ...)"
-       show (Closure ["x"] (Just "xs") [] emptyEnv (Just "testFunc")) @?=
-             "(testFunc (x . xs) ...)"
-       show (Closure ["x"] (Just "xs") [] emptyEnv Nothing) @?= "(lambda (x . xs) ...)"
-       show (Closure ["x", "y", "z"] (Just "others") [] emptyEnv Nothing) @?=
-             "(lambda (x y z . others) ...)"
+       show (Closure [] Nothing [] emptyEnv (Just "testFunc"))
+         @?= "#<procedure testFunc ()>"
+       show (Closure ["x"] Nothing [] emptyEnv (Just "testFunc"))
+         @?= "#<procedure testFunc (x)>"
+       show (Closure [] Nothing [] emptyEnv Nothing)
+         @?= "#<procedure lambda ()>"
+       show (Closure ["x"] Nothing [] emptyEnv Nothing)
+         @?= "#<procedure lambda (x)>"
+       show (Closure [] (Just "xs") [] emptyEnv (Just "testFunc"))
+         @?= "#<procedure testFunc xs>"
+       show (Closure ["x"] (Just "xs") [] emptyEnv (Just "testFunc"))
+         @?= "#<procedure testFunc (x . xs)>"
+       show (Closure ["x"] (Just "xs") [] emptyEnv Nothing)
+         @?= "#<procedure lambda (x . xs)>"
+       show (Closure ["x", "y", "z"] (Just "others") [] emptyEnv Nothing)
+         @?= "#<procedure lambda (x y z . others)>"
 
 -- PROPERTY TESTS
 prop_TerminationErrors :: TestTree
