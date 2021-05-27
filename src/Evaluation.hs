@@ -101,7 +101,7 @@ evalSeq :: InTail -> [Val] -> EM Val
 evalSeq tail = go
   where go [] = error "evalSeq: no forms"
         go [form] = eval tail form
-        go (s:ss) = evalBody s >> go ss
+        go (s:ss) = allowMultipleValues (evalBody s) >> go ss
 
 -- | Evaluate a sequence in either tail or non-tail position.
 -- I'm not sure if 'evalBodySeq' actually has any application,
