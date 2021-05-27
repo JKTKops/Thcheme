@@ -102,18 +102,30 @@ showVal (Bool True) = showString "#t"
 showVal (Bool False) = showString "#f"
 showVal Port{} = showString "#<port>"
 showVal Undefined = showString "#<undefined>"
-showVal (Primitive _ _ name) = showString $ "#<function " ++ name ++ ">"
+showVal (Primitive arity _ name) = shows fakeClosure
+  where
+    fakeClosure = Closure fakeArgs fakeVarargs [] [] (Just name)
+    (fakeArgs, fakeVarargs) = case arity of
+      Exactly n     -> (replicate n "_", Nothing)
+      Between lo hi -> (fakeBetween lo hi, Nothing)
+      AtLeast n     -> (replicate n "_", Just "_")
+    fakeBetween lo hi =
+      let reqs = replicate lo "_"
+          numOpts = hi - lo
+          opts = replicate numOpts "[_]"
+      in reqs ++ opts
+
 showVal Continuation{} = showString "#<cont>"
 showVal (Closure [] (Just varargs) _body _env name) =
-  showParen True $
-      showString (fromMaybe "lambda" name)
+      showString "#<procedure "
+    . showString (fromMaybe "lambda" name)
     . showChar ' ' . showString varargs
-    . showString " ..." 
+    . showChar '>' 
 showVal (Closure args varargs _body _env name) = 
-    showParen True $
-        displayName . showChar ' '
+      showString "#<procedure "
+      . displayName . showChar ' '
       . showParen True (displayArgs . displayVarargs)
-      . showString " ..."
+      . showChar '>'
   where
     displayName = showString $ fromMaybe "lambda" name
     displayArgs = showString $ unwords args
