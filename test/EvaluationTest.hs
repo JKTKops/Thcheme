@@ -390,7 +390,7 @@ evalTests = testGroup "eval" $ map mkEvalTest
         }
     , EvalTest
         { testName = "'eval' primitive evaluates datum"
-        , input    = "(eval '(+ 2 3))"
+        , input    = "(eval '(+ 2 3) #f)"
         , expected = Right $ Number 5
         }
     ]
