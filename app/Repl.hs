@@ -12,12 +12,13 @@ import Data.List (isPrefixOf, sort)
 import qualified System.Console.Haskeline as CLI
 import System.IO (hFlush, stdout)
 
+import Paths_Thcheme
 import Val
 import EvaluationMonad ( EvalState (..), initEvalState, resetEvalState
                        , noOpts
                        )
-import Evaluation
-import Bootstrap
+import Evaluation ( showResultIO )
+import Bootstrap ( primitiveBindings, evaluate )
 import qualified Environment as Env (keys)
 
 data ReplState = RS { replEvalState :: EvalState }
@@ -27,8 +28,9 @@ newtype Repl a = Repl { runRepl :: CLI.InputT (StateT ReplState IO) a }
 
 repl :: IO ()
 repl = do
+    putStr "thcheme "
+    print version
     env <- primitiveBindings
-    putStrLn "loaded: stdlib.thm"
     estate <- initEvalState env noOpts
     replLoop
       & runRepl

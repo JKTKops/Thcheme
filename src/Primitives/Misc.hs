@@ -91,14 +91,15 @@ quote :: Macro
 quote = Macro (Exactly 1) $ \_ [form]  -> return form
 
 ifMacro :: Macro
-ifMacro = Macro (AtLeast 2) $ 
+ifMacro = Macro (Between 2 3) $ 
   \tail (pred : conseq : alts) -> do
     p <- evalBody pred
     if truthy p
     then eval tail conseq
     else case alts of
-      [] -> return Nil -- r7rs says unspecified
-      xs -> evalSeq tail xs
+      [] -> return Nil-- r7rs says unspecified
+      [x] -> eval tail x
+      _ -> panic "if arity"
 
 set :: Macro
 set = Macro (Exactly 2) $ \_ -> \case

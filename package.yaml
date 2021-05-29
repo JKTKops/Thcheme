@@ -42,6 +42,7 @@ dependencies:
 
 data-files:
   - lib/**/*.scm
+  - lib/**/*.exp
 
 library:
   source-dirs: src

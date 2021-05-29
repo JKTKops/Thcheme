@@ -1,6 +1,7 @@
 module Environment
     ( Env -- re-exported from Types
     , nullEnv
+    , deepCopyEnv
     , isBound
     , getVar
     , setVar
@@ -14,7 +15,7 @@ import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as Map
 import Data.IORef
 import Data.Maybe (isJust)
-import Control.Monad.Except (liftIO, throwError)
+import Control.Monad.Except ((>=>), liftIO, throwError)
 
 -- This module is allowed to import Types because EvaluationMonad
 -- imports this module!
@@ -22,6 +23,12 @@ import Types
 
 nullEnv :: IO Env
 nullEnv = newIORef Map.empty
+
+deepCopyEnv :: Env -> IO Env
+deepCopyEnv e = do
+  mapping <- readIORef e
+  copy    <- mapM (readIORef >=> newIORef) mapping
+  newIORef copy
 
 isBound :: Env -> String -> IO Bool
 isBound envRef var = isJust . Map.lookup var <$> readIORef envRef

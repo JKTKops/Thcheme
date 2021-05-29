@@ -14,8 +14,8 @@ import Data.Vector (fromList)
 
 import Val
 import Parsers
-import Bootstrap
-import Evaluation
+import Bootstrap ( primitiveBindings , evaluateExpr )
+import Evaluation ( initEvalState, call, runTest ) --, evaluateExpr )
 import EvaluationMonad (EM, localEnv, stack, unsafeEMtoIO)
 import Options (noOpts)
 import Primitives.Comparison (equalSSH)
@@ -118,16 +118,6 @@ evalTests = testGroup "eval" $ map mkEvalTest
         { testName = "if (pred false)"
         , input = "(define p #f)\n(if p #\\x #\\y)"
         , expected = Right $ Char 'y'
-        }
-    , EvalTest
-        { testName = "if with multiple alts (pred true)"
-        , input = "(if #t 1 (+ 1 2) \"fail\")"
-        , expected = Right $ Number 1
-        }
-    , EvalTest
-        { testName = "if with multiple alts (pred false)"
-        , input = "(if #f 0 (define x 5) x)"
-        , expected = Right $ Number 5
         }
     , EvalTest
         { testName = "#f is falsy"
@@ -347,8 +337,10 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , expected = Right $ Number 0
         }
     , EvalTest
-        { testName = "Begin evaluates to last"
-        , input = "(begin (define x 0) x (+ x 1))"
+        { testName = "begin evaluates to last"
+        -- This needs to be local now because the macro expander splices top
+        -- level begin forms and we would get multiple values back.
+        , input = "(let () (begin (define x 0) x (+ x 1)))"
         , expected = Right $ Number 1
         }
     , EvalTest

@@ -1,35 +1,62 @@
 module Bootstrap 
     ( primitiveBindings
     , stdlib -- for testing... might want to move to Bootstrap.Internal
+    
+    , evaluate, evaluateExpr
     ) where
 
-import Control.Monad (forM_)
+import Control.Monad (forM_, void)
+import System.IO.Unsafe (unsafePerformIO)
 
 import Paths_Thcheme
-import Types (LispErr, Val, EvalState)
-import Parsers (labeledReadExprList)
+import Val
+import EvaluationMonad (EvalState)
+import Parsers (labeledReadExprList, labeledReadExpr)
 import Primitives (primitives)
-import Environment (Env, bindVars, nullEnv)
+import Environment (Env, bindVars, nullEnv, deepCopyEnv)
 import Options (noOpts)
-import Evaluation (evaluateExpr, initEvalState)
+import qualified Evaluation
 
--- TODO: this currently re-constructs the environment from scratch,
--- i.e., _reloads all the bootstrap files_, every time it is called.
--- We'd rather produce it once and then make copies, which will
--- require some use of unsafePerformIO.
--- This issue makes the tests slow, so it should be fixed
--- sooner rather than later.
-primitiveBindings :: IO Env
-primitiveBindings = do
+makePrimitiveBindings :: IO Env
+makePrimitiveBindings = do
   ne <- nullEnv
   env <- bindVars ne primitives
   -- warning! This means the stdlib is evaluated with a different
   -- root dynamic point than the REPL. That /shouldn't/ cause any
   -- problems, but be aware if weird bugs are happening.
-  s <- initEvalState env noOpts
+  s <- Evaluation.initEvalState env noOpts
   forM_ orderedBootstrapFiles $ \f ->
     bootstrapLoad f s
+  bootstrapExec "(import (rnrs))" s
   return env
+
+primitiveEnv :: Env
+primitiveEnv = unsafePerformIO makePrimitiveBindings
+{-# NOINLINE primitiveEnv #-}
+
+primitiveBindings :: IO Env
+primitiveBindings = deepCopyEnv primitiveEnv
+
+-- | Parse and evaluate a Scheme expression with the given initial state.
+-- See 'evaluateExpr'.
+evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
+evaluate label s src = Evaluation.evaluate label s ("(ex:repl '(" ++ src ++ "))")
+
+-- | Evaluate a Scheme expression with the given initial state, for the
+-- purposes of the REPL. The given state should represent a bootstrapped
+-- environment such as 'primitiveBindings.'
+-- 
+-- The expression e is transformed into (ex:repl '(e)) and then handed off
+-- to the primitive 'Evaluation.evaluateExpr' evaluator which does not know
+-- anything in particular about the macro expander.
+--
+-- 'ex:repl' is defined by lib/expander/expander.scm, and it embeds a
+-- macro system into a scheme that doesn't have one.
+evaluateExpr :: EvalState -> Val -> IO (Either LispErr Val, EvalState)
+evaluateExpr s e = Evaluation.evaluateExpr s callExpander
+  where
+    quoteE = makeImmutableList [Symbol "quote", makeImmutableList [e]]
+    callExpander = makeImmutableList [Symbol "ex:repl", quoteE]
 
 bootstrapRead :: FilePath -> IO (Either LispErr [Val])
 bootstrapRead fname = do
@@ -40,10 +67,18 @@ bootstrapRead fname = do
 -- | Load a bootstrap scheme file from the data dir, read all
 -- the forms in it, and then evaluate it in the given state.
 -- The state should represent the (interaction-environment).
+-- Forms are evaluated without the macro expander.
 bootstrapLoad :: FilePath -> EvalState -> IO ()
 bootstrapLoad fname s = do
   Right exprs <- bootstrapRead fname
-  mapM_ (evaluateExpr s) exprs
+  mapM_ (Evaluation.evaluateExpr s) exprs
+
+-- | Execute a single given scheme expression and evaluate it
+-- in the given state. Useful for the initial import.
+bootstrapExec :: String -> EvalState -> IO ()
+bootstrapExec src s =
+  let Right expr = labeledReadExpr "bootstrap" src
+  in void $ evaluateExpr s expr
 
 stdlibName :: FilePath
 stdlibName = "lib/stdlib.scm"
@@ -57,4 +92,8 @@ orderedBootstrapFiles :: [FilePath]
 orderedBootstrapFiles =
   [ stdlibName
   , "lib/records.scm"
+  , "lib/expander/compat-thcheme.scm"
+  , "lib/expander/runtime.scm"
+  , "lib/expander/standard-libraries.exp"
+  , "lib/expander/expander.exp"
   ]

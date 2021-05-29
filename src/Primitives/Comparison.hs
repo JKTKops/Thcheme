@@ -1,5 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE BangPatterns, MultiWayIf #-}
 module Primitives.Comparison 
   ( primitives
   
@@ -143,9 +143,9 @@ eqSSH :: MonadIO m => Val -> Val -> m Bool
 -- symbols the memoized part, and not the whole symbol including library
 -- information (once we have libraries).
 eqSSH (Symbol x) (Symbol y) = return $ x == y
-eqSSH v1 v2 = liftIO $ do
-  n1 <- v1 `seq` makeStableName v1
-  n2 <- v2 `seq` makeStableName v2
+eqSSH !v1 !v2 = liftIO $ do
+  n1 <- makeStableName v1
+  n2 <- makeStableName v2
   return $ n1 == n2
 
 -- The rest of the file is essentially dedicated to implementing 'equal?'.
