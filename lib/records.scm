@@ -27,7 +27,7 @@
 ;; define-record-type, is exported at the end using set!.
 ;;----------------------------------------------------------------------
 
-(let ()
+((lambda ()
   (define old-vector? vector?)
   ;; a "magic" token that identifies records. Note that it is a list
   ;; and not merely a symbol; symbols that are spelled the same compare
@@ -112,12 +112,12 @@
         (if (= i n)
             ()
             (cons i (loop (+ i 1))))))
-    (map* (lambda (i spec)
+    (map (lambda (i spec)
             (let ([normalized (normalize-field-spec spec)])
               (cons (first normalized)
                 (cons i (cdr normalized)))))
-          (iota (length specs))
-          specs))
+         (iota (length specs))
+         specs))
 
   ;; Validate and extract the constructor's name.
   (define (constructor-spec->name spec)
@@ -256,11 +256,9 @@
         (apply vector record-token cd args))))
   (set! records:record-predicate
     (lambda (rtd)
-      (car (make-record-predicate+assertion rtd)))))
+      (car (make-record-predicate+assertion rtd))))))
 
   ; export for debugging
   ; (set! records:field-spec? field-spec?)
   ; (set! records:normalize-field-spec normalize-field-spec)
   ; (set! records:process-field-specs process-field-specs)
-
-"loaded records.scm"
