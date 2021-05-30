@@ -57,9 +57,9 @@ listP :: Primitive
 listP = Prim "list" (AtLeast 0) makeMutableList
 
 appendP :: Primitive
-appendP = Prim "append" (AtLeast 1) aux
+appendP = Prim "append" (AtLeast 0) aux
   where 
-    -- aux will never be called with 0 arguments since arity is 1+
+    aux [] = return Nil
     aux [x] = return x
     aux xs = do
         (lists, last) <- walk xs

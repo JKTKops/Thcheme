@@ -6,6 +6,21 @@
 
 (define ex:unspecified (if #f #f))
 
+;; TODO: figure out why this doesn't work
+;;(define-record-type :ex:library
+;;  (ex:make-library name envs exports imports builds visiter invoker build)
+;;  ex:library?
+;;  (name     ex:library-name)
+;;  (envs     ex:library-envs)
+;;  (exports  ex:library-exports)
+;;  (imports  ex:library-imports)
+;;  (builds   ex:library-builds)
+;;  (visiter  ex:library-visiter)
+;;  (invoker  ex:library-invoker)
+;;  (build    ex:library-build)
+;;  (visited? ex:library-visited? ex:library-visited?-set!)
+;;  (invoked? ex:library-invoked? ex:library-invoked?-set!))
+
 (define (ex:make-library name envs exports imports builds visiter invoker build)
   (list name envs exports imports builds visiter invoker build #f #f))
 

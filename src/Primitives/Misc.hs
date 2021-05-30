@@ -9,9 +9,6 @@ import Val
 import Evaluation
 import EvaluationMonad
 import Primitives.String (stringSH, unwrapStringPH)
--- r7rs errors probably don't need this
--- r7rs errors probably don't need this
-import Primitives.WriteLib (writeSharedSH)
 import Control.Monad.Reader -- for qq
 
 -- TODO NEXT: this module is broken right now because of Pairs
@@ -20,7 +17,6 @@ primitives :: [Primitive]
 primitives = [ identityFunction
              , evalP
              , applyP
-             , errorP
              , quit
              , loadP
              , callWithCurrentContinuation
@@ -336,10 +332,3 @@ quasiquote = Macro (Exactly 1) $ \_ [form]-> runReaderT (qq form) 0
 
 quit :: Primitive
 quit = Prim "quit" (Exactly 0) $ \_ -> throwError Quit
-
-errorP :: Primitive
-errorP = Prim "error" (Exactly 1) $ \case
-  [val] 
-    | stringSH val -> unwrapStringPH val >>= throwError . Default
-    | otherwise -> liftIO (writeSharedSH val) >>= throwError . Default
-  _ -> panic "error function arity"

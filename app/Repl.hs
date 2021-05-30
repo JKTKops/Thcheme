@@ -12,12 +12,14 @@ import Data.List (isPrefixOf, sort)
 import qualified System.Console.Haskeline as CLI
 import System.IO (hFlush, stdout)
 
-import Paths_Thcheme
+import Paths_Thcheme (version)
+import Data.Version (showVersion)
+
 import Val
 import EvaluationMonad ( EvalState (..), initEvalState, resetEvalState
                        , noOpts
                        )
-import Evaluation ( showResultIO )
+import Evaluation ( showResultIO ) --, evaluate )
 import Bootstrap ( primitiveBindings, evaluate )
 import qualified Environment as Env (keys)
 
@@ -28,8 +30,7 @@ newtype Repl a = Repl { runRepl :: CLI.InputT (StateT ReplState IO) a }
 
 repl :: IO ()
 repl = do
-    putStr "thcheme "
-    print version
+    putStrLn $ "thcheme " ++ showVersion version
     env <- primitiveBindings
     estate <- initEvalState env noOpts
     replLoop

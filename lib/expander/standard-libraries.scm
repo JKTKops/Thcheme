@@ -7,7 +7,10 @@
 ;;;   Copyright statement at http://srfi.schemers.org/srfi-process.html
 ;;;
 ;;;=====================================================================
-
+;;;
+;;; As allowed by that copyright statement, modified for Thcheme
+;;; by Max Kopinsky, 2021.
+;;;
 ;;;=====================================================================
 ;;;
 ;;; This file builds r6rs up using a sequence of libraries.

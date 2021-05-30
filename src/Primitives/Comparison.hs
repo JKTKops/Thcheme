@@ -115,7 +115,9 @@ charBoolBinop name = boolBinop name unwrapChar
 -- the above should be satisfied by eqSSH /I think/.
 
 -- TODO [r7rs]
--- write tests, mainly, I think it should be right?
+-- write tests
+-- Number equality is currently defined in the sense of =,
+-- but exact an inexact numbers should never compare equal.
 eqvSSH :: MonadIO m => Val -> Val -> m Bool
 eqvSSH (Bool x)   (Bool y)   = return $ x == y
 eqvSSH (Number x) (Number y) = return $ x == y
@@ -144,9 +146,15 @@ eqSSH :: MonadIO m => Val -> Val -> m Bool
 -- information (once we have libraries).
 eqSSH (Symbol x) (Symbol y) = return $ x == y
 eqSSH !v1 !v2 = liftIO $ do
-  n1 <- makeStableName v1
-  n2 <- makeStableName v2
+  n1 <- makeStableName $! v1
+  n2 <- makeStableName $! v2
   return $ n1 == n2
+  --n1 <- newStablePtr $! v1
+  --n2 <- newStablePtr $! v2
+  --let r = n1 == n2
+  --freeStablePtr n1
+  --freeStablePtr n2
+  --return r
 
 -- The rest of the file is essentially dedicated to implementing 'equal?'.
 -- The implementation is due to Michael D. Adams and R. Kent Dybvig,

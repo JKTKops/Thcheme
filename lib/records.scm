@@ -61,13 +61,14 @@
   ;; The procedures are returned bundled in a list, since
   ;; Thcheme does not yet support define-values.
   (define (make-record-predicate+assertion descriptor)
-    (let* ([pred (lambda (record)
+    (let* ([name (symbol->string (car descriptor))]
+           [pred (lambda (record)
                    (and (record? record)
                         (eq? (vector-ref record 1) descriptor)))]
            [assert (lambda (record)
                      (if (pred record)
                          'all-good
-                         (error "invalid type to record function")))])
+                         (type-error name record)))])
       (list pred assert)))
 
   ;; Generic record getters and setters given

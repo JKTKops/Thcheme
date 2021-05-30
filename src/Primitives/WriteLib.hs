@@ -69,6 +69,7 @@ showErrIO = fmap (prefix ++) . mkMsgFor
     mkMsgFor CircularList = pure "circular list"
     mkMsgFor EmptyBody = pure "attempt to define function with no body"
     mkMsgFor (Parser parseErr) = pure $ "parser error at " ++ show parseErr
+    mkMsgFor (Condition _ obj) = writeSharedSH obj
     mkMsgFor (Default msg) = pure msg
     mkMsgFor Quit = pure "quit invoked"
 
@@ -180,6 +181,13 @@ writeShowS (Number n) = pure $ writeNumber n
 writeShowS (MultipleValues vs) = fmt <$> writeList (makeImmutableList vs)
   where
     fmt vsStr = showString "#<values: " . vsStr . showChar '>'
+
+writeShowS (Exception e) = showString <$> liftIO (showErrIO e)
+writeShowS (Error msg irritants) = (prefix msg .) <$> writeIrritants
+  where
+    prefix "" = showString ""
+    prefix s  = showString s . showChar ' '
+    writeIrritants = writeList $ makeImmutableList irritants
 
 writeShowS v = pure $ shows v
 

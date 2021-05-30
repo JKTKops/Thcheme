@@ -158,6 +158,15 @@ showVal (IByteVector v) = showString "#u8" . showParen True (showBytes (U.toList
         showBytes [b] = shows b
         showBytes (b:bs) = shows b . showChar ' ' . showBytes bs
 showVal Nil = showString "()"
+showVal (Error msg irritants) = 
+  showString "#<error: "
+  . prefix msg 
+  . intercalateS " " (map shows irritants)
+  . showChar '>'
+  where prefix "" = showString ""
+        prefix s  = showString s . showChar ' '
+showVal (Exception err) = showString $ "#<exception: " ++ showErr err ++ ">"
+
 showVal (MultipleValues vs) =
     showString "#<values: "
   . unwordsList vs
@@ -187,6 +196,7 @@ showErr (TypeMismatch expected found) = "invalid type: expected " ++ expected
 showErr CircularList                  = "circular list"
 showErr EmptyBody                     = "attempt to define function with no body"
 showErr (Parser parseErr)             = parseErr
+showErr (Condition _ obj)             = show obj
 showErr (Default message)             = message
 showErr Quit                          = "quit invoked"
 

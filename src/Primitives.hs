@@ -7,6 +7,7 @@ import qualified Val
 import qualified Primitives.Bool             as BoolOps
 import qualified Primitives.Char             as CharOps
 import qualified Primitives.Comparison       as Comparison
+import qualified Primitives.Error            as Error
 import qualified Primitives.Misc             as Misc
 import qualified Primitives.List             as List
 import qualified Primitives.Math             as Math
@@ -31,6 +32,7 @@ primitives = foldr1 Map.union
       , BoolOps.primitives
       , CharOps.primitives
       , Comparison.primitives
+      , Error.primitives
       , List.primitives
       , String.primitives
       , Vector.primitives

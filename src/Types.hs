@@ -9,14 +9,14 @@ module Types
     , Macro (..)
     , Val (..), RealNumber (..), Number (..)
     , Ref
-    , LispErr (..)
+    , LispErr (..), ExceptionCont (..)
     , ThrowsError
     , IOThrowsError
     , extractValue
     , isTerminationError
     , liftEither
    -- , runIOThrows
-    , EM (..)
+    , EM (..), withExceptionHandler
     , EvalState (..)
     , StackFrame (..)
     , DynamicPoint (..)
@@ -127,11 +127,17 @@ data Val
 
   | Nil
   | Pair !(Ref Val) !(Ref Val)
-  | IPair Val Val
+  | IPair !Val !Val
 
   | Vector  !(V.IOVector Val)
   | IVector !(V.Vector Val)
   | IByteVector !(U.Vector Word8)
+
+   -- if we ever add a way to register writers for custom
+   -- record types, then error objects should become a
+   -- standard library record type and this should go.
+  | Error String [Val]
+  | Exception LispErr
 
     -- | Used to identify when a recursive binding refers to itself during
     -- initialization, which is an error.
@@ -240,6 +246,8 @@ eqVal _ _ = False
 -- Can't compare mutable pairs (use 'valsSameShape' instead).
 instance Eq Val where (==) = eqVal
 
+-- | Only so that LispErr can derive Eq.
+newtype ExceptionCont = EC (Val -> EM Val)
 data LispErr = NumArgs Arity [Val]
              | TypeMismatch String Val
              | Parser String
@@ -250,9 +258,15 @@ data LispErr = NumArgs Arity [Val]
              | SetImmutable String -- type name
              | CircularList
              | EmptyBody
+
+             | Condition (Maybe ExceptionCont) -- ^ continuable?
+                         Val
+
              | Default String
              | Quit
     deriving (Eq)
+instance Eq ExceptionCont where
+  EC _ == EC _ = True -- let the comparison be by everything else
 
 type ThrowsError = Either LispErr
 
@@ -325,6 +339,9 @@ emThrow :: LispErr -> EM a
 emThrow e = emCont $ \_k s -> pure (Left e, s)
 
 -- | State is recovered from the point that 'emCatch' was invoked.
+-- This function is for the MonadError EM instance and should not
+-- be used in practice, as it doesn't know anything about
+-- continuable exceptions or using the correct dynamic environments.
 emCatch :: EM a -> (LispErr -> EM a) -> EM a
 emCatch (EM m) restore = emCont $ \k s -> do
     -- this leaves the catch frame around until the entire continuation
@@ -335,10 +352,31 @@ emCatch (EM m) restore = emCont $ \k s -> do
          (Left e, _s0) -> runEM (restore e) k a s
          (Right v, s') -> runEM (return v)  k a s'
     -}
+    -- Edit, that doesn't work for type reasons but can work with anIORef.
+    -- But why bother? We don't use this function.
     mr <- runCont m k s
     case mr of
         (Left e, _s0)  -> runCont (unEM (restore e)) k s
         (Right _v, _s) -> pure mr
+
+withExceptionHandler :: (Val -> EM Val) -> EM Val -> EM Val
+withExceptionHandler handler callThunk = emCont $ \k s -> do
+  mv <- runCont (unEM callThunk) (\ x s -> pure (Right x, s)) s
+  case mv of
+    (Left (Condition (Just (EC rck)) obj), s0) ->
+      runCont (unEM $ do v <- handler obj
+                         withExceptionHandler handler (rck v))
+              k -- continuation of new withExceptionHandler frame is same
+                -- as the old one
+              s0 -- restore state to when condition was raised
+    (Left e, s0) ->
+      let obj = case e of
+            Condition _ obj -> obj
+            other -> Exception other
+      in runCont (unEM $ handler obj)
+                 (\ _ s -> pure (Left e, s))
+                 s0
+    (Right v, s1) -> runCont (pure v) k s1
 
 emGet :: EM EvalState
 emGet = emCont $ \k s -> k s s

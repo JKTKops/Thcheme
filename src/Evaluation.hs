@@ -243,7 +243,7 @@ showEvalState es = ("Stack trace:\n" ++) <$> numberedLines
   where numberedLines :: IO String
         -- unlines puts an extra newline at the end, which we
         -- actually want because it looks better.
-        numberedLines = unlines . zipWith (<+>) numbers <$> exprs
+        numberedLines = unlines . map (limit 100) . zipWith (<+>) numbers <$> exprs
         numbers = map (\i -> show i ++ ";") [1 :: Int ..]
 
         -- Note that we use write-shared here. It's possible that the error
@@ -259,6 +259,19 @@ showEvalState es = ("Stack trace:\n" ++) <$> numberedLines
         -- cyclic data will still hang, and write-shared is actually more
         -- efficient than write!
         exprs = forM (stack es) $ \(StackFrame form _) -> writeSharedSH form
+
+        limit :: Int -> String -> String
+        limit _ "" = ""
+        limit n s
+          | n < 3 = s
+          | otherwise = loop n s
+          where
+            loop 3 s = case s of
+              -- len s >= 4
+              (_:_:_:_:_) -> "..."
+              _ -> s
+            loop _ "" = ""
+            loop n (c:cs) = c : loop (n-1) cs
 
 (<+>) :: String -> String -> String
 "" <+> s  = s
