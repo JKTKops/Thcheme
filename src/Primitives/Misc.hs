@@ -99,7 +99,12 @@ ifMacro = Macro (Between 2 3) $
 
 set :: Macro
 set = Macro (Exactly 2) $ \_ -> \case
-  [Symbol var, form] -> evalBody form >>= setVar var
+  [Symbol var, form] -> do
+    val <- evalBody form
+    let renamed = case val of
+          Closure{name=Nothing} -> val{name=Just var}
+          _ -> val
+    setVar var renamed
   [notAtom, _]     -> throwError $ TypeMismatch "symbol" notAtom
   _ -> panic "set arity"
 
