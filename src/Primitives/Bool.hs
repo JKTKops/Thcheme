@@ -38,11 +38,11 @@ boolBinop :: Symbol            -- ^ name of resulting 'Primitive'
           -> (Val -> EM a)     -- ^ impure projection
           -> (a -> a -> Bool)  -- ^ pure binary boolean operation
           -> Primitive
-boolBinop name unwrapper op = Prim name (Exactly 2) $
-  \[left, right] -> do
-    left'  <- unwrapper left
-    right' <- unwrapper right
-    return $ Bool $ left' `op` right'
+boolBinop name unwrapper op = Prim name (AtLeast 2) $
+  \args -> do
+    unwrappedArgs <- mapM unwrapper args
+    let pairedByOp = zipWith op unwrappedArgs $ tail unwrappedArgs
+    return $ Bool $! and pairedByOp
 
 -- TODO: [r7rs]
 -- neither of these functions are defined (surprinsgly?) in the r7rs report.
