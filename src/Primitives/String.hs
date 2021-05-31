@@ -9,8 +9,8 @@ module Primitives.String
 
 import Control.Monad.IO.Class ( MonadIO(..) )
 import Data.IORef (readIORef)
-import Data.List (splitAt) -- if we switch to text, drop this
 import Data.Functor (($>))
+import qualified Data.Text as T
 
 import Val
 import EvaluationMonad
@@ -32,7 +32,7 @@ stringP = Prim "string" (AtLeast 0) stringB
 
 stringB :: Builtin
 stringB [] = String <$> newRef "" -- fast track empty list
-stringB cs = checkChars cs >> String <$> newRef (extract cs)
+stringB cs = checkChars cs >> String <$> newRef (pack $ extract cs)
   where
     checkChars [] = pure ()
     checkChars (Char{} : cs) = checkChars cs
@@ -44,7 +44,10 @@ stringB cs = checkChars cs >> String <$> newRef (extract cs)
 
 stringLengthP :: Primitive
 stringLengthP = Prim "string-length" (Exactly 1) $ \case
-  [val] | stringSH val -> makeBignum . toInteger . length <$> unwrapStringPH val
+  [val] | stringSH val -> makeBignum 
+                          . toInteger
+                          . T.length
+                          <$> unwrapStringPH val
         | otherwise -> throwError $ TypeMismatch "string" val
   _ -> panic "stringLength arity"
 
@@ -54,11 +57,11 @@ stringRefP = Prim "string-ref" (Exactly 2) $ \case
     | stringSH string
     -> do k <- unwrapExactInteger num
           str <- unwrapStringPH string
-          let len = toInteger $ length str
+          let len = toInteger $ T.length str
           if k < 0 || k >= len
             then throwError $ Default 
               $ "string index out of bounds: " ++ show k
-            else return $ Char $ str !! fromInteger k
+            else return $ Char $ str `T.index` fromInteger k
     | otherwise -> throwError $ TypeMismatch "string" string
   _ -> panic "stringRef arity"
 
@@ -66,12 +69,12 @@ stringSetP :: Primitive
 stringSetP = Prim "string-set!" (Exactly 3) $ \case
   [String ref, getExactInteger -> Just k, Char c] -> do
     str <- readRef ref
-    let len = toInteger $ length str
+    let len = toInteger $ T.length str
     if k < 0 || k >= len
       then throwError $ Default
         $ "string index out of bounds: " ++ show k
-      else let (pre, _ : post) = splitAt (fromInteger k) str
-               adjusted = pre ++ c : post
+      else let (pre, T.tail -> post) = T.splitAt (fromInteger k) str
+               adjusted = pre <> T.singleton c <> post
            in writeRef ref adjusted $> Char c
   [IString _, Number _, Char _] -> throwError $ SetImmutable "string"
   [string, num, char]
@@ -91,7 +94,7 @@ stringSH String{} = True
 stringSH IString{} = True
 stringSH _ = False
 
-unwrapStringPH :: MonadIO m => Val -> m String
+unwrapStringPH :: MonadIO m => Val -> m Text
 unwrapStringPH (IString s) = return s
 unwrapStringPH (String ref) = liftIO $ readIORef ref
 unwrapStringPH _ = panic "unwrapString: not a string"

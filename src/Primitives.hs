@@ -12,6 +12,7 @@ import qualified Primitives.Misc             as Misc
 import qualified Primitives.List             as List
 import qualified Primitives.Math             as Math
 import qualified Primitives.String           as String
+--import qualified Primitives.Symbol           as Symbol
 import qualified Primitives.TypeCheck        as TypeCheck
 import qualified Primitives.TypeTransformers as TypeCast
 import qualified Primitives.Vector           as Vector
@@ -21,7 +22,7 @@ import qualified Expander.SyntaxRules        as SyntaxRules
 -- temporary
 import Types
 
-primitives :: HashMap String Val
+primitives :: HashMap Symbol Val
 primitives = foldr1 Map.union
                 [ primitivesMap
                 , Map.mapWithKey makeMacroPrimitive macros
@@ -35,6 +36,7 @@ primitives = foldr1 Map.union
       , Error.primitives
       , List.primitives
       , String.primitives
+      --, Symbol.primitives
       , Vector.primitives
       , TypeCheck.primitives
       , TypeCast.primitives
@@ -47,8 +49,8 @@ primitives = foldr1 Map.union
       | prim@(Prim name _ _) <- primitivesList
       ]
 
-macros :: HashMap String Macro
+macros :: HashMap Symbol Macro
 macros = Map.fromList $ SyntaxRules.macros ++ Misc.macros
 
-makeMacroPrimitive :: String -> Macro -> Val
+makeMacroPrimitive :: Symbol -> Macro -> Val
 makeMacroPrimitive name (Macro arity func) = PrimMacro arity func name

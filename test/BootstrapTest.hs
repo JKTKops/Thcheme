@@ -6,6 +6,7 @@ import Test.Tasty.HUnit
 import Data.IORef
 import qualified Data.HashMap.Strict as Map
 
+import Val
 import Bootstrap
 import Environment (nullEnv)
 import Primitives
@@ -38,4 +39,5 @@ testPrimitiveEnvSameKeys :: TestTree
 testPrimitiveEnvSameKeys = testCase "Prim. env has same keys as prim. list" $
     do let keys = map fst $ Map.toList primitives
        env <- primitiveBindings >>= readIORef
-       mapM_ (\key -> Map.member key env @? "Prim. env does not contain " ++ key) keys
+       mapM_ (\key -> Map.member key env @? "Prim. env does not contain "
+                                            ++ symbolAsString key) keys

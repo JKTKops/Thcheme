@@ -1,13 +1,13 @@
 module Primitives.TypeTransformers (primitives) where
 
 import Data.Char (chr, ord)
+import qualified Data.Text as T
 import qualified Data.Vector as V
 import Control.Monad.Except (throwError)
 
 import Val
 import EvaluationMonad
-import Primitives.String hiding (primitives)
-import Primitives.Unwrappers (unwrapExactInteger)
+import Primitives.Unwrappers (unwrapChar, unwrapExactInteger, unwrapStr)
 
 primitives :: [Primitive]
 primitives = [ typeTransformer name transform 
@@ -26,7 +26,7 @@ primitives = [ typeTransformer name transform
                  ]
              ]
 
-typeTransformer :: String -> (Val -> EM Val) -- transformer
+typeTransformer :: Symbol -> (Val -> EM Val) -- transformer
                 -> Primitive
 typeTransformer name t = Prim name (Exactly 1) $
   \[x] -> t x
@@ -36,17 +36,15 @@ charToNumber (Char c) = return . makeBignum . fromIntegral $ ord c
 charToNumber notChar  = throwError $ TypeMismatch "char" notChar
 
 charToString :: Val -> EM Val
-charToString (Char c) = String <$> newRef [c]
+charToString (Char c) = String <$> newRef (T.singleton c)
 charToString notChar  = throwError $ TypeMismatch "char" notChar
 
 listToString :: Val -> EM Val
 listToString v = do
     lst <- getListOrError v
-    fmap String $ mapchars lst >>= newRef
+    fmap String $ mapchars lst >>= newRef . pack
   where
-    mapchars []              = return []
-    mapchars (Char c : cs) = (c :) <$> mapchars cs
-    mapchars (notChar : _)   = throwError $ TypeMismatch "char" notChar
+    mapchars = mapM unwrapChar
 
 listToVector :: Val -> EM Val
 listToVector v = do
@@ -59,18 +57,16 @@ numberToChar v = do
   return $ Char $ chr $ fromIntegral i
 
 stringToSymbol :: Val -> EM Val
-stringToSymbol val
-  | stringSH val = Symbol <$> unwrapStringPH val
-  | otherwise = throwError $ TypeMismatch "string" val
+stringToSymbol val = Symbol <$> unwrapStr val
 
 symbolToString :: Val -> EM Val
-symbolToString (Symbol s) = pure $ IString s
+symbolToString (Symbol s) = pure $ IString $ symbolName s
 symbolToString v = throwError $ TypeMismatch "symbol" v
 
 -- R7RS is unclear if these strings should be mutable. I'm guessing that in
 -- the absence of an explicit suggestion, we should make them mutable.
 numberToString :: Val -> EM Val
-numberToString (Number n) = String <$> newRef (show n)
+numberToString (Number n) = String <$> newRef (pack $ show n)
 numberToString notNum     = throwError $ TypeMismatch "number" notNum
 
 -- TODO: the 'start' and 'end' arguments should probably be added here,
@@ -84,23 +80,19 @@ numberToString notNum     = throwError $ TypeMismatch "number" notNum
 -- of stringToListP will allocate a fresh list without allocating an
 -- intermediate string.
 stringToList :: Val -> EM Val
-stringToList val
-  | stringSH val = unwrapStringPH val >>= makeMutableList . map Char
-  | otherwise = throwError $ TypeMismatch "string" val
+stringToList val = unwrapStr val >>= makeMutableList . map Char . unpack
 
 -- TODO [r7rs]
 -- needs access to the new parser to read numbers
 
 -- | Pretty broken, only accepts strings containing integers in base 10.
 stringToNumber :: Val -> EM Val
-stringToNumber str
-  | stringSH str = do
-    s <- unwrapStringPH str
-    let parsed = reads s
+stringToNumber str = do
+    s <- unwrapStr str
+    let parsed = reads $ unpack s
     if null parsed || snd (head parsed) /= ""
       then return $ Bool False
       else return . makeBignum . fst $ head parsed
-  | otherwise = throwError $ TypeMismatch "string" str
 
 vectorToList :: Val -> EM Val
 vectorToList (IVector v) = makeMutableList $ V.toList v

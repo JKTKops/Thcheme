@@ -19,6 +19,7 @@ import Primitives.String hiding (primitives)
 
 -- Used to implement 'equals?'
 import Data.Functor ((<&>))
+import Data.String (fromString)
 import Data.UnionFind.IO (fresh, repr, union, Point)
 import qualified Data.HashTable.IO as H
 import System.Mem.StableName (StableName, makeStableName)
@@ -81,17 +82,17 @@ primBuilders = [ OrdBuilder makeNumPrim
 
 makePrim :: String -- type name
    -> Bool   -- appends '?' if False, nothing if True
-   -> (String -> (a -> a -> Bool) -> Primitive)
+   -> (Symbol -> (a -> a -> Bool) -> Primitive)
    -> (String, a -> a -> Bool)
    -> Primitive
-makePrim tyname isNum primGen (opName, op) = primGen primName op
+makePrim tyname isNum primGen (opName, op) = primGen (fromString primName) op
   where primName = tyname ++ opName ++ suffix
         suffix | not isNum = "?"
                | otherwise = ""
 
 makeNumPrim :: (String, RealNumber -> RealNumber -> Bool) -> Primitive
 makeNumPrim = makePrim "" True realBoolBinop
-makeStrPrim :: (String, String -> String -> Bool) -> Primitive
+makeStrPrim :: (String, Text -> Text -> Bool) -> Primitive
 makeStrPrim = makePrim "string" False strBoolBinop
 makeCharPrim :: (String, Char -> Char -> Bool) -> Primitive
 makeCharPrim = makePrim "char" False charBoolBinop
@@ -101,13 +102,13 @@ makeCharPrim = makePrim "char" False charBoolBinop
 -- TODO: none of these satisfy r7rs, which says the predicate should be
 -- satisfied pairwise along a whole list of elements; we should not use
 -- 'boolBinop'.
-numBoolBinop :: String -> (Number -> Number -> Bool) -> Primitive
+numBoolBinop :: Symbol -> (Number -> Number -> Bool) -> Primitive
 numBoolBinop name = boolBinop name unwrapNum
-realBoolBinop :: String -> (RealNumber -> RealNumber -> Bool) -> Primitive
+realBoolBinop :: Symbol -> (RealNumber -> RealNumber -> Bool) -> Primitive
 realBoolBinop name = boolBinop name unwrapRealNum
-strBoolBinop :: String -> (String -> String -> Bool) -> Primitive
+strBoolBinop :: Symbol -> (Text -> Text -> Bool) -> Primitive
 strBoolBinop name = boolBinop name unwrapStr
-charBoolBinop :: String -> (Char -> Char -> Bool) -> Primitive
+charBoolBinop :: Symbol -> (Char -> Char -> Bool) -> Primitive
 charBoolBinop name = boolBinop name unwrapChar
 
 -- EQUIVALENCE FUNCTIONS
@@ -117,7 +118,7 @@ charBoolBinop name = boolBinop name unwrapChar
 -- TODO [r7rs]
 -- write tests
 -- Number equality is currently defined in the sense of =,
--- but exact an inexact numbers should never compare equal.
+-- but exact and inexact numbers should never compare equal.
 eqvSSH :: MonadIO m => Val -> Val -> m Bool
 eqvSSH (Bool x)   (Bool y)   = return $ x == y
 eqvSSH (Number x) (Number y) = return $ x == y
@@ -144,7 +145,11 @@ eqSSH :: MonadIO m => Val -> Val -> m Bool
 -- That's possible - we just have to be careful to make the names of the
 -- symbols the memoized part, and not the whole symbol including library
 -- information (once we have libraries).
-eqSSH (Symbol x) (Symbol y) = return $ x == y
+
+-- note: It's important that we compare all types of Symbols, since
+-- _inside_ the expander there will be frequent eq? comparisons of
+-- bindings.
+eqSSH (Symbol x) (Symbol y) = pure $ x == y
 eqSSH !v1 !v2 = liftIO $ do
   n1 <- makeStableName $! v1
   n2 <- makeStableName $! v2

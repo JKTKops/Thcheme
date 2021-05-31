@@ -26,12 +26,12 @@ import Primitives
 import Primitives.WriteLib (writeSharedSH, ushowString)
 
 instance Serial IO Val where
-    series = cons1 Symbol
+    series = cons1 (Symbol . pack)
                 \/ (series >>= lift . unsafeEMtoIO . makeMutableList)
                 \/ (makeImmutableList <$> series)
                 \/ cons1 Number
-                \/ cons1 IString
-                \/ (series >>= lift . fmap String . newIORef)
+                \/ cons1 (IString . pack)
+                \/ (series >>= lift . fmap String . newIORef . pack)
                 \/ cons1 Char
                 \/ cons1 Bool
                 \/ cons0 Undefined
@@ -49,8 +49,8 @@ instance Serial IO LispErr where
                 -- Parser ParseError left off for now
                 \/ cons1 BadSpecialForm
                 \/ cons2 NotFunction
-                \/ cons2 UnboundVar
-                \/ cons1 EvaluateDuringInit
+                \/ cons2 (\str name -> UnboundVar str (pack name))
+                \/ cons1 (EvaluateDuringInit . pack)
                 \/ cons1 Default
                 \/ cons0 Quit
 
@@ -93,9 +93,9 @@ instance Arbitrary Val where
             -- and then we need a helper that only generates immutable data.
                             ]
               where subval = lispval' $ n `div` 2
-            simpleCons = [ Symbol <$> arbitrary
+            simpleCons = [ Symbol . pack <$> arbitrary
                          , Number <$> arbitrary
-                         , IString <$> arbitrary
+                         , IString . pack <$> arbitrary
                          , Char <$> arbitrary
                          , Bool <$> arbitrary
                          ]
@@ -106,8 +106,8 @@ instance Arbitrary LispErr where
                       , liftM2 TypeMismatch arbitrary arbitrary
                       , BadSpecialForm <$> arbitrary
                       , liftM2 NotFunction arbitrary arbitrary
-                      , liftM2 UnboundVar arbitrary arbitrary
-                      , EvaluateDuringInit <$> arbitrary
+                      , liftM2 UnboundVar arbitrary (pack <$> arbitrary)
+                      , EvaluateDuringInit . pack <$> arbitrary
                       , Default <$> arbitrary
                       , return Quit
                       ]
@@ -166,10 +166,10 @@ testShowPrimitives = testCase "Primitives show correctly" $
         (\(key, func) -> 
             let str = case func of
                   Primitive arity _ _ -> "#<procedure "
-                                           ++ key ++ " "
+                                           ++ symbolAsString key ++ " "
                                            ++ displayArity arity
                                            ++ ">"
-                  PrimMacro {} -> "#<macro " ++ key ++ ">"
+                  PrimMacro {} -> "#<macro " ++ symbolAsString key ++ ">"
 
             in show func @?= str)
         -- Test only some of the primitives list as eventually it will be quite large
@@ -187,7 +187,7 @@ testShowPrimitives = testCase "Primitives show correctly" $
     between 0 0  = ""
     between 0 1  = "[_]"
     between 0 hi = "[_] " ++ between 0 (hi - 1)
-    between n hi = "_ " ++ between (n-1) hi
+    between n hi = "_ " ++ between (n-1) (hi - 1)
 
 testShowFunctions :: TestTree
 testShowFunctions = testCase "Functions show correctly" $
@@ -223,9 +223,10 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
         (==) <$> unsafeEMtoIO (referenceShowV input) <*> writeSharedSH input
   where referenceShowV = freezeList >=> referenceShow
         -- im not sure that this is right if s has non-ascii characters
-        referenceShow (FNotList (Symbol s)) = pure s
+        -- TODO [r7rs]: it's explicitly wrong, but so is 'write' atm.
+        referenceShow (FNotList (Symbol s)) = pure $ unpack s
         referenceShow (FNotList (Number n)) = pure $ showNumber n
-        referenceShow (FNotList (IString s)) = pure $ ushowString s ""
+        referenceShow (FNotList (IString s)) = pure $ ushowString (unpack s) ""
         referenceShow (FNotList (Char c)) = pure $ case c of
             ' '  -> "#\\space"
             '\t' -> "#\\tab"
@@ -235,7 +236,7 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
         referenceShow (FNotList (Bool b)) = pure $
             if b then "#t" else "#f"
         referenceShow (FNotList (Vector v)) =
-            (\es -> "#(" ++ unwords es ++ ")") 
+            (\es -> "#(" ++ unwords es ++ ")")
             <$> (liftIO (V.freeze v) >>= mapM referenceShowV . V.toList)
 
         referenceShow (FList vs) = (\es -> "(" ++ unwords es ++ ")") 

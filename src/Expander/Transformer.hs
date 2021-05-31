@@ -24,7 +24,7 @@ import Primitives.String (stringSH)
 import EvaluationMonad
 
 data Pattern
-  = IdentPat String
+  = IdentPat Symbol
   | ConstPat Val
   | WildPat
   | ListPat [Pattern] (Maybe Pattern)
@@ -40,8 +40,8 @@ data Pattern
       [Pattern]
   deriving Show
 
-data CompileConfig = CompileConfig { ellipsis :: String, literals :: S.Set String }
-data TemCompileConfig = TemCompileConfig { ellipsis :: String, patVars :: S.Set PatternVar }
+data CompileConfig = CompileConfig { ellipsis :: Symbol, literals :: S.Set Symbol }
+data TemCompileConfig = TemCompileConfig { ellipsis :: Symbol, patVars :: S.Set PatternVar }
 
 compilePattern :: CompileConfig -> Val -> EM (Pattern, S.Set PatternVar)
 compilePattern CompileConfig{ellipsis = dots, literals = lits} v
@@ -57,7 +57,7 @@ compilePattern CompileConfig{ellipsis = dots, literals = lits} v
             test <- gets (S.member s)
             if test
               then lift $ throwError $ Default $ 
-                "identifier " ++ s ++ " appears multiple times in pattern"
+                "identifier " ++ symbolAsString s ++ " appears multiple times in pattern"
               else modify (S.insert s) $> IdentPat s
         -- todo: if s is in the list of literals, make a ConstPat instead
       datum
@@ -109,7 +109,7 @@ compilePattern CompileConfig{ellipsis = dots, literals = lits} v
               vp <- compile v
               compileElemList rest (vp:bf, el, af, dot)
 
-type PatternVar = String
+type PatternVar = Symbol
 data Match a = Here a | Deeper [Match a] deriving Show
 type Matching = M.HashMap PatternVar (Match Val)
 
@@ -190,7 +190,7 @@ match p v = runMaybeT $ match' p v
       return $ M.unions $ finalEMatching : matchingBefore ++ matchingAfter
 
 data Template
-  = IdentTemplate String
+  = IdentTemplate Symbol
   | ConstantTemplate Val
   | ListTemplate [Element] (Maybe Template)
   | VectorTemplate [Element]
@@ -263,7 +263,7 @@ transcribe t outerMatching = template t outerMatching
       Nothing -> pure $ Symbol sym
       Just (Here v) -> pure v
       Just (Deeper _) -> throwError $ Default $ 
-        "symbol " ++ sym ++ " badly nested in macro template"
+        "symbol " ++ symbolAsString sym ++ " badly nested in macro template"
     template (ConstantTemplate v) _ = pure v
     template (ListTemplate es dt) m = do
       vs <- concat <$> mapM (flip element m) es

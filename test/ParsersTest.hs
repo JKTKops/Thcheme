@@ -286,7 +286,7 @@ atomParserTests = testGroup "Parsing Symbols" $ map testSymbolParser
     [ let symbol = "atom" in mkSymbolTest
         { testName = "Simple atom"
         , input = symbol
-        , expectedContents = Just symbol
+        , expectedContents = Just $ pack symbol
         }
     , let symbol = "#name" in mkSymbolTest
         { testName = "Symbol with #"
@@ -295,12 +295,12 @@ atomParserTests = testGroup "Parsing Symbols" $ map testSymbolParser
     , let symbol = "!@#$%&*-_=+|:\\/?<>~" in mkSymbolTest
         { testName = "Symbol with all symbols"
         , input = symbol
-        , expectedContents = Just symbol
+        , expectedContents = Just $ pack symbol
         }
     , let symbol = "t1" in mkSymbolTest
         { testName = "Symbol with digit"
         , input = symbol
-        , expectedContents = Just symbol
+        , expectedContents = Just $ pack symbol
         }
     , mkSymbolTest
         { testName = "Symbol starts with digit"
@@ -321,7 +321,7 @@ atomParserTests = testGroup "Parsing Symbols" $ map testSymbolParser
     , let symbol = "Complex#Valid15Symbol\\Name8?" in mkSymbolTest
         { testName = "Complex valid atom"
         , input = symbol
-        , expectedContents = Just symbol
+        , expectedContents = Just $ pack symbol
         }
     , mkSymbolTest
         { testName = "vertical bar symbol"
@@ -610,10 +610,10 @@ run = labeledReadExpr ""
 parseSucceeds :: String -> Bool
 parseSucceeds s = isRight $ run s
 
-testStringParser :: TestBuilder String -> TestTree
+testStringParser :: TestBuilder Text -> TestTree
 testStringParser tb = testParser tb getString
 
-testSymbolParser :: TestBuilder String -> TestTree
+testSymbolParser :: TestBuilder Symbol -> TestTree
 testSymbolParser tb = testParser tb getSymbol
 
 testNumberParser :: TestBuilder Number -> TestTree
@@ -668,11 +668,11 @@ testParser testBuilder decons =
             step "Verifying failure"
             isLeft parse @? "Parse succeeded on: " ++ input testBuilder
 
-getString :: Val -> Maybe String
+getString :: Val -> Maybe Text
 getString (IString s) = Just s
 getString _          = Nothing
 
-getSymbol :: Val -> Maybe String
+getSymbol :: Val -> Maybe Symbol
 getSymbol (Symbol s) = Just s
 getSymbol _        = Nothing
 

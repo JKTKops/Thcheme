@@ -309,10 +309,10 @@ evalTests = testGroup "eval" $ map mkEvalTest
         , input    = unlines [
                 concat [ "(define (test x)"
                        , " (let ((go (lambda (y) x))"
-                       , "       (r nil))"
-                       , "  (set! r (cons (go nil) r))"
+                       , "       (r ()))"
+                       , "  (set! r (cons (go ()) r))"
                        , "  (set! x (+ x 1))"
-                       , "  (cons (go nil) r)))"
+                       , "  (cons (go ()) r)))"
                        ]
                 , "(test 0)"
                 ]
@@ -431,14 +431,19 @@ outputEquals _ _ = pure False
 -- | This is a wrapper on equalSSH that overwrites the behavior on primitives
 -- and closures. Note that if a value /contains/ a primitive or closure,
 -- then the sense of equalSSH will be used to compare those internal values.
--- However this is plenty sufficient for testing, where we (usually) just
--- want to check that we evaluated to the primitive or closure with the right
--- name.
+-- However this is plenty sufficient for testing, where closure results mean
+-- we want to check that we evaluated to the primitive or closure with the
+-- right name (and argument names).
+-- If we compare closures in the sense of equalSSH, we will get false
+-- negatives, because equalSSH compares identifiers by whole name, after
+-- expander mangling.
 valsSameShape :: Val -> Val -> IO Bool
 valsSameShape (Primitive _ _ n) (Primitive _ _ n') = return $ n == n'
 valsSameShape (Closure p v b _ n) (Closure p' v' b' _ n') =
-  if p == p' && v == v' && n == n'
-    then allM id $ zipWith valsSameShape b b'
+  if map symbolName p == map symbolName p'
+      && fmap symbolName v == fmap symbolName v'
+      && fmap symbolName n == fmap symbolName n'
+    then pure True
     else pure False
 valsSameShape x y = equalSSH x y
 
@@ -565,20 +570,23 @@ mkApplyTest tb = testCase (testNameA tb) $ do
 
 facConstantSpace :: TestTree
 facConstantSpace = testCase "factorial executes in constant space" $ do
-    let Right defFac = readExpr $ unlines 
+    let    -- we shouldn't need this once standard libraries are fixed
+        Right impRaise = readExpr "(import (primitives raise))"
+        Right defFac = readExpr $ unlines 
           [ "(define (fac n)"
           , "  (define (go acc n)"
           , "    (if (= n 0)"
-          , "        (error acc)"
+          , "        (raise acc)"
           , "        (go (* n acc) (- n 1))))"
           , "  (go 1 n))"
           ]
         Right exec = readExpr "(fac 10)"
     primEnv <- primitiveBindings
     initState <- initEvalState primEnv noOpts
+    evaluateExpr initState impRaise
     evaluateExpr initState defFac
     (r, s) <- evaluateExpr initState exec
-    r @?= Left (Default "3628800")
+    r @?= Left (Condition Nothing $ Number 3628800)
     assertBool "stack is too big" $ length (stack s) == 1
     -- every call is a tail call
     -- (fac tail-calls go, tail-calls go..., tail-calls error)

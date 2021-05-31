@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ViewPatterns #-}
 module Types
     ( Env, GlobalEnv, LocalEnv
     , Arity (..)
@@ -7,7 +8,8 @@ module Types
     , Builtin
     , Primitive (..)
     , Macro (..)
-    , Val (..), RealNumber (..), Number (..)
+    , Val (..), Symbol, RealNumber (..), Number (..)
+    , symbolName, symbolAsString
     , Ref
     , LispErr (..), ExceptionCont (..)
     , ThrowsError
@@ -41,6 +43,8 @@ import Data.Complex                   ( Complex(..) )
 import Data.HashMap.Strict            ( HashMap )
 import Data.IORef                     ( IORef )
 import Data.Ratio                     ( (%), denominator, numerator )
+import Data.Text                      ( Text, unpack )
+import qualified Data.Text           as T
 import qualified Data.Vector         as V
 import qualified Data.Vector.Mutable as V
 import qualified Data.Vector.Unboxed as U
@@ -63,7 +67,7 @@ scope structure and removes shadowed bindings. However, That _usually_
 isn't significantly smaller, and currently we pay an extra dereference for
 every single name lookup. Low-hanging fruit?
 -}
-type Env = IORef (HashMap String (IORef Val))
+type Env = IORef (HashMap Symbol (IORef Val))
 type GlobalEnv = Env
 type LocalEnv  = [Env] -- ^ stack of environments forms local env
 type Ref = IORef
@@ -77,7 +81,7 @@ data Arity
   deriving (Eq, Ord)
 type InTail = Bool
 type Builtin = [Val] -> EM Val
-data Primitive = Prim String Arity Builtin
+data Primitive = Prim Symbol Arity Builtin
 -- The additional 'InTail' flag is necessary for macros like 'begin'
 -- and 'if' which need to use a different 'eval' behavior if they are
 -- in tail position. We do global CPS anyway (EM monad) but this information
@@ -102,26 +106,26 @@ data Macro = Macro Arity (InTail -> Builtin)
 -- Invariant: All objects contained in an IPair or IVector are immutable.
 --   Note that this is implicitly transitive.
 data Val
-  = Symbol String
+  = Symbol Symbol
 
   | Number !Number
 
-  | String !(Ref String)
-  | IString String
+  | String !(Ref Text)
+  | IString Text
   | Char Char
   | Bool Bool
 
-  | Primitive Arity Builtin String
-  | PrimMacro Arity (InTail -> Builtin) String
+  | Primitive Arity Builtin Symbol
+  | PrimMacro Arity (InTail -> Builtin) Symbol
   | Continuation DynamicPoint (Val -> EM Val)
   | Closure
-     { params :: [String]
-     , vararg :: Maybe String
+     { params :: [Symbol]
+     , vararg :: Maybe Symbol
      , body   :: [Val]
      , cloEnv :: LocalEnv
-     , name   :: Maybe String
+     , name   :: Maybe Symbol
      }
-  | MacroTransformer (Maybe String) (Val -> EM Val)
+  | MacroTransformer (Maybe Symbol) (Val -> EM Val)
 
   | Port Handle
 
@@ -136,7 +140,7 @@ data Val
    -- if we ever add a way to register writers for custom
    -- record types, then error objects should become a
    -- standard library record type and this should go.
-  | Error String [Val]
+  | Error Text [Val]
   | Exception LispErr
 
     -- | Used to identify when a recursive binding refers to itself during
@@ -149,9 +153,26 @@ data Val
     -- eventually get sent through `eval`, which will raise an error.
   | MultipleValues [Val]
 
+type Symbol = Text
+
+symbolName :: Symbol -> Text
+symbolName (T.uncons -> Just ('~', name)) = name
+symbolName (T.uncons -> Just ('&', name)) =
+  let pieces = T.splitOn "~" name
+      -- pieces are some number of components from the name
+      -- if it contained tildes, followed by two components
+      -- which are the unique identifiers.
+  in mconcat $ reverse $ drop 2 $ reverse pieces
+symbolName primName = primName
+
+-- | Converts a symbol to its human-readable name as a string.
+-- Mostly useful for Show/write and in 'panic' messages.
+symbolAsString :: Symbol -> String
+symbolAsString = unpack . symbolName
+
 -- | Scheme numbers. Note that there is no Ord Number instance;
 -- complex numbers are not orderable and Scheme comparisons of
--- complex numbers always return #f.
+-- complex numbers are errors.
 data Number
   = Real {-# UNPACK #-}!RealNumber
   | Complex {-# UNPACK #-}!(Complex RealNumber)
@@ -253,8 +274,8 @@ data LispErr = NumArgs Arity [Val]
              | Parser String
              | BadSpecialForm Val
              | NotFunction String Val
-             | UnboundVar String String
-             | EvaluateDuringInit String
+             | UnboundVar String Symbol
+             | EvaluateDuringInit Symbol
              | SetImmutable String -- type name
              | CircularList
              | EmptyBody
@@ -264,7 +285,25 @@ data LispErr = NumArgs Arity [Val]
 
              | Default String
              | Quit
-    deriving (Eq)
+
+-- This is not derived _purely_ so that we can compare
+-- symbols by symbolName in two cases. Annoying.
+instance Eq LispErr where
+  NumArgs a1 vs1        == NumArgs a2 vs2        = a1 == a2 && vs1 == vs2
+  TypeMismatch s1 v1    == TypeMismatch s2 v2    = s1 == s2 && v1 == v2
+  Parser s1             == Parser s2             = s1 == s2
+  BadSpecialForm v1     == BadSpecialForm v2     = v1 == v2
+  NotFunction s1 v1     == NotFunction s2 v2     = s1 == s2 && v1 == v2
+  UnboundVar s1 n1      == UnboundVar s2 n2      = s1 == s2 && symbolName n1 == symbolName n2
+  EvaluateDuringInit n1 == EvaluateDuringInit n2 = symbolName n1 == symbolName n2
+  SetImmutable s1       == SetImmutable s2       = s1 == s2
+  CircularList          == CircularList          = True
+  EmptyBody             == EmptyBody             = True
+  Condition _ v1        == Condition _ v2        = v1 == v2
+  Default s1            == Default s2            = s1 == s2
+  Quit == Quit = True
+  _ == _ = False
+
 instance Eq ExceptionCont where
   EC _ == EC _ = True -- let the comparison be by everything else
 

@@ -16,6 +16,7 @@
 
 {
 {-# OPTIONS_GHC -funbox-strict-fields #-}
+{-# LANGUAGE NoOverloadedStrings #-}
 module Parsers.Lexer where
 
 import Prelude hiding (lex)

@@ -8,7 +8,7 @@ import System.IO ( IOMode (..)
 import Val
 import EvaluationMonad
 import Parsers (readExpr, load)
-import Primitives.String (stringSH, unwrapStringPH)
+import Primitives.Unwrappers (unwrapStr)
 import Primitives.WriteLib (writeSH, writeSimpleSH, writeSharedSH)
 
 primitives :: [Primitive]
@@ -23,13 +23,12 @@ primitives = [ openInputFile
              , readAll
              ]
 
-makePort :: String -> IOMode -> Primitive
+makePort :: Symbol -> IOMode -> Primitive
 makePort name mode = Prim name (Exactly 1) $ \case
-  [val] | stringSH val -> do
-          filename <- unwrapStringPH val
-          Port <$> liftIO (openFile filename mode)
-        | otherwise -> throwError $ TypeMismatch "string" val
-  _ -> panic $ "makePort@" ++ name ++ " arity"
+  [val] -> do
+    filename <- unwrapStr val
+    Port <$> liftIO (openFile (unpack filename) mode)
+  _ -> panic $ "makePort@" ++ symbolAsString name ++ " arity"
 
 openInputFile, openOutputFile :: Primitive
 openInputFile  = makePort "open-input-file" ReadMode
@@ -51,7 +50,7 @@ readP = Prim "read" (Between 0 1) read
 
 readLineP :: Primitive
 readLineP = Prim "read-line" (Exactly 0) $ \case
-    [] -> liftIO getLine >>= fmap String . newRef
+    [] -> liftIO getLine >>= fmap String . newRef . pack
     _ -> panic "readLine arity"
 
 {- TODO: [r7rs]
@@ -95,17 +94,15 @@ mkWriter writer = builtin
 
 readContents :: Primitive
 readContents = Prim "read-contents" (Exactly 1) $ \case
-  [val] | stringSH val -> do
-          filename <- unwrapStringPH val
-          contents <- liftIO (readFile filename)
-          String <$> newRef contents
-        | otherwise -> throwError $ TypeMismatch "string" val
+  [val] -> do
+    filename <- unpack <$> unwrapStr val
+    contents <- liftIO (readFile filename)
+    String <$> newRef (pack contents)
   _ -> panic "readContents arity"
 
 readAll :: Primitive
 readAll = Prim "read-all" (Exactly 1) $ \case
-  [val] | stringSH val -> do
-          filename <- unwrapStringPH val
-          load filename >>= makeMutableList
-        | otherwise -> throwError $ TypeMismatch "string" val
+  [val] -> do
+    filename <- unpack <$> unwrapStr val
+    load filename >>= makeMutableList
   _ -> panic "readAll arity"

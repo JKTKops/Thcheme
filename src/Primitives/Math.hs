@@ -25,7 +25,7 @@ remP = realBinop1 "remainder" rem
 --   The primitive can only cause type errors;
 --   Too many arguments will be folded over the operation;
 --   none will use the default value.
-numericBinop :: String
+numericBinop :: Symbol
              -> (Number -> Number -> Number)
              -> Number
              -> Primitive
@@ -33,7 +33,7 @@ numericBinop name op start = Prim name (AtLeast 0) $
   fmap (Number . foldl' op start) . mapM unwrapNum
 
 -- | Same as numericBinop, except at least one arg must be given.
-realBinop1 :: String
+realBinop1 :: Symbol
               -> (RealNumber -> RealNumber -> RealNumber)
               -> Primitive
 realBinop1 name op = Prim name (AtLeast 1) $
@@ -68,7 +68,7 @@ negateP :: Primitive
 negateP = Prim "negate" (Exactly 1) $
   \[x] -> Number . negate <$> unwrapNum x
 
-numericPredicate :: String -> (RealNumber -> Bool) -> Primitive
+numericPredicate :: Symbol -> (RealNumber -> Bool) -> Primitive
 numericPredicate name p = predicateM name $ fmap p . unwrapRealNum
 
 zeroCheck :: Primitive
@@ -189,7 +189,7 @@ liftFloatingMonop f = asBuiltin
           return $ Number $ f nx
         asBuiltin _ = panic "liftFloatingMonop arity"
 
-makeFloatingMonopPrim :: (String, Number -> Number) -> Primitive
+makeFloatingMonopPrim :: (Symbol, Number -> Number) -> Primitive
 makeFloatingMonopPrim (name, f) = Prim name (Exactly 1) $ liftFloatingMonop f
 
 floatingMonopPs :: [Primitive]

@@ -144,7 +144,7 @@ panic :: HasCallStack => String -> a
 panic msg = error $ "Panic! The \"impossible\" happened.\n" ++ msg
 
 -- | Searches the environment stack top-down for a symbol
-getVar :: String -> EM Val
+getVar :: Symbol -> EM Val
 getVar var = do
     gbl <- gets globalEnv
     lcl <- gets localEnv
@@ -164,7 +164,7 @@ getVar var = do
 -- | Search the environment top-down for a symbol
 --   If it's found, bind it to the given Val
 --   Otherwise, create a new binding in the top-level
-setVar :: String -> Val -> EM Val
+setVar :: Symbol -> Val -> EM Val
 setVar var val = do
     mEnv <- search var
     case mEnv of
@@ -173,7 +173,7 @@ setVar var val = do
             Right v <- liftIO . runExceptT $ Env.defineVar e var val
             return v
 
-search :: String -> EM (Maybe Env)
+search :: Symbol -> EM (Maybe Env)
 search var = do
     lcl <- gets localEnv
     me <- loop lcl
@@ -194,7 +194,7 @@ search var = do
 
 -- | Define a var in the innermost environment in preparation for
 -- a function being 'define'd to capture itself.
-setVarForCapture :: String -> EM ()
+setVarForCapture :: Symbol -> EM ()
 setVarForCapture name = void $
   defineVar name Undefined
 
@@ -202,7 +202,7 @@ setVarForCapture name = void $
 --
 -- Use 'setVar' to set a local var that might not be from the innermost
 -- environment.
-defineVar :: String -> Val -> EM Val
+defineVar :: Symbol -> Val -> EM Val
 defineVar var val = do
     lclStack <- gets localEnv
     env <- case lclStack of

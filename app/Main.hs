@@ -19,10 +19,11 @@ main = do
 runOne :: [String] -> IO ()
 runOne (filename : args) = do
     primEnv <- primitiveBindings
-    env' <- bindVar primEnv "args" $ makeImmutableList $ map IString args
+    env' <- bindVar primEnv "args" $ makeImmutableList 
+                                   $ map (IString . pack) args
     initState <- initEvalState env' noOpts
     result <- evaluateExpr initState $
-        makeImmutableList [Symbol "load", IString filename]
+        makeImmutableList [Symbol "load", IString $ pack filename]
     case result of
         (Left{},_) -> 
             showResultIO result >>= putStrLn

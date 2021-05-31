@@ -7,7 +7,7 @@ import Control.Monad.State.Strict
 import Control.Monad.Trans.Maybe (MaybeT(..), runMaybeT)
 import Data.Char (isSpace)
 import Data.Function ((&))
-import Data.List (isPrefixOf, sort)
+import Data.List (isPrefixOf)
 
 import qualified System.Console.Haskeline as CLI
 import System.IO (hFlush, stdout)
@@ -142,7 +142,7 @@ searchFunc :: String -> M [CLI.Completion]
 searchFunc str = do
   env <- gets (globalEnv . replEvalState)
   keys <- liftIO $ Env.keys env
-  let candidates = filter (str `isPrefixOf`) $ sort keys
+  let candidates = filter (str `isPrefixOf`) $ map symbolAsString keys
       completions = map CLI.simpleCompletion candidates
   return completions
 

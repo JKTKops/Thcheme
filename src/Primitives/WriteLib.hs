@@ -49,9 +49,10 @@ showErrIO :: LispErr -> IO String
 showErrIO = fmap (prefix ++) . mkMsgFor
   where
     prefix = "Error: "
-    mkMsgFor (UnboundVar msg name) = pure $ msg ++ " unbound symbol" `colonAnd` name
+    mkMsgFor (UnboundVar msg name)
+      = pure $ msg ++ " unbound symbol" `colonAnd` symbolAsString name
     mkMsgFor (EvaluateDuringInit name) = pure $
-      name ++ " referred to itself during initialization"
+      symbolAsString name ++ " referred to itself during initialization"
     mkMsgFor (SetImmutable tyname) = pure $ "can't set immutable " ++ tyname
     mkMsgFor (BadSpecialForm form) =
       ("bad form" `colonAnd`) <$> writeSharedSH form
@@ -149,9 +150,16 @@ writeShowS :: Val -> Write ShowS
 writeShowS v
   | pairSH v = writePair v
   | vectorSH v = writeVector v
-  | stringSH v = ushowString <$> unwrapStringPH v
+  | stringSH v = ushowString . unpack <$> unwrapStringPH v
 
-writeShowS (Symbol s) = pure $ showString s
+-- we have to write symbols in all their glory because
+-- if we use ex:expand-r5rs-file to expand lib/expander.scm,
+-- we need to get code that works, and that means that the ~
+-- and & stuff needs to be visible. But that's no problem,
+-- because it's very difficult (if it's possible at all)
+-- to call write on an identifier.
+-- (If it's possible, it would be inside a syntax-case exp).
+writeShowS (Symbol s) = pure $ showString $ unpack s
 
 writeShowS (Number n) = pure $ writeNumber n
   where writeNumber (Real (Bignum i)) = shows i
@@ -183,7 +191,7 @@ writeShowS (MultipleValues vs) = fmt <$> writeList (makeImmutableList vs)
     fmt vsStr = showString "#<values: " . vsStr . showChar '>'
 
 writeShowS (Exception e) = showString <$> liftIO (showErrIO e)
-writeShowS (Error msg irritants) = (prefix msg .) <$> writeIrritants
+writeShowS (Error msg irritants) = (prefix (unpack msg) .) <$> writeIrritants
   where
     prefix "" = showString ""
     prefix s  = showString s . showChar ' '

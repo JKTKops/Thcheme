@@ -18,6 +18,7 @@ import Val
 import Parsers.Lexer
 import Data.Ratio (numerator, denominator, (%))
 import Data.Complex (Complex(..))
+import qualified Data.Text as T
 }
 
 %name parse Datum
@@ -100,11 +101,11 @@ CompoundDatum
   | Vector                           { $1 }
 
 SimpleDatum :: { Val }
-SimpleDatum : symbol                 { Symbol $1 }
+SimpleDatum : symbol                 { Symbol $ T.pack $1 }
             | number                 { mkNumber $1 }
             | bool                   { Bool $1 }
             | char                   { Char $1 }
-            | string                 { IString $1 }
+            | string                 { IString $ T.pack $1 }
 
 LabelDef :: { Val }
 LabelDef : StartDef DefDatum         {% do 

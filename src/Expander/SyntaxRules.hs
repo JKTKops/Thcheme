@@ -7,7 +7,7 @@ import EvaluationMonad
 
 import qualified Data.Set as S
 
-macros :: [(String, Macro)]
+macros :: [(Symbol, Macro)]
 macros = [ ("define-syntax", defineSyntax)
          , ("define-syntax-rule", defineSyntaxRule)
          ]

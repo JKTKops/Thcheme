@@ -8,7 +8,7 @@ import Parsers (load)
 import Val
 import Evaluation
 import EvaluationMonad
-import Primitives.String (stringSH, unwrapStringPH)
+import Primitives.Unwrappers (unwrapSymbol, unwrapStr)
 import Control.Monad.Reader -- for qq
 
 -- TODO NEXT: this module is broken right now because of Pairs
@@ -25,7 +25,7 @@ primitives = [ identityFunction
              , callWithValues
              ]
 
-macros :: [(String, Macro)]
+macros :: [(Symbol, Macro)]
 macros = [ ("quote", quote)
          , ("quasiquote", quasiquote)
          , ("if", ifMacro)
@@ -112,7 +112,7 @@ setOpt :: Macro
 setOpt = Macro (Exactly 2) $ \_ -> \case
   [Symbol optName, form] -> do
     val <- evalBody form
-    let mopt = readMaybe optName
+    let mopt = readMaybe $ symbolAsString optName
     case mopt of
       Nothing -> pure ()
       Just opt -> if truthy val then enableOpt opt else disableOpt opt
@@ -185,20 +185,22 @@ lambdaB (formals : body) = do
 emptyBodyError :: LispErr
 emptyBodyError = EmptyBody -- historical artifact, feel free to inline
 
-makeFunc :: Maybe String
+makeFunc :: Maybe Symbol
          -> [Val]
          -> [Val]
-         -> Maybe String
+         -> Maybe Symbol
          -> EM Val
 makeFunc varargs params body name = do
     maybe (pure ()) setVarForCapture name
     lcl <- gets localEnv
-    return $ Closure (map show params) varargs body lcl name
+    paramSyms <- mapM unwrapSymbol params
+    return $ Closure paramSyms varargs body lcl name
 
-makeFuncNormal :: [Val] -> [Val] -> Maybe String -> EM Val
+makeFuncNormal :: [Val] -> [Val] -> Maybe Symbol -> EM Val
 makeFuncNormal = makeFunc Nothing
-makeFuncVarargs :: Val -> [Val] -> [Val] -> Maybe String -> EM Val
-makeFuncVarargs = makeFunc . Just . show
+makeFuncVarargs :: Val -> [Val] -> [Val] -> Maybe Symbol -> EM Val
+makeFuncVarargs (Symbol s) ps body name = makeFunc (Just s) ps body name
+makeFuncVarargs notSym _ _ _ = throwError $ TypeMismatch "identifier" notSym
 
 defmacro :: Macro
 defmacro = Macro (AtLeast 2) $ const $
@@ -223,7 +225,7 @@ macroExpandB [syntaxForm] = do
         FDottedList [Symbol "macro"] macro@Closure{} -> expandMacro macro args
         _ -> notMacro
     PrimMacro{} -> throwError $
-      Default $ "can't expand primitive macro " ++ keyword
+      Default $ "can't expand primitive macro " ++ symbolAsString keyword
     _ -> notMacro
   where
     notMacro = throwError $ TypeMismatch "macro" syntaxForm
@@ -278,13 +280,12 @@ applyP = Prim "apply" (AtLeast 2) $
 
 loadP :: Primitive
 loadP = Prim "load" (Exactly 1) $ \case
-  [val] | stringSH val -> do
-          filename <- unwrapStringPH val
+  [val] -> do
+          filename <- unpack <$> unwrapStr val
           file <- liftIO . runExceptT $ load filename
           case file of
             Left e   -> throwError e
             Right ls -> inInteractionEnv $ evalBodySeq ls
-        | otherwise -> throwError $ TypeMismatch "string" val
   _ -> panic "load arity"
 
 quasiquote :: Macro

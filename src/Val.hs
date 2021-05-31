@@ -2,7 +2,7 @@
 
 module Val
   ( -- * Val and support types
-    Val (..), Number (..), RealNumber (..)
+    Val (..), Symbol, Number (..), RealNumber (..)
   , LispErr (..), isTerminationError
   , Primitive (..)
   , Macro (..)
@@ -12,6 +12,10 @@ module Val
   , truthy, isConstant
   , makePrimitive
   , showArity, usePluralForArity, testArity
+  , symbolName, symbolAsString
+
+    -- * Re-export Text type
+  , T.Text, T.pack, T.unpack
 
     -- * Basic handling and construction of lists
   , getList, getListOrError, testCircularList
@@ -51,6 +55,7 @@ import Data.Complex (Complex((:+)), magnitude)
 import Data.IORef (readIORef) -- for show in IO
 import Data.Foldable (foldrM)
 import Data.Ratio ((%), numerator, denominator)
+import qualified Data.Text as T
 import Data.Word (Word8)
 
 import qualified Data.Vector as V
@@ -88,7 +93,7 @@ isConstant _        = False
 -- but it doesn't display unicode characters in strings properly,
 -- can't display anything mutable, and loops on cyclic immutable data.
 showVal :: Val -> ShowS
-showVal (Symbol s) = showString s
+showVal (Symbol s) = showString $ T.unpack $ symbolName s
 showVal (Number n) = shows n
 showVal (String _s) = showString "<can't show mutable string>"
 showVal (IString s) = shows s
@@ -118,8 +123,8 @@ showVal (Primitive arity _ name) = shows fakeClosure
 showVal Continuation{} = showString "#<cont>"
 showVal (Closure [] (Just varargs) _body _env name) =
       showString "#<procedure "
-    . showString (fromMaybe "lambda" name)
-    . showChar ' ' . showString varargs
+    . showString (symbolAsString $ fromMaybe "lambda" name)
+    . showChar ' ' . showString (symbolAsString varargs)
     . showChar '>' 
 showVal (Closure args varargs _body _env name) = 
       showString "#<procedure "
@@ -127,16 +132,18 @@ showVal (Closure args varargs _body _env name) =
       . showParen True (displayArgs . displayVarargs)
       . showChar '>'
   where
-    displayName = showString $ fromMaybe "lambda" name
-    displayArgs = showString $ unwords args
+    displayName = showString $ symbolAsString $ fromMaybe "lambda" name
+    displayArgs = showString $ unwords $ map symbolAsString args
     displayVarargs = case varargs of
         Nothing  -> id
-        Just arg -> showString " . " . showString arg
-showVal (PrimMacro _ _ name) = showString $ "#<macro " ++ name ++ ">"
+        Just arg -> showString " . " . showString (symbolAsString arg)
+showVal (PrimMacro _ _ name) = showString $ "#<macro "
+                                            ++ symbolAsString name
+                                            ++ ">"
 showVal (MacroTransformer mname _) = showString $ "#<macro" ++ name ++ ">"
   where name = case mname of
                  Nothing -> ""
-                 Just name -> " " ++ name
+                 Just name -> " " ++ symbolAsString name
 showVal Pair{} = showString "<can't show mutable pair>"
 showVal p@IPair{} = showParen True $ showDList $ fromList p
   where
@@ -160,7 +167,7 @@ showVal (IByteVector v) = showString "#u8" . showParen True (showBytes (U.toList
 showVal Nil = showString "()"
 showVal (Error msg irritants) = 
   showString "#<error: "
-  . prefix msg 
+  . prefix (T.unpack msg) 
   . intercalateS " " (map shows irritants)
   . showChar '>'
   where prefix "" = showString ""
@@ -183,8 +190,10 @@ instance Show Number where
     where sign = if i < 0 then "" else "+"
 
 showErr :: LispErr -> String
-showErr (UnboundVar message varname)  = message ++ " unbound symbol: " ++ varname
-showErr (EvaluateDuringInit name) = name ++ " referred to itself during initialization"
+showErr (UnboundVar message varname)
+  = message ++ " unbound symbol: " ++ symbolAsString varname
+showErr (EvaluateDuringInit name)
+  = symbolAsString name ++ " referred to itself during initialization"
 showErr (SetImmutable tyname) = "can't set immutable " ++ tyname
 showErr (BadSpecialForm form) = "bad form: " ++ show form
 showErr (NotFunction message func)    = message ++ ": " ++ show func

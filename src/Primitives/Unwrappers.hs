@@ -1,7 +1,7 @@
 module Primitives.Unwrappers where
 
-import Val ( Val (..), Number (..), RealNumber (..)
-           , LispErr(TypeMismatch), getExactInteger )
+import Val ( Val (..), Symbol, Number (..), RealNumber (..)
+           , LispErr(TypeMismatch), Text, getExactInteger )
 import EvaluationMonad (EM, throwError, readRef)
 
 unwrapNum :: Val -> EM Number
@@ -17,11 +17,11 @@ unwrapExactInteger v = case getExactInteger v of
   Just i -> return i
   Nothing -> throwError $ TypeMismatch "exact integer" v
 
-unwrapSymbol :: Val -> EM String
+unwrapSymbol :: Val -> EM Symbol
 unwrapSymbol (Symbol s) = pure s
 unwrapSymbol notSymbol = throwError $ TypeMismatch "symbol" notSymbol
 
-unwrapStr :: Val -> EM String
+unwrapStr :: Val -> EM Text
 unwrapStr (IString s) = return s
 unwrapStr (String ref) = readRef ref
 unwrapStr notString  = throwError $ TypeMismatch "string" notString

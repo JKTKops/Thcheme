@@ -53,7 +53,7 @@ typeErrorP :: Primitive
 typeErrorP = Prim "type-error" (Exactly 2) $
   \[tyname, irritant] -> do
     name <- unwrapStr tyname
-    throwError $ TypeMismatch name irritant
+    throwError $ TypeMismatch (unpack name) irritant
 
 errorP :: Primitive
 errorP = Prim "error" (AtLeast 1) $ \vs -> do

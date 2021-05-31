@@ -46,7 +46,7 @@ cxrCompositions ns = do
     len         <- ns
     combination <- replicateM len carAndCdr
     let (n, b) = foldr1 combine combination
-    return $ Prim ("c" ++ n ++ "r") (Exactly 1) b
+    return $ Prim (pack $ "c" ++ n ++ "r") (Exactly 1) b
   where
     carAndCdr = [("a", carB), ("d", cdrB)]
     -- 'cadr' does cdr, then car, so we use left fish instead of right

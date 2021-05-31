@@ -20,10 +20,10 @@ primitives = [ typePred name func
                ]
              ]
 
-typePred :: String -> (Val -> Val) -> Primitive
-typePred tyname func = Prim (tyname ++ "?") (Exactly 1) $ \case
+typePred :: Text -> (Val -> Val) -> Primitive
+typePred tyname func = Prim (tyname <> "?") (Exactly 1) $ \case
   [x] -> return $ func x
-  _ -> panic $ "typePred@" ++ tyname ++ " arity"
+  _ -> panic $ "typePred@" ++ unpack tyname ++ " arity"
 
 symbol :: Val -> Val
 symbol (Symbol _) = Bool True

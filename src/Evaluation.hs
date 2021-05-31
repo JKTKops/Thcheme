@@ -184,7 +184,7 @@ makeStackFrame Continuation{} args = pure $ buildFrame "#<cont>" args Nothing
 makeStackFrame head args = 
   pure $ StackFrame (makeImmutableList (head:args)) Nothing
 
-buildFrame :: String -> [Val] -> Maybe LocalEnv -> StackFrame
+buildFrame :: Symbol -> [Val] -> Maybe LocalEnv -> StackFrame
 buildFrame name args = StackFrame (makeImmutableList (Symbol name : args))
 
 rerootDynPoint :: DynamicPoint -> EM ()
