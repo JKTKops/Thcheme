@@ -153,12 +153,10 @@ writeShowS v
   | stringSH v = ushowString . unpack <$> unwrapStringPH v
 
 -- we have to write symbols in all their glory because
--- if we use ex:expand-r5rs-file to expand lib/expander.scm,
--- we need to get code that works, and that means that the ~
--- and & stuff needs to be visible. But that's no problem,
--- because it's very difficult (if it's possible at all)
--- to call write on an identifier.
--- (If it's possible, it would be inside a syntax-case exp).
+-- literal (quoted) symbols need to be printed correctly.
+-- If they aren't printed correctly at a prompt, a user
+-- would merely be confused - but if they aren't written
+-- correctly to a file, then the expander can't expand itself.
 writeShowS (Symbol s) = pure $ showString $ unpack s
 
 writeShowS (Number n) = pure $ writeNumber n

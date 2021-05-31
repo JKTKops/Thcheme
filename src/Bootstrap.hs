@@ -40,7 +40,11 @@ primitiveBindings = deepCopyEnv primitiveEnv
 -- | Parse and evaluate a Scheme expression with the given initial state.
 -- See 'evaluateExpr'.
 evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
-evaluate label s src = Evaluation.evaluate label s ("(ex:repl '(" ++ src ++ "))")
+-- Defined this way instead of parsing a wrapped 'src' string so that location
+-- information is correct.
+evaluate label s src = case labeledReadExpr label src of
+  Right v -> evaluateExpr s v
+  Left e  -> pure (Left e, s)
 
 -- | Evaluate a Scheme expression with the given initial state, for the
 -- purposes of the REPL. The given state should represent a bootstrapped
