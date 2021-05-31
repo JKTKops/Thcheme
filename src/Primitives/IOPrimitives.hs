@@ -9,7 +9,7 @@ import Val
 import EvaluationMonad
 import Parsers (readExpr, load)
 import Primitives.Unwrappers (unwrapStr)
-import Primitives.WriteLib (writeSH, writeSimpleSH, writeSharedSH)
+import Primitives.WriteLib (writeSH, writeSimpleSH, writeSharedSH, displaySH)
 
 primitives :: [Primitive]
 primitives = [ openInputFile
@@ -17,7 +17,7 @@ primitives = [ openInputFile
              , closePort
              , readP
              , readLineP
-             , writeP, writeSimpleP, writeSharedP
+             , writeP, writeSimpleP, writeSharedP, displayP
              , newlineP
              , readContents
              , readAll
@@ -64,11 +64,12 @@ to that effect. Expect 'write' to become rather involved due to the requirement
 that it use datum labels to show recursive structure.
 -}
 
-writeP, writeSimpleP, writeSharedP :: Primitive
-[writeP, writeSimpleP, writeSharedP] = map make
+writeP, writeSimpleP, writeSharedP, displayP :: Primitive
+[writeP, writeSimpleP, writeSharedP, displayP] = map make
   [ ("write", writeSH)
   , ("write-simple", writeSimpleSH)
   , ("write-shared", writeSharedSH)
+  , ("display", displaySH)
   ]
   where make (name, writer) = Prim name (Between 1 2) $ mkWriter writer
 
@@ -79,7 +80,6 @@ newlineP = Prim "newline" (Between 0 1) newlineB
         newlineB [badArg] = throwError $ TypeMismatch "port" badArg
         newlineB _ = panic "newline arity"
 
--- TODO: lmao this is mega broken, need to use writeSH not show
 mkWriter :: (Val -> IO String) -> Builtin
 mkWriter writer = builtin
   where
@@ -88,7 +88,7 @@ mkWriter writer = builtin
     builtin [obj, Port hdl] = liftIO $ do
       str <- writer obj
       hPutStr hdl str
-      return $ Bool True
+      return $ MultipleValues []
     builtin [_obj, badArg]  = throwError $ TypeMismatch "port" badArg
     builtin _ = panic "write arity"
 

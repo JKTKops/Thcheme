@@ -2,7 +2,7 @@
 
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
 module Primitives.WriteLib 
-  ( writeSH, writeSimpleSH, writeSharedSH
+  ( writeSH, writeSimpleSH, writeSharedSH, displaySH
   , showErrIO
 
   , ushowString
@@ -29,16 +29,31 @@ import Data.Ratio (numerator, denominator)
 writeSH :: Val -> IO String
 writeSH v = do
   labeling <- labelDatum CyclicOnly v
-  runShowS <$> runWrite labeling (writeShowS v)
+  runShowS <$> withWriteComponents labeling (writeShowS v)
 
 writeSimpleSH :: Val -> IO String
 writeSimpleSH v =
-  runShowS <$> runWrite M.empty (writeShowS v)
+  runShowS <$> withWriteComponents M.empty (writeShowS v)
 
 writeSharedSH :: Val -> IO String
 writeSharedSH v = do
   labeling <- labelDatum FullSharing v
-  runShowS <$> runWrite labeling (writeShowS v)
+  runShowS <$> withWriteComponents labeling (writeShowS v)
+
+displaySH :: Val -> IO String
+displaySH v = do
+  labeling <- labelDatum CyclicOnly v
+  runShowS <$> withDisplayComponents labeling (writeShowS v)
+
+-- | Run a 'Write' action with the given labeling, using
+-- component writers for the 'writeSH' family.
+withWriteComponents :: Labeling -> Write a -> IO a
+withWriteComponents = runWrite charHH stringHH symbolHH
+
+-- | Run a 'Write' action with the given labeling, using
+-- component writers for the 'displaySH' function.
+withDisplayComponents :: Labeling -> Write a -> IO a
+withDisplayComponents = runWrite writeCharHH writeStringHH writeSymbolHH
 
 runShowS :: ShowS -> String
 runShowS f = f ""
@@ -75,6 +90,41 @@ showErrIO = fmap (prefix ++) . mkMsgFor
     mkMsgFor Quit = pure "quit invoked"
 
     colonAnd s r = s ++ ": " ++ r
+
+-------------------------------------------------------------------------------
+-- HH versions of Scheme primitive functions
+-- These are NOT the conversion functions used by writeSH!
+-------------------------------------------------------------------------------
+
+writeCharHH :: Char -> ShowS
+writeCharHH c = (c:)
+
+writeStringHH :: Text -> ShowS
+writeStringHH t = showString $ unpack t
+
+writeSymbolHH :: Symbol -> ShowS
+writeSymbolHH t = showString $ unpack t
+
+-------------------------------------------------------------------------------
+-- HH conversion functions used by writeSH and friends
+-------------------------------------------------------------------------------
+
+charHH :: Char -> ShowS
+charHH = shows . Char
+
+stringHH :: Text -> ShowS
+-- ushowString behaves like shows, not showString.
+stringHH t = ushowString $ unpack t
+
+-- TODO [r7rs]
+-- these should be escaped according to r7rs, but we don't want
+-- them to be escaped at the REPL prompt. 'repl-write'?
+symbolHH :: Symbol -> ShowS
+symbolHH t = showString $ unpack t
+
+-------------------------------------------------------------------------------
+-- Core implementation
+-------------------------------------------------------------------------------
 
 -- | stablename -> (label, used?)
 type FirstPassMap = M.HashMap (StableName Val) Bool
@@ -140,24 +190,44 @@ fpmToLabeling fpm = evalState (M.traverseWithKey go used) 0
     used = M.filter id fpm
 
 type WriteState = S.HashSet (StableName Val)
-type Write a = ReaderT Labeling (StateT WriteState IO) a
+type ComponentWriter a = a -> ShowS
+data WriteEnv = WriteEnv
+  { labeling :: Labeling
+  , writeChar :: ComponentWriter Char
+  , writeString :: ComponentWriter Text
+  , writeSymbol :: ComponentWriter Symbol
+  }
+type Write a = ReaderT WriteEnv (StateT WriteState IO) a
 
-runWrite :: Labeling -> Write a -> IO a
-runWrite lbls m =
-  flip evalStateT S.empty $ runReaderT m lbls
+runWrite :: ComponentWriter Char   -- ^ how to print characters
+         -> ComponentWriter Text   -- ^ how to print (Scheme) strings
+         -> ComponentWriter Symbol -- ^ how to print symbols
+         -> Labeling               -- ^ mapping that witnesses sharing in v
+         -> Write a                -- ^ Write action that computes v -> a
+         -> IO a
+runWrite wc wt ws lbls m =
+  flip evalStateT S.empty $ runReaderT m $ WriteEnv lbls wc wt ws
 
 writeShowS :: Val -> Write ShowS
 writeShowS v
   | pairSH v = writePair v
   | vectorSH v = writeVector v
-  | stringSH v = ushowString . unpack <$> unwrapStringPH v
+  | stringSH v = do
+    ws <- asks writeString
+    ws <$> unwrapStringPH v
 
 -- we have to write symbols in all their glory because
 -- literal (quoted) symbols need to be printed correctly.
 -- If they aren't printed correctly at a prompt, a user
 -- would merely be confused - but if they aren't written
 -- correctly to a file, then the expander can't expand itself.
-writeShowS (Symbol s) = pure $ showString $ unpack s
+writeShowS (Symbol s) = do
+  ws <- asks writeSymbol
+  return $ ws s
+
+writeShowS (Char c) = do
+  wc <- asks writeChar
+  return $ wc c
 
 writeShowS (Number n) = pure $ writeNumber n
   where writeNumber (Real (Bignum i)) = shows i
@@ -274,7 +344,7 @@ defineLabel :: StableName Val -> Write ()
 defineLabel n = modify $ S.insert n
 
 askLabel :: StableName Val -> Write (Maybe Int)
-askLabel name = asks $ M.lookup name
+askLabel name = asks $ M.lookup name . labeling
 
 -- | So this is funny.
 --

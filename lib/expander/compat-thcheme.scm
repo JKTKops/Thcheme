@@ -27,8 +27,6 @@
 (define ex:guid-prefix "&")
 (define ex:free-prefix "~")
 
-(define display write)
-
 ;; Just give this damn thing a binding
 
 (define assertion-violation
