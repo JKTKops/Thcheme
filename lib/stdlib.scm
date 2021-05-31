@@ -250,12 +250,6 @@
         (begin (apply proc (car xs) (map car xss))
                (loop (cdr xs) (map cdr xss))))))
 
-;;; String functions that should arguably be primitive but we just need for now
-(define (string-append . strs)
-  (list->string
-    (apply append
-      (map string->list strs))))
-
 ;;; Smallest possible subset of R7RS 'eval' spec so that the expander can run
 (let ([prim-eval eval]
       [new-eval #f])

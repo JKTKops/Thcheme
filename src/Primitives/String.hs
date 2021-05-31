@@ -14,12 +14,12 @@ import qualified Data.Text as T
 
 import Val
 import EvaluationMonad
-import Primitives.Unwrappers (unwrapExactInteger)
+import Primitives.Unwrappers (unwrapExactInteger, unwrapStr)
 
 -- TODO: use Data.CaseInsensitive to add the -foldcase functions
 
 primitives :: [Primitive]
-primitives = [stringP, stringLengthP, stringRefP, stringSetP]
+primitives = [stringP, stringLengthP, stringRefP, stringSetP, stringAppendP]
 
 -- This implementation of strings is not great, using linear time to get the
 -- length and to string-ref etc. However at least for now this seems fine.
@@ -84,6 +84,12 @@ stringSetP = Prim "string-set!" (Exactly 3) $ \case
     | Number _ <- num -> throwError $ TypeMismatch "character" char
     | otherwise       -> throwError $ TypeMismatch "exact integer" num
   _ -> panic "stringSet arity"
+
+stringAppendP :: Primitive
+stringAppendP = Prim "string-append" (AtLeast 0) $
+  \args -> do
+    txts <- mapM unwrapStr args
+    String <$> newRef (mconcat txts)
 
 -------------------------------------------------------
 -- Haskell-level utilities
