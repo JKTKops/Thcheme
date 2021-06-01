@@ -54,14 +54,98 @@ readLineP = Prim "read-line" (Exactly 0) $ \case
     _ -> panic "readLine arity"
 
 {- TODO: [r7rs]
-we need to both define 'display' and fix write, as well as adding
-'write-simple'.
-
-Furthermore, we don't define or use 'current-input-port' or any of the
+We don't define or use 'current-input-port' or any of the
 port operations like 'with-output-string' or whatever it's called.
 We can/should split these operations into Port.hs and Display.hs or something
-to that effect. Expect 'write' to become rather involved due to the requirement
-that it use datum labels to show recursive structure.
+to that effect.
+
+My thoughts at the moment are that we should prepend 'thcheme:' to the starts
+of these primitives and make them _require_ a port argument.
+Then in the standard library file we provide these libraries:
+(library (thcheme parameters)
+  (export make-parameter parameterize)
+  (import (for (core syntax-rules)   expand)
+          (for (core primitives) run expand)
+          (core let)
+          (for (core derived)    run expand)
+          (primitives dynamic-wind id eq? error
+                      list pair? null? cons car cadr))
+  
+  (define <param-set!> (list '<param-set!>))
+  (define <param-convert> (list '<param-convert>))
+
+  (define (make-parameter init . o)
+    (let* ([converter
+            (if (pair? o) (car o) id)]
+           [value (converter init)])
+      (lambda args
+        (cond
+         [(null? args) value]
+         [(eq? (car args) <param-set!>)
+          (set! value (cadr args))]
+         [(eq? (car args) <param-convert>)
+          converter]
+         [else
+          (error "bad parameter syntax: " (cons '<parameter> args))]))))
+  
+  (define-syntax parameterize
+    (syntax-rules ()
+      ((parameterize "step"
+                     ((param value p old new) ...)
+                     ()
+                     body)
+       (let ([p param] ...)
+         (let ([old (p)] ...
+               [new ((p <param-convert>) value)] ...)
+           (dynamic-wind
+            (lambda () (p <param-set!> new) ...)
+            (lambda () . body)
+            (lambda () (p <param-set!> old) ...)))))
+      ((parameterize "step"
+                     args
+                     ((param value) . rest)
+                     body)
+       (parameterize "step"
+                     ((param value p old new) . args)
+                     rest
+                     body))
+      ((parameterize ((param value) ...) . body)
+       (parameterize "step" 
+                     ()
+                     ((param value) ...)
+                     body))))
+  ) ; thcheme parameters
+
+(library (thcheme ports)
+  (export current-input-port current-output-port current-error-port
+          ; and so on
+          )
+  (import (primitives stdin stdout stderr)
+          (thcheme parameters)
+          ; and so on
+          )
+  (define current-input-port  (make-parameter stdin))
+  (define current-output-port (make-parameter stdout))
+  (define current-error-port  (make-parameter stderr))
+  ) ; thcheme ports
+
+(library (scheme write)
+  (export write write-simple write-shared display)
+  (import (thcheme ports)
+          (primitives thcheme:write thcheme:write-simple
+                      thcheme:write-shared thcheme:display))
+  
+  (define (with-default-port proc)
+    (lambda (obj . port)
+      (let ([port
+             (cond [(null? port) (current-input-port)]
+                   [(pair? port) (car port)])])
+        (proc obj port))))
+  (define write        (with-default-port thcheme:write))
+  (define write-simple (with-default-port thcheme:write-simple))
+  (define write-shared (with-default-port thcheme:write-shared))
+  (define display      (with-default-port thcheme:display))
+  ) ; scheme write
 -}
 
 writeP, writeSimpleP, writeSharedP, displayP :: Primitive
