@@ -263,7 +263,9 @@ writeShowS (Error msg irritants) = (prefix (unpack msg) .) <$> writeIrritants
   where
     prefix "" = showString ""
     prefix s  = showString s . showChar ' '
-    writeIrritants = writeList $ makeImmutableList irritants
+    writeIrritants = case irritants of
+      [] -> pure $ showString ""
+      _  -> writeList $ makeImmutableList irritants
 
 writeShowS v = pure $ shows v
 
