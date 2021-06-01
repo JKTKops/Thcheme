@@ -15,8 +15,9 @@ module Evaluation
     , call, tailCall, rerootDynPoint
     ) where
 
+import Data.Functor (($>))
 import Data.List (intercalate)
-import Data.Maybe
+import Data.IORef (readIORef)
 import Control.Monad
 import qualified Data.HashMap.Strict as Map
 
@@ -177,7 +178,7 @@ makeStackFrame (Closure formals mvarg _body cloEnv mname) args = do
       Just name -> do
         varargList <- makeMutableList $ drop (length formals) args
         liftIO $ Env.bindVar env name varargList
-    name = fromMaybe "#<closure>" mname
+    name = maybe "#<closure>" symbolName mname
 makeStackFrame (Primitive _ _ name) args = pure $ buildFrame name args Nothing
 makeStackFrame (PrimMacro _ _ name) args = pure $ buildFrame name args Nothing
 makeStackFrame Continuation{} args = pure $ buildFrame "#<cont>" args Nothing
@@ -187,6 +188,7 @@ makeStackFrame head args =
 buildFrame :: Symbol -> [Val] -> Maybe LocalEnv -> StackFrame
 buildFrame name args = StackFrame (makeImmutableList (Symbol name : args))
 
+-- This function (awkwardly) needs to be here because it needs 'call'.
 rerootDynPoint :: DynamicPoint -> EM ()
 rerootDynPoint Sentinel = panic "rerootDynPoint: sentinel!"
 rerootDynPoint there@(Point dataRef parentRef) = do
@@ -208,12 +210,35 @@ rerootDynPoint there@(Point dataRef parentRef) = do
 -------------------------------------------------------------------------------
 -- Primary entrypoints
 -------------------------------------------------------------------------------
-evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
-evaluate label state input = execEM state $
-  liftEither (labeledReadExpr label input) >>= evalBody
 
+evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
+evaluate label state input = case labeledReadExpr label input of
+  Right expr -> evaluateExpr state expr
+  Left e     -> pure (Left e, state)
+
+-- | Evaluate an expression at the top level using the given initial EvalState.
+-- At the end of evaluation, the dynamic environment is guaranteed to be the
+-- same as the dynamic environment at the start, even if evaluating the body
+-- causes early termination via exceptions.
 evaluateExpr :: EvalState -> Val -> IO (Either LispErr Val, EvalState)
-evaluateExpr state v = execEM state $ evalBody v
+evaluateExpr state v = do
+  initialDynPoint <- readIORef $ dynPoint state
+  r <- execEM state $ evalBody v
+  -- note that we take special care to reroot outside of the same execEM
+  -- call that evaluates v. If 'evalBody v' throws an error, we want to
+  -- be sure that this reroot still happens. After all, if it doesn't
+  -- throw an error, this reroot won't do anything!
+  -- Returning 'Undefined' is just an arbitrary choice of 'Val' to
+  -- satisfy the type of execEM.
+  
+  -- another note: any calls to initEvalState during the execution of
+  -- evalBody v would make a new dynamic root, and reroots from there
+  -- would not be reflected here. Thus it's critical that
+  -- 'inInteractionEnv' in Primitives.Misc does not create a new root.
+  -- It can use the current dynamic point or reroot to another point
+  -- that belongs to the same tree, but it _cannot_ create a _new_ root.
+  _ <- execEM state $ rerootDynPoint initialDynPoint $> Undefined
+  return r
 
 -- | Provided for backwards compatibility.
 runTest :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)

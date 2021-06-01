@@ -245,17 +245,12 @@ inInteractionEnv :: EM a -> EM a
 inInteractionEnv m = do
   state <- get
   -- put (interaction-environment)
-  -- note that this will execute m outside
-  -- the dynamic extent of the caller but without moving
-  -- dynamic points; merely using a new root.
-  -- I'm pretty sure this is wrong. We probably
-  -- really want to reroot the dynamic points to the
-  -- original root before evaluating and then reroot back
-  -- after, or use the current dynamic point.
-  -- edit: actually, I think this is unspecified, and this
-  -- behavior is probably what I would predict in the wild.
-  init <- liftIO $ initEvalState (globalEnv state) (options state)
-  put init
+  -- Note that this executes m in the dynamic environment of the caller;
+  -- that means error handlers and parameter objects will retain their
+  -- bindings for the evaluated code.
+  -- As far as I can tell, this behavior is consistent with Guile,
+  -- and seems to be reasonable.
+  put $ resetEvalState state
   m <* put state
 
 evalP :: Primitive
