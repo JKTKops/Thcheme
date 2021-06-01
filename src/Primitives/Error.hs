@@ -2,8 +2,10 @@ module Primitives.Error
   ( primitives
   ) where
 
+import Control.Monad.Cont (runCont)
+
 import Val
-import Types (ExceptionCont(..), withExceptionHandler)
+import Types (ExceptionCont(..), emCont, unEM)
 import EvaluationMonad (EM, callCC, panic, throwError)
 import Evaluation
 import Primitives.Unwrappers (unwrapStr)
@@ -84,3 +86,23 @@ withExceptionHandlerB [handler, thunk] =
   where
     applyHandler v = call handler [v]
 withExceptionHandlerB _ = panic "withExceptionHandlerB arity"
+
+-- | Low-level version of (scheme base) with-exception-handler.
+withExceptionHandler :: (Val -> EM Val) -> EM Val -> EM Val
+withExceptionHandler handler callThunk = emCont $ \k s -> do
+  mv <- runCont (unEM callThunk) (\ x s -> pure (Right x, s)) s
+  case mv of
+    (Left (Condition (Just (EC rck)) obj), s0) ->
+      runCont (unEM $ do v <- handler obj
+                         withExceptionHandler handler (rck v))
+              k -- continuation of new withExceptionHandler frame is same
+                -- as the old one
+              s0 -- restore state to when condition was raised
+    (Left e, s0) ->
+      let obj = case e of
+            Condition _ obj -> obj
+            other -> Exception other
+      in runCont (unEM $ handler obj)
+                 (\ _ s -> pure (Left e, s))
+                 s0
+    (Right v, s1) -> runCont (pure v) k s1

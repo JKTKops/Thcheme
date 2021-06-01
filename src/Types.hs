@@ -18,7 +18,7 @@ module Types
     , isTerminationError
     , liftEither
    -- , runIOThrows
-    , EM (..), withExceptionHandler
+    , EM (..), emCont
     , EvalState (..)
     , StackFrame (..)
     , DynamicPoint (..)
@@ -397,25 +397,6 @@ emCatch (EM m) restore = emCont $ \k s -> do
     case mr of
         (Left e, _s0)  -> runCont (unEM (restore e)) k s
         (Right _v, _s) -> pure mr
-
-withExceptionHandler :: (Val -> EM Val) -> EM Val -> EM Val
-withExceptionHandler handler callThunk = emCont $ \k s -> do
-  mv <- runCont (unEM callThunk) (\ x s -> pure (Right x, s)) s
-  case mv of
-    (Left (Condition (Just (EC rck)) obj), s0) ->
-      runCont (unEM $ do v <- handler obj
-                         withExceptionHandler handler (rck v))
-              k -- continuation of new withExceptionHandler frame is same
-                -- as the old one
-              s0 -- restore state to when condition was raised
-    (Left e, s0) ->
-      let obj = case e of
-            Condition _ obj -> obj
-            other -> Exception other
-      in runCont (unEM $ handler obj)
-                 (\ _ s -> pure (Left e, s))
-                 s0
-    (Right v, s1) -> runCont (pure v) k s1
 
 emGet :: EM EvalState
 emGet = emCont $ \k s -> k s s
