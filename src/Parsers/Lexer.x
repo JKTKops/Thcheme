@@ -17,7 +17,32 @@
 {
 {-# OPTIONS_GHC -funbox-strict-fields #-}
 {-# LANGUAGE NoOverloadedStrings #-}
-module Parsers.Lexer where
+-- | R7RS Scheme Lexer.
+--
+-- Full support for the lexical syntax of R7RS Scheme, including full
+-- support for unicode characters in (almost) all positions.
+-- Wherever an ASCII character might have special meaning to Scheme,
+-- that character cannot appear as part of a symbol, e.g. ' and #.
+module Parsers.Lexer 
+  ( -- * Parsing monad
+    Alex, AlexPosn
+  , runAlex', alexMonadScan
+  , alexErrorWithPos, alexError'
+  , stream
+
+    -- * Support for datum labels
+  , startDef, endDef, testRef
+  , defineLabel, lookupLabel
+
+    -- * Support for datum comments
+  , enterDatumComment, exitDatumComment
+  , unlessDatumComment
+
+    -- * Tokens
+  , Lexeme(..), Token(..)
+  , Numeric(..)
+  , Byte
+  ) where
 
 import Prelude hiding (lex)
 
@@ -236,6 +261,8 @@ tokens :-
 {
 
 -- for testing
+-- | Convert a source string into a list of lexemes.
+-- Primarily useful for testing the lexer.
 stream :: String -> Either String [Lexeme]
 stream = runAlex' loop "<stream>" where
   loop = do
@@ -290,6 +317,10 @@ type AlexUserState = PState
 alexInitUserState :: PState
 alexInitUserState = error "someone used runAlex. Use runAlex' instead!"
 
+-- | Run an Alex parser, giving a source name and the source itself.
+-- Returns either a string representing a lexical error, or the result type
+-- of the parser.
+-- Handles the black-magic laziness that is used to support datum labels.
 runAlex' :: Alex a -> String -> String -> Either String a
 runAlex' (Alex f) srcName input =
   let r = f AlexState { alex_pos = alexStartPos
@@ -331,12 +362,17 @@ modifyScratchSpace :: (String -> String) -> Alex ()
 modifyScratchSpace f = alexModify $ \s -> 
   s { scratch_space = f (scratch_space s) }
 
+-- | 'startDef' p i signals that the parser is reading a datum attached to a
+-- definition for label i, which occured at position p.
 startDef :: AlexPosn -> Int -> Alex ()
 startDef p i = alexModify $ \s -> s { defining_label = Just (p, i) }
 
+-- | Signals that the parser is not reading a labeled datum.
 endDef :: Alex ()
 endDef = alexModify $ \s -> s { defining_label = Nothing }
 
+-- | Test if a label reference is well-defined. A label is ill-defined
+-- if it is equal to itself, i.e. #0=#0# or #0=(. #0#).
 testRef :: Int -> Alex ()
 testRef i = do
   PState { defining_label = lbl } <- alexGet
@@ -347,6 +383,7 @@ testRef i = do
       alexErrorWithPos p $ "label " ++ show i ++ " is not well-defined."
     _otherwise -> return ()
 
+-- | 'defineLabel' i v sets the value given by the label #i= to v.
 defineLabel :: Int -> Val -> Alex ()
 defineLabel i v = alexModify $ \s@PState { workingMap = m } ->
   s { workingMap = M.insert i v m }
@@ -356,6 +393,11 @@ defineLabel i v = alexModify $ \s@PState { workingMap = m } ->
 -- could produce a nicer error message. But then in a "strict" mode
 -- we'd probably have to leave Unspecified so that we don't leave invalid
 -- symbols in the tree.
+
+-- | 'lookuplabel' i gets the value given by the label #i= in the source.
+-- Through black magic, 'lookupLabel' is able to return the value even if
+-- no calls have yet been made to 'defineLabel' i. However, you must remain
+-- lazy in the result of 'lookupLabel', or else the parser will hang.
 lookupLabel :: Int -> Alex Val
 lookupLabel i = do
   PState { completeMap = m } <- alexGet
@@ -372,20 +414,29 @@ lookupLabel i = do
     Nothing -> Undefined -- TODO: don't use undefined here!
     Just v  -> v
 
+-- | 'unlessDatumComment m' performs the action 'm' only if the parser
+-- is not currently reading a datum comment.
 unlessDatumComment :: Alex () -> Alex ()
 unlessDatumComment alex = do
   PState { datum_comment_depth = d } <- alexGet
   if d /= 0 then pure () else alex
 
+
 enterDatumComment, exitDatumComment :: Alex ()
+-- | Signal that the parser has just begun reading a datum
+-- commented out by \#;
 enterDatumComment = alexModify $ \s -> 
   s { datum_comment_depth = datum_comment_depth s + 1 }
+-- | Signal that the parser has finished reading a datum
+-- that was commented out by \#;
 exitDatumComment = alexModify $ \s -> 
   s { datum_comment_depth = datum_comment_depth s - 1 }
 
+-- | The type of Scheme lexemes.
 data Lexeme = L AlexPosn Token
   deriving Show
 
+-- | The type of Scheme tokens.
 data Token
   = TokSymbol   String
   | TokBool     Bool
@@ -430,6 +481,7 @@ instance Show Token where
     TokDatumComment -> "#;"
     TokEOF -> "EOF";
 
+-- | The payload of a numeric lexeme.
 data Numeric
   = LitInteger  Integer
   | LitFloating Double
@@ -845,11 +897,13 @@ nestedComment _ _ = do
             c -> go n input
     err input = alexSetInput input >> alexError' "error in nested comment"
 
+-- | Signal a parse error at the given position.
 alexErrorWithPos :: AlexPosn -> String -> Alex a
 alexErrorWithPos (AlexPn _ line col) s = do
   src <- source_name <$> alexGet
   alexError $ src ++ ":" ++ show line ++ ":" ++ show col ++ ":\n" ++ s
 
+-- | Signal a parse error at the current position of the parser.
 alexError' :: String -> Alex a
 alexError' s = do
   (p,_,_,_) <- alexGetInput

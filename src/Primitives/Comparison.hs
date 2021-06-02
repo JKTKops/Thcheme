@@ -1,5 +1,13 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE BangPatterns, MultiWayIf #-}
+-- | Scheme comparison primitives, namely
+-- eq? eqv? and equal?.
+-- The implementation of equal? is adapted from
+-- Michael D. Adams and R. Kent Dybvig.
+--
+-- Also defines the whole family of =, <, ...
+-- char=?, char<?, ... and string=?, ...
+-- primitives.
 module Primitives.Comparison 
   ( primitives
   
@@ -25,6 +33,7 @@ import qualified Data.HashTable.IO as H
 import System.Mem.StableName (StableName, makeStableName)
 import System.Random (randomRIO)
 
+-- | Scheme primitive exports.
 primitives :: [Primitive]
 primitives = [eqP, eqvP, equalP] ++ typeSpecific
 
@@ -119,6 +128,9 @@ charBoolBinop name = boolBinop name unwrapChar
 -- write tests
 -- Number equality is currently defined in the sense of =,
 -- but exact and inexact numbers should never compare equal.
+
+-- | Scheme eqv? primitive. Delegates to eq? on non
+-- primitive Scheme types such as pairs.
 eqvSSH :: MonadIO m => Val -> Val -> m Bool
 eqvSSH (Bool x)   (Bool y)   = return $ x == y
 eqvSSH (Number x) (Number y) = return $ x == y
@@ -138,6 +150,10 @@ eqvSSH v1         v2         = eqSSH v1 v2
 -- similar to how we'd call a type transformer.
 
 -- generalized over 'MonadIO' so we can use it in 'interleave'.
+
+-- | Scheme eq? primitive. Essentially, pointer
+-- equality, though 'Symbol's are handled specially
+-- since Thcheme does not maintain a symbol table.
 eqSSH :: MonadIO m => Val -> Val -> m Bool
 -- so this seems like a weird point of r7rs to me. I'd presume we're
 -- kind of expected to make a symbol table, so that any uses of the
@@ -168,6 +184,8 @@ eqSSH !v1 !v2 = liftIO $ do
 -- It would be nice if someone cleaned up the code somewhat... this is more
 -- more or less a rapid prototype translated from the Scheme in the paper.
 
+-- | Scheme equal? primitive. Full-powered structural
+-- equivalence predicate on directed, possibly-cyclic graphs.
 equalSSH :: MonadIO m => Val -> Val -> m Bool
 equalSSH v1 v2 = liftIO $ precheckInterleaveEqual v1 v2
 

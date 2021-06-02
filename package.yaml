@@ -1,5 +1,5 @@
 name:                Thcheme
-version:             0.4.0.2
+version:             0.2.10.1
 github:              "JKTKops/Thcheme"
 license:             BSD3
 author:              "Max Kopinsky"
@@ -30,6 +30,7 @@ dependencies:
 - base >= 4.7 && < 5
 - array # needed by Happy
 - case-insensitive
+- clock
 - containers
 - hashable
 - hashtables
@@ -38,6 +39,7 @@ dependencies:
 - mtl
 - random
 - text
+# - time
 - transformers
 - union-find
 - unordered-containers

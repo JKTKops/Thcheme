@@ -1,9 +1,13 @@
+-- | Utilities for implementing Scheme primitives that return booleans.
 module Primitives.Bool (primitives, predicate, predicateM, boolBinop) where
 
 import Val
 import EvaluationMonad (EM, panic)
 import Primitives.Unwrappers (unwrapBool)
 
+-- | Scheme primitive exports: not, &&, ||.
+--
+-- && and || are no longer used and should be removed.
 primitives :: [Primitive]
 primitives = [ boolNot
              , boolAnd

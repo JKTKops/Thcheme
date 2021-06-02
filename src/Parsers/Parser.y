@@ -1,5 +1,5 @@
--------------------------------------------------------------------------------
--- Experimental R7RS Scheme parser written for Haskell using Happy.
+{
+-- | Experimental R7RS Scheme parser written for Haskell using Happy.
 -- (c) Max Kopinsky, 2020
 --
 -- A trick with laziness is used to support datum labels. Because of this, you
@@ -11,8 +11,12 @@
 -- not conveyed to the output.
 --
 -- See also Lexer.x.
-{
-module Parsers.Parser where
+--------------------------------------------------------------------------------
+module Parsers.Parser 
+  ( -- * Entrypoints to Happy-generated parsers
+    parseDatum
+  , parseDatumSeq
+  ) where
 
 import Val
 import Parsers.Lexer
@@ -202,9 +206,15 @@ PrefixSugar : quote                  { $1 }
 happyError (L p t) =
   alexErrorWithPos p $ "parse error at token '" ++ show t ++ "'"
 
+-- | Given an indication of origin and a string,
+-- attempt to parse the string as though it contained
+-- exactly one valid Scheme datum.
 parseDatum :: String -> String -> Either String Val
 parseDatum = runAlex' parse
 
+-- | Given an indication of origin and a string,
+-- attempt to parse the string as though it contains
+-- a sequence of 0 or more valid Scheme data.
 parseDatumSeq :: String -> String -> Either String [Val]
 parseDatumSeq = runAlex' (reverse <$> parseSeq)
 
