@@ -8,12 +8,8 @@
 
 ;; A numeric string that uniquely identifies this run in the universe
 
-(define ex:unique-token
-  (let ([tick 0])
-    (lambda ()
-      (define r tick)
-      (set! tick (+ tick 1))
-      (number->string r)))) ; only suitable for single-repl-session use
+(define (ex:unique-token)
+  (number->string (current-second)))
 
 ;; The letrec black hole and corresponding setter.
 
