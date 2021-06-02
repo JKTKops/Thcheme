@@ -1,3 +1,7 @@
+-- | Collects and exports all of the Scheme primitives defined in Haskell.
+--
+-- Thcheme has a few non-Scheme primitives such as ex:repl, but ex:repl
+-- and its friends are loaded at startup time by Bootstrap.
 module Primitives (primitives) where
 
 import           Data.HashMap.Strict (HashMap)
@@ -12,7 +16,7 @@ import qualified Primitives.Misc             as Misc
 import qualified Primitives.List             as List
 import qualified Primitives.Math             as Math
 import qualified Primitives.String           as String
---import qualified Primitives.Symbol           as Symbol
+import qualified Primitives.Time             as Time
 import qualified Primitives.TypeCheck        as TypeCheck
 import qualified Primitives.TypeTransformers as TypeCast
 import qualified Primitives.Vector           as Vector
@@ -22,6 +26,9 @@ import qualified Expander.SyntaxRules        as SyntaxRules
 -- temporary
 import Types
 
+-- | Mapping from names of Thcheme primitives to their initial bindings.
+-- Names are the names of primitives exported from Primitives.* modules,
+-- in either Primitives.**.primitives or Primitives.**.macros.
 primitives :: HashMap Symbol Val
 primitives = foldr1 Map.union
                 [ primitivesMap
@@ -36,7 +43,7 @@ primitives = foldr1 Map.union
       , Error.primitives
       , List.primitives
       , String.primitives
-      --, Symbol.primitives
+      , Time.primitives
       , Vector.primitives
       , TypeCheck.primitives
       , TypeCast.primitives
