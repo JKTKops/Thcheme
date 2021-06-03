@@ -1,17 +1,17 @@
 {-# LANGUAGE TupleSections #-}
 module Evaluation
-    ( -- | Initialize an EvalState
+    ( -- * Initialize an EvalState
       initEvalState
-      -- | evaluate a string
+      -- * evaluate a string
     , evaluate
-      -- | evaluate a given expression
+      -- * evaluate a given expression
     , evaluateExpr
-      -- | evaluate inside EM monad
+      -- * evaluate inside EM monad
     , eval, evalBody, evalTail, evalSeq, evalBodySeq, evalTailSeq
     , runTest
-      -- | Convert the evaluation output into a meaningful string
+      -- * Convert the evaluation output into a meaningful string
     , showResultIO
-      -- | Function application, not sure why this is here rn
+      -- * Function application, not sure why this is here rn
     , call, tailCall, rerootDynPoint
     ) where
 
@@ -220,6 +220,9 @@ evaluate label state input = case labeledReadExpr label input of
 -- At the end of evaluation, the dynamic environment is guaranteed to be the
 -- same as the dynamic environment at the start, even if evaluating the body
 -- causes early termination via exceptions.
+--
+-- Does some minor linting of the 'EvalState' after evaluation which will fail
+-- if the 'EvalState' does not represent a top-level dynamic environment.
 evaluateExpr :: EvalState -> Val -> IO (Either LispErr Val, EvalState)
 evaluateExpr state v = do
   initialDynPoint <- readIORef $ dynPoint state
@@ -236,9 +239,34 @@ evaluateExpr state v = do
   -- would not be reflected here. Thus it's critical that
   -- 'inInteractionEnv' in Primitives.Misc does not create a new root.
   -- It can use the current dynamic point or reroot to another point
-  -- that belongs to the same tree, but it _cannot_ create a _new_ root.
+  -- that belongs to the same tree, but it /cannot/ create a /new/ root.
   _ <- execEM state $ rerootDynPoint initialDynPoint $> Undefined
+  _ <- execEM state $ lintTopDynEnv initialDynPoint
   return r
+
+-- takes the initial dynamic point so that it can check that the current
+-- point is both the same and the root.
+lintTopDynEnv :: DynamicPoint -> EM Val
+lintTopDynEnv initialDynPoint
+  = do lintAssert "dynamic environment is not initial after evaluation" check
+       return Undefined
+  where
+    check = callCC $ \exit -> do
+      currentDynPoint <- gets dynPoint >>= readRef
+      unless (currentDynPoint == initialDynPoint) $ exit False
+      let Point _ parentRef = initialDynPoint
+      parent <- readRef parentRef
+      case parent of
+        Sentinel -> pure ()
+        _        -> exit False
+
+      handlersRef <- gets currentHandlers
+      handlers <- readRef handlersRef
+      case handlers of
+        [_] -> pure ()
+        _   -> exit False
+      return True -- end lintAssert
+
 
 -- | Provided for backwards compatibility.
 runTest :: Env -> Opts -> EM Val -> IO (Either LispErr Val, EvalState)

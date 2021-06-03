@@ -1,5 +1,13 @@
 {-# LANGUAGE LambdaCase #-}
-module Primitives.Misc (primitives, macros, valuesB) where
+module Primitives.Misc 
+  ( -- * Scheme primitive exports
+    primitives
+  , macros
+    
+    -- * low-level primitive builtins
+  , valuesB
+  , dynamicWindB
+  ) where
 
 -- TODO split into Control and Syntax
 import Text.Read (readMaybe)
@@ -10,8 +18,6 @@ import Evaluation
 import EvaluationMonad
 import Primitives.Unwrappers (unwrapSymbol, unwrapStr)
 import Control.Monad.Reader -- for qq
-
--- TODO NEXT: this module is broken right now because of Pairs
 
 primitives :: [Primitive]
 primitives = [ identityFunction
@@ -53,17 +59,20 @@ callWithCurrentContinuation =
     callcc _ = panic "callcc arity"
 
 dynamicWind :: Primitive
-dynamicWind = Prim "dynamic-wind" (Exactly 3) $ 
-  \[before, during, after] -> do
-    here <- gets dynPoint >>= readRef
-    let procs = (before, after)
-    procRef   <- newRef procs
-    parentRef <- newRef here
-    let point = Point procRef parentRef
-    rerootDynPoint point
-    dv <- call during []
-    rerootDynPoint here
-    return dv
+dynamicWind = Prim "dynamic-wind" (Exactly 3) dynamicWindB
+
+dynamicWindB :: Builtin
+dynamicWindB [before, during, after] = do
+  here <- gets dynPoint >>= readRef
+  let procs = (before, after)
+  procRef   <- newRef procs
+  parentRef <- newRef here
+  let point = Point procRef parentRef
+  rerootDynPoint point
+  dv <- call during []
+  rerootDynPoint here
+  return dv
+dynamicWindB _ = panic "dynamicWind arity"
 
 valuesP :: Primitive
 valuesP = Prim "values" (AtLeast 0) valuesB

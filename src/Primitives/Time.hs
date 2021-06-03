@@ -21,9 +21,8 @@ currentSecondP = Prim "current-second" (Exactly 0) $ \[] -> do
 -- according to the system clock. However, this is not guaranteed.
 currentJiffyP :: Primitive
 currentJiffyP = Prim "current-jiffy" (Exactly 0) $ \[] -> do
-  TimeSpec s n <- liftIO $ getTime Monotonic
-  let nanos = fromIntegral s * 1_000_000_000 + fromIntegral n
-  return $ makeBignum nanos
+  ts <- liftIO $ getTime Monotonic
+  return $ makeBignum $ toNanoSecs ts
 
 -- | See the r7rs spec for jiffies-per-second. Returns the number
 -- of jiffies per real-time second. At the moment, this is 1e9,

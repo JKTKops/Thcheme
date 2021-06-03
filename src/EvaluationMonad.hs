@@ -5,6 +5,7 @@ module EvaluationMonad
       EM (..)
     , EvalState (..)
     , StackFrame (..), DynamicPoint (..)
+    , dynPoint, currentHandlers
     , Env, GlobalEnv, LocalEnv
     , Opts
 
@@ -16,6 +17,7 @@ module EvaluationMonad
 
       -- * Construct the initial EvalState
     , initEvalState, resetEvalState
+    , ExceptionHandler 
     
       -- * Execute EM actions
     , execEM, execAnyEM, unsafeEMtoIO, emToIO
@@ -58,20 +60,28 @@ initEvalState initEnv opts = do
   let garbage = (Nil, Nil)
   root <- Point <$> newIORef garbage <*> newIORef Sentinel
   rootRef <- newIORef root
-  return $ ES initEnv [] [] rootRef opts
+  handlersRef <- newIORef initialHandlers
+  let dynEnv = DynamicEnv rootRef handlersRef
+  return $ ES initEnv [] [] dynEnv opts
 
 resetEvalState :: EvalState -> EvalState
 resetEvalState ES{ globalEnv
                  , localEnv = _
                  , stack = _
-                 , dynPoint
+                 , dynEnv 
                  , options}
   = ES { globalEnv
        , localEnv = []
        , stack = []
-       , dynPoint
+       , dynEnv
        , options
        }
+
+initialExceptionHandler :: ExceptionHandler
+initialExceptionHandler e = emCont $ \ _k s -> pure (Left e, s)
+
+initialHandlers :: [ExceptionHandler]
+initialHandlers = [initialExceptionHandler]
 
 execEM :: EvalState -> EM Val -> IO (Either LispErr Val, EvalState)
 execEM state (EM m) = runCont m (\v s -> pure (Right v, s)) state

@@ -48,13 +48,13 @@ evaluate label s src = case labeledReadExpr label src of
 
 -- | Evaluate a Scheme expression with the given initial state, for the
 -- purposes of the REPL. The given state should represent a bootstrapped
--- environment such as 'primitiveBindings.'
+-- environment such as 'primitiveBindings'.
 -- 
 -- The expression e is transformed into (ex:repl '(e)) and then handed off
 -- to the primitive 'Evaluation.evaluateExpr' evaluator which does not know
 -- anything in particular about the macro expander.
 --
--- 'ex:repl' is defined by lib/expander/expander.scm, and it embeds a
+-- 'ex:repl' is defined by lib\/expander\/expander.scm, and it embeds a
 -- macro system into a scheme that doesn't have one.
 evaluateExpr :: EvalState -> Val -> IO (Either LispErr Val, EvalState)
 evaluateExpr s e = Evaluation.evaluateExpr s callExpander

@@ -2,12 +2,15 @@ module Primitives.Error
   ( primitives
   ) where
 
-import Control.Monad.Cont (runCont)
-
 import Val
-import Types (ExceptionCont(..), emCont, unEM)
-import EvaluationMonad (EM, callCC, panic, throwError)
+import Types (ExceptionCont(..))
+import EvaluationMonad
+  ( EM, ExceptionHandler, currentHandlers
+  , callCC, panic, throwError, gets
+  , writeRef, readRef, modifyRef'
+  )
 import Evaluation
+import Primitives.Misc (dynamicWindB, valuesB)
 import Primitives.Unwrappers (unwrapStr)
 
 primitives :: [Primitive]
@@ -82,27 +85,66 @@ withExceptionHandlerP =
 
 withExceptionHandlerB :: [Val] -> EM Val
 withExceptionHandlerB [handler, thunk] =
-  withExceptionHandler applyHandler (call thunk [])
-  where
-    applyHandler v = call handler [v]
+  withExceptionHandler2 (makeExceptionHandler handler) thunk
 withExceptionHandlerB _ = panic "withExceptionHandlerB arity"
 
 -- | Low-level version of (scheme base) with-exception-handler.
-withExceptionHandler :: (Val -> EM Val) -> EM Val -> EM Val
-withExceptionHandler handler callThunk = emCont $ \k s -> do
-  mv <- runCont (unEM callThunk) (\ x s -> pure (Right x, s)) s
-  case mv of
-    (Left (Condition (Just (EC rck)) obj), s0) ->
-      runCont (unEM $ do v <- handler obj
-                         withExceptionHandler handler (rck v))
-              k -- continuation of new withExceptionHandler frame is same
-                -- as the old one
-              s0 -- restore state to when condition was raised
-    (Left e, s0) ->
-      let obj = case e of
-            Condition _ obj -> obj
-            other -> Exception other
-      in runCont (unEM $ handler obj)
-                 (\ _ s -> pure (Left e, s))
-                 s0
-    (Right v, s1) -> runCont (pure v) k s1
+withExceptionHandler2 :: ExceptionHandler -- ^ New exception handler to install
+                      -> Val -- ^ Scheme procedure accepting 0 arguments to
+                             -- call with the new handler installed
+                      -> EM Val
+withExceptionHandler2 handler thunk = do
+  handlers <- gets currentHandlers >>= readRef
+  let newHandlers = handler : handlers
+  dynamicWindB [ makeExceptionHandlersSetter newHandlers
+               , thunk
+               , makeExceptionHandlersSetter handlers
+               ]
+
+makeExceptionHandlersSetter :: [ExceptionHandler] -> Val
+makeExceptionHandlersSetter handlers =
+  Primitive (Exactly 0) setter "with-exception-handler:dynamic-handlers-set!"
+  where
+    setter _ = do
+      handlersRef <- gets currentHandlers
+      writeRef handlersRef handlers
+      valuesB []
+
+-- Note: [Continuations in conditions]
+-- Notice that the continuations in conditions are not continuation objects,
+-- merely haskell continuations. The biggest difference between the two is
+-- that haskell continuations don't capture a dynamic point. That's no problem
+-- for the primitive exception handling facility, because once a continuable 
+-- exception is thrown, one of three things happens:
+--
+--   (1) The program terminates with a 'LispErr' and returns to the prompt, or
+--
+--   (2) A handler escapes to a (call/cc) captured continuation, which does
+--       have a captured dynamic point, and the appropriate reroots will happen
+--       at that point.
+--
+--   (3) The handler returns, in which case this must be the innermost handler
+--       in the dynamic extent of the raise-continuable call
+--
+-- Until one of those two things happens, 'emThrow' will be continually
+-- applying the next exception handler and unwinding to the next one if
+-- it returns. If it didn't return, it called an escape continuation. Unless
+-- a user is going out of their way to make bad things happen, this
+-- continuation was captured outside of the with-exception-handler call that
+-- raised the error. Rerooting to this continuation's DynamicPoint will
+-- reinstall the handlers that were in place in the dynamic extent of that
+-- with-exception-handler call. See the reference implementation to SRFI-34,
+-- but note that it does not include raise-continuable.
+
+-- | Convert a 'Val' representing a procedure that accepts one argument
+-- into an 'ExceptionHandler'.
+makeExceptionHandler :: Val -> ExceptionHandler
+makeExceptionHandler proc = handler
+  where
+    handler (Condition Nothing obj) = call proc [obj]
+    handler (Condition (Just (EC k)) obj) = do
+      r <- call proc [obj]
+      handlersRef <- gets currentHandlers
+      modifyRef' handlersRef (handler:)
+      k r
+    handler e = call proc [Exception e]

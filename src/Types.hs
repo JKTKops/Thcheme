@@ -20,8 +20,10 @@ module Types
     , liftEither
    -- , runIOThrows
     , EM (..), emCont
-    , EvalState (..)
+    , EvalState (..), dynPoint, currentHandlers
     , StackFrame (..)
+    , DynamicEnv(DynamicEnv)
+    , ExceptionHandler
     , DynamicPoint (..)
     , Opts
    -- , TraceType
@@ -42,7 +44,7 @@ import Control.Monad.Fail             ( MonadFail(..) )
 import Control.Monad.State.Lazy       ( MonadState(get, put), gets, modify )
 import Data.Complex                   ( Complex(..) )
 import Data.HashMap.Strict            ( HashMap )
-import Data.IORef                     ( IORef )
+import Data.IORef                     ( IORef, readIORef, writeIORef )
 import Data.Ratio                     ( (%), denominator, numerator )
 import Data.Text                      ( Text, unpack )
 import qualified Data.Text           as T
@@ -90,19 +92,13 @@ data Primitive = Prim Symbol Arity Builtin
 data Macro = Macro Arity (InTail -> Builtin)
 
 
--- TODO maybe R5RS numeric tower, or just some sort of float at least
 -- | Scheme values.
 --
 -- Some Scheme values can be either mutable or immutable. These are strings,
 -- lists, and vectors. The immutable variant begins with I, where applicable.
 --
--- Some values are interpreter control structures (Continuation, Primitive,
--- MultipleValues, etc.) while others are real data. Since, in the interpreter
--- itself, we always have ident ~ String, control structures enforce this.
--- Additionally, the mutable data structures are interpreter-only as well;
--- The parser cannot construct them.
--- The immutable data constructors are parameterized and the functor instance
--- maps them.
+-- The mutable data structures are interpreter-only;
+-- the parser cannot construct them.
 --
 -- Invariant: All objects contained in an IPair or IVector are immutable.
 --   Note that this is implicitly transitive.
@@ -360,12 +356,6 @@ instance. However, this type can.
 
 Cont r a ~ (a -> r) -> r, so
 Cont EMCont a ~ (a -> EvalState -> IO (...)) -> EvalState -> IO (...)
-EM a ~ (a -> EvalState -> IO (...)) -> ContArity -> EvalState -> IO (...).
-
-Essentially, you can imagine that EM is (Cont EMCont), except that it
-additionally keeps track of the arity of the current continuation. The
-arity is always One, unless it is explicitly set to Any by
-'allowMultipleValues.'
 -}
 type EMCont = EvalState -> IO (Either LispErr Val, EvalState)
 -- | The Evaluation Monad
@@ -376,12 +366,26 @@ emCont :: ((a -> EMCont) -> EMCont) -> EM a
 emCont = EM . cont
 
 emThrow :: LispErr -> EM a
-emThrow e = emCont $ \_k s -> pure (Left e, s)
+emThrow e = do
+  handlersRef <- gets currentHandlers
+  handlers    <- liftIO $ readIORef handlersRef
+  handler     <- case handlers of
+    [] -> error "emThrow: no handlers"
+    [handler] -> pure handler -- leave initial handler alone
+    (handler:cdrHandlers) ->
+      liftIO $ writeIORef handlersRef cdrHandlers >> return handler
+  _ <- handler e
+  -- If the handler returns, we are to raise an exception with an unspecified
+  -- relationship to e. For now, we simply re-raise e itself.
+  -- This is moderate future-proofing. If the 'Error' objects ever became
+  -- a primitive record type instead of a constructor of 'Val', we'd be in
+  -- trouble here.
+  emThrow e
 
 -- | State is recovered from the point that 'emCatch' was invoked.
 -- This function is for the MonadError EM instance and should not
 -- be used in practice, as it doesn't know anything about
--- continuable exceptions or using the correct dynamic environments.
+-- exception handlers.
 emCatch :: EM a -> (LispErr -> EM a) -> EM a
 emCatch (EM m) restore = emCont $ \k s -> do
     -- this leaves the catch frame around until the entire continuation
@@ -420,6 +424,13 @@ instance MonadState EvalState EM where
   put = emPut
   --{-# INLINE put #-}
 
+-- | This instance made sense historically, but do the inability of the type
+-- of 'catchError' to be instantiated by a function which uses 'Val'-specific
+-- exception handlers, it no longer makes sense.
+--
+-- Consider it deprecated. However, when it is removed, 'EvaluationMonad' will
+-- export a function named 'throwError' which behaves as a Haskell-level
+-- version of raise.
 instance MonadError LispErr EM where
   throwError = emThrow
   catchError = emCatch
@@ -444,9 +455,27 @@ liftIOThrows = liftEither <=< liftIO . runExceptT
 data EvalState = ES { globalEnv  :: GlobalEnv
                     , localEnv   :: LocalEnv
                     , stack      :: [StackFrame]
-                    , dynPoint   :: Ref DynamicPoint
+                    , dynEnv     :: DynamicEnv
                     , options    :: Opts
                     }
+
+type ExceptionHandler = LispErr -> EM Val
+
+-- | Haskell-level model of the dynamic Scheme environment.
+-- Be aware that this is not a dynamic-extent? object
+-- ala SRFI-154. It is the single representation of whichever
+-- dynamic extent happens to be current at this point in Thcheme's
+-- execution. It mutates as Thcheme executes.
+data DynamicEnv = DynamicEnv
+  { deDynPoint :: Ref DynamicPoint
+  , deHandlers :: Ref [ExceptionHandler]
+  }
+
+dynPoint :: EvalState -> Ref DynamicPoint
+dynPoint = deDynPoint . dynEnv
+
+currentHandlers :: EvalState -> Ref [ExceptionHandler]
+currentHandlers = deHandlers . dynEnv
 
 -- | Associate a call in the callTrace with its captured local environment.
 data StackFrame = StackFrame Val (Maybe LocalEnv)
