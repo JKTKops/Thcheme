@@ -9,7 +9,7 @@ module Parsers
 
 import Control.Monad.Except (MonadError, MonadIO, liftIO)
 
-import Parsers.Parser
+import Parser.Parser
 import Val
 import EvaluationMonad (liftEither)
 

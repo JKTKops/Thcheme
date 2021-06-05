@@ -12,14 +12,14 @@
 --
 -- See also Lexer.x.
 --------------------------------------------------------------------------------
-module Parsers.Parser 
+module Parser.Parser 
   ( -- * Entrypoints to Happy-generated parsers
     parseDatum
   , parseDatumSeq
   ) where
 
 import Val
-import Parsers.Lexer
+import Parser.Lexer
 import Data.Ratio (numerator, denominator, (%))
 import Data.Complex (Complex(..))
 import qualified Data.Text as T

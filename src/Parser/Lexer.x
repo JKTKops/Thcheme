@@ -1,6 +1,8 @@
 -------------------------------------------------------------------------------
 -- Experimental R7RS Scheme lexer written for Haskell using Alex.
 -- (c) Max Kopinsky, 2020
+-- This file has been modified from the version in my repo
+-- r7rs-parsing-experiments to support the specifics of Thcheme.
 --
 -- Token definitions mostly follow along with the R7RS formal syntax at
 -- the end of the report. We don't work too hard to allow configuarbility,
@@ -23,7 +25,7 @@
 -- support for unicode characters in (almost) all positions.
 -- Wherever an ASCII character might have special meaning to Scheme,
 -- that character cannot appear as part of a symbol, e.g. ' and #.
-module Parsers.Lexer 
+module Parser.Lexer 
   ( -- * Parsing monad
     Alex, AlexPosn
   , runAlex', alexMonadScan
