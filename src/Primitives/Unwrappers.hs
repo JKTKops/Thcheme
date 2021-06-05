@@ -1,6 +1,6 @@
 module Primitives.Unwrappers where
 
-import Val ( Val (..), Symbol, Number (..), RealNumber (..)
+import Val ( Val (..), Symbol, Number (..), RealNumber (..), Port (..)
            , LispErr(TypeMismatch), Text, getExactInteger )
 import EvaluationMonad (EM, throwError, readRef)
 
@@ -33,3 +33,8 @@ unwrapChar notChar  = throwError $ TypeMismatch "char" notChar
 unwrapBool :: Val -> EM Bool
 unwrapBool (Bool b) = return b
 unwrapBool notBool  = throwError $ TypeMismatch "boolean" notBool
+
+-- more involved unwrappers can be found in IOPrimitives.
+unwrapPort :: Val -> EM Port
+unwrapPort (Port p) = return p
+unwrapPort notPort  = throwError $ TypeMismatch "port" notPort

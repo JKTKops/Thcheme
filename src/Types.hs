@@ -9,7 +9,8 @@ module Types
     , Builtin
     , Primitive (..)
     , Macro (..)
-    , Val (..), Symbol, RealNumber (..), Number (..)
+    , Val (..), Symbol, Port(..)
+    , RealNumber (..), Number (..)
     , symbolName, symbolAsString
     , Ref
     , LispErr (..), ExceptionCont (..)
@@ -124,7 +125,7 @@ data Val
      }
   | MacroTransformer (Maybe Symbol) (Val -> EM Val)
 
-  | Port Handle
+  | Port Port
 
   | Nil
   | Pair !(Ref Val) !(Ref Val)
@@ -159,13 +160,28 @@ symbolName (T.uncons -> Just ('&', name)) =
       -- pieces are some number of components from the name
       -- if it contained tildes, followed by two components
       -- which are the unique identifiers.
-  in mconcat $ reverse $ drop 2 $ reverse pieces
+  in T.intercalate "~" $ reverse $ drop 2 $ reverse pieces
 symbolName primName = primName
 
 -- | Converts a symbol to its human-readable name as a string.
 -- Mostly useful for Show/write and in 'panic' messages.
 symbolAsString :: Symbol -> String
 symbolAsString = unpack . symbolName
+
+data Port
+  = HandlePort !Handle
+  -- consuming is permanent, as indexing characters
+  -- into a Unicode stream is necessarily O(n)
+  -- so supporting seeking is horribly slow.
+  -- When closed, the IORef is cleared so that the
+  -- text can eventually be freed.
+  | InputTextPort !(IORef Text) !(IORef Bool) -- open?
+  -- collect chunks, which will later be collected
+  -- by 'T.concat'. The chunks are stored in LIFO order.
+  -- When closed, the IORef is cleared so that the
+  -- list can be reclaimed by GC.
+  | OutputTextPort !(IORef [Text]) !(IORef Bool) -- open?
+  deriving (Eq)
 
 -- | Scheme numbers. Note that there is no Ord Number instance;
 -- complex numbers are not orderable and Scheme comparisons of

@@ -2,7 +2,8 @@
 
 module Val
   ( -- * Val and support types
-    Val (..), Symbol, Number (..), RealNumber (..)
+    Val (..), Symbol, Port(..)
+  , Number (..), RealNumber (..)
   , LispErr (..), isTerminationError
   , Primitive (..)
   , Macro (..)
