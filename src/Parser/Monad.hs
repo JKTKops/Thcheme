@@ -21,7 +21,7 @@ import qualified Data.IntMap as M
 import qualified System.IO.Unsafe as Unsafe (unsafePerformIO)
 
 import Val (Val, Port(..))
-import Primitives.Port (pReadChar, pPeekChar)
+import Types.Port (pReadChar, pPeekChar)
 
 --import Debug.Trace
 

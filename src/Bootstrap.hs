@@ -11,9 +11,9 @@ import System.IO.Unsafe (unsafePerformIO)
 import Paths_Thcheme
 import Val
 import EvaluationMonad (EvalState)
+import Types.Port (pOpenInputFile)
 import Parsers (labeledReadExprList, labeledReadExpr)
 import Primitives (primitives)
-import Primitives.Port (pOpenInputFile)
 import Environment (Env, bindVars, nullEnv, deepCopyEnv)
 import Options (noOpts)
 import qualified Evaluation

@@ -9,10 +9,10 @@ module Parsers
 
 import Control.Monad.Except (MonadError, MonadIO, liftIO)
 
-import Parser.Parser
-import Val
+import Types.Port (pOpenInputFile, pOpenInputString)
+import Parser.Parser (parseDatum, parseDatumSeq)
 import EvaluationMonad (liftEither)
-import Primitives.Port
+import Val
 
 labeledReadExprFromPort :: String -> Port -> Either LispErr Val
 labeledReadExprFromPort lbl port =

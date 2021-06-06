@@ -24,7 +24,7 @@ import System.IO.Unsafe (unsafePerformIO) -- be careful! for arbitrary instance
 import Types (extractValue) -- these functions can probably be removed entirely.
 import Primitives
 import Primitives.WriteLib (writeSharedSH, ushowString)
-import Primitives.Port (pStdout)
+import Types.Port (pStdout)
 
 instance Serial IO Val where
     series = cons1 (Symbol . pack)

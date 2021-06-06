@@ -7,7 +7,7 @@ import Control.Monad (unless)
 import Val
 import EvaluationMonad
 import Parsers (load, labeledReadExprFromPort)
-import Primitives.Port
+import Types.Port
 import Primitives.Unwrappers (unwrapStr, unwrapPort)
 import Primitives.WriteLib (writeSH, writeSimpleSH, writeSharedSH, displaySH)
 
