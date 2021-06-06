@@ -15,6 +15,7 @@ import qualified Primitives.Error            as Error
 import qualified Primitives.Misc             as Misc
 import qualified Primitives.List             as List
 import qualified Primitives.Math             as Math
+import qualified Primitives.Port             as Port
 import qualified Primitives.String           as String
 import qualified Primitives.Time             as Time
 import qualified Primitives.TypeCheck        as TypeCheck
@@ -42,6 +43,7 @@ primitives = foldr1 Map.union
       , Comparison.primitives
       , Error.primitives
       , List.primitives
+      , Port.primitives
       , String.primitives
       , Time.primitives
       , Vector.primitives

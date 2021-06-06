@@ -2,54 +2,24 @@
 -- TODO: rename to just IO
 module Primitives.IOPrimitives (primitives) where
 
-import Control.Monad (unless)
-
 import Val
 import EvaluationMonad
 import Parsers (load, labeledReadExprFromPort)
 import Types.Port
-import Types.Unwrappers (unwrapStr, unwrapPort)
+import Types.Unwrappers
+    ( unwrapStr,
+      unwrapOpenTextualInputPort,
+      unwrapOpenTextualOutputPort )
 import Primitives.WriteLib (writeSH, writeSimpleSH, writeSharedSH, displaySH)
 
 primitives :: [Primitive]
-primitives = [ openInputFile
-             , openOutputFile
-             , closePort, closeInputPort, closeOutputPort
-             , readP
+primitives = [ readP
              , readLineP
              , writeP, writeSimpleP, writeSharedP, displayP
              , newlineP
              , readContents
              , readAll
              ]
-
-makeFilePort :: Symbol -> (Text -> IO Port) -> Primitive
-makeFilePort name fnToPort = Prim name (Exactly 1) $ \case
-  [val] -> do
-    filename <- unwrapStr val
-    liftIO $ catchError (Port <$> fnToPort filename) $ \_ioe ->
-      return (Bool False) -- TODO: should be an object satisfying
-                          -- file-error?
-  _ -> panic $ "makePort@" ++ symbolAsString name ++ " arity"
-
-openInputFile, openOutputFile :: Primitive
-openInputFile  = makeFilePort "open-input-file" pOpenInputFile
-openOutputFile = makeFilePort "open-output-file" pOpenOutputFile
-
--- | Given the primitive name and an unwrapper (which should
--- assert the type of the Port as well as unwrapping it),
--- construct a primitive that closes a given Port.
-makePortCloser :: Symbol -> (Val -> EM Port) -> Primitive
-makePortCloser name unwrap = Prim name (Exactly 1) $
-  \[val] -> do
-    p <- unwrap val
-    liftIO $ pClose p
-    return $ MultipleValues []
-
-closePort, closeInputPort, closeOutputPort :: Primitive
-closePort = makePortCloser "close-port" unwrapPort
-closeInputPort = makePortCloser "close-input-port" unwrapInputPort
-closeOutputPort = makePortCloser "close-output-port" unwrapOutputPort
 
 readP :: Primitive
 readP = Prim "read" (Between 0 1) read
@@ -218,77 +188,3 @@ readAll = Prim "read-all" (Exactly 1) $ \case
     filename <- unpack <$> unwrapStr val
     load filename >>= makeMutableList
   _ -> panic "readAll arity"
-
--------------------------------------------------------------------------------
--- "Unwrappers" that validate ports have certain types
--------------------------------------------------------------------------------
-
-ensureInputPort :: Port -> EM ()
-ensureInputPort p = unlessM (liftIO $ pIsReadable p) $ throwError notInput
-  where notInput = TypeMismatch "input port" $ Port p
-
-ensureOutputPort :: Port -> EM ()
-ensureOutputPort p = unlessM (liftIO $ pIsWriteable p) $ throwError notOutput
-  where notOutput = TypeMismatch "output port" $ Port p
-
-ensureTextualPort :: Port -> EM ()
-ensureTextualPort p = unlessM (liftIO $ pIsTextual p) $ throwError notTextual
-  where notTextual = TypeMismatch "textual port" $ Port p
-
-ensureBinaryPort :: Port -> EM ()
-ensureBinaryPort p = unlessM (liftIO $ pIsBinary p) $ throwError notBinary
-  where notBinary = TypeMismatch "binary port" $ Port p
-
-ensureOpenPort :: Port -> EM ()
-ensureOpenPort p = unlessM (liftIO $ pIsOpen p) $ throwError notOpen
-  where notOpen = TypeMismatch "open port" $ Port p
-
-unwrapPortWithEnsures :: [Port -> EM ()] -> Val -> EM Port
-unwrapPortWithEnsures ensures = unwrap
-  where
-    applyEnsures p = mapM_ ($ p) ensures
-    unwrap v = do
-      p <- unwrapPort v
-      applyEnsures p
-      return p
-
-unwrapOpenTextualInputPort :: Val -> EM Port
-unwrapOpenTextualInputPort = unwrapPortWithEnsures
-  [ ensureOpenPort
-  , ensureInputPort
-  , ensureTextualPort
-  ]
-
-unwrapOpenTextualOutputPort :: Val -> EM Port
-unwrapOpenTextualOutputPort = unwrapPortWithEnsures
-  [ ensureOpenPort
-  , ensureOutputPort
-  , ensureTextualPort
-  ]
-
-unwrapOpenBinaryInputPort :: Val -> EM Port
-unwrapOpenBinaryInputPort = unwrapPortWithEnsures
-  [ ensureOpenPort
-  , ensureInputPort
-  , ensureBinaryPort
-  ]
-
-unwrapOpenBinaryOutputPort :: Val -> EM Port
-unwrapOpenBinaryOutputPort = unwrapPortWithEnsures
-  [ ensureOpenPort
-  , ensureOutputPort
-  , ensureBinaryPort
-  ]
-
--- close-input-port and close-output-port don't ask us to guarantee
--- that the ports are textual/binary or open, just that they are
--- appropriately input/output.
-
-unwrapInputPort :: Val -> EM Port
-unwrapInputPort = unwrapPortWithEnsures [ensureInputPort]
-
-unwrapOutputPort :: Val -> EM Port
-unwrapOutputPort = unwrapPortWithEnsures [ensureOutputPort]
-
-unlessM :: Monad m => m Bool -> m () -> m ()
-unlessM test act = test >>= \b -> unless b act
