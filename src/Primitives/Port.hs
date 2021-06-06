@@ -28,6 +28,11 @@ primitives =
   , openInputFileP, openOutputFileP
   , closePortP, closeInputPortP, closeOutputPortP
   , openInputStringP, openOutputStringP, getOutputStringP
+
+  -- non-standard procedures to retrieve standard i/o ports
+  -- for use in the standard library definitions of the
+  -- current-xxx-port parameter objects.
+  , stdinP, stdoutP, stderrP
   ]
 
 callWithPortP :: Primitive
@@ -141,3 +146,17 @@ getOutputStringP = Prim "get-output-string" (Exactly 1) $
         writeIORef payloadRef [collected]
         String <$> newIORef collected
       _ -> throwError $ TypeMismatch "output string port" v
+
+-- Some constant functions which just yield the standard
+-- communication ports. The standard library won't export
+-- these, rather, it will use them to create the initial
+-- values of the current-xxx-port parameter objects.
+stdinP, stdoutP, stderrP :: Primitive
+(stdinP, stdoutP, stderrP)
+  = ( mk "standard-input-port"  pStdin
+    , mk "standard-output-port" pStdout
+    , mk "standard-error-port"  pStderr
+    )
+  where
+    mk name port = Prim name (Exactly 0) $
+      \[] -> return $ Port port
