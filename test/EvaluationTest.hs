@@ -463,7 +463,7 @@ mkEvalTest tb = let exprs = lines $ input tb
     evaluations <- fmap (map fst) . forM exprs $ \input -> do
         step $ "input: " ++ input
         step "Parsing input"
-        let pExpr = readExpr input
+        pExpr <- readExpr input
         isRight pExpr @? "Parse failed on input: " ++ input
         let Right expr = pExpr
 
@@ -561,7 +561,9 @@ data ApplyTB = ApplyTB
 
 mkApplyTest :: ApplyTB -> TestTree
 mkApplyTest tb = testCase (testNameA tb) $ do
-    let Right funcP = labeledReadExpr "" $ funcIn tb
+    Right funcP <- labeledReadExpr
+                     ("(test: " ++ testNameA tb ++ ")") 
+                     $ funcIn tb
     primEnv <- primitiveBindings
     initState <- initEvalState primEnv noOpts
     (Right func) <- fst <$> evaluateExpr initState funcP
@@ -570,17 +572,17 @@ mkApplyTest tb = testCase (testNameA tb) $ do
 
 facConstantSpace :: TestTree
 facConstantSpace = testCase "factorial executes in constant space" $ do
-    let    -- we shouldn't need this once standard libraries are fixed
-        Right impRaise = readExpr "(import (primitives raise))"
-        Right defFac = readExpr $ unlines 
-          [ "(define (fac n)"
-          , "  (define (go acc n)"
-          , "    (if (= n 0)"
-          , "        (raise acc)"
-          , "        (go (* n acc) (- n 1))))"
-          , "  (go 1 n))"
-          ]
-        Right exec = readExpr "(fac 10)"
+          -- we shouldn't need this once standard libraries are fixed
+    Right impRaise <- readExpr "(import (primitives raise))"
+    Right defFac <- readExpr $ unlines 
+      [ "(define (fac n)"
+      , "  (define (go acc n)"
+      , "    (if (= n 0)"
+      , "        (raise acc)"
+      , "        (go (* n acc) (- n 1))))"
+      , "  (go 1 n))"
+      ]
+    Right exec <- readExpr "(fac 10)"
     primEnv <- primitiveBindings
     initState <- initEvalState primEnv noOpts
     evaluateExpr initState impRaise

@@ -13,6 +13,7 @@ import Val
 import EvaluationMonad (EvalState)
 import Parsers (labeledReadExprList, labeledReadExpr)
 import Primitives (primitives)
+import Primitives.Port (pOpenInputFile)
 import Environment (Env, bindVars, nullEnv, deepCopyEnv)
 import Options (noOpts)
 import qualified Evaluation
@@ -42,7 +43,7 @@ primitiveBindings = deepCopyEnv primitiveEnv
 evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
 -- Defined this way instead of parsing a wrapped 'src' string so that location
 -- information is correct.
-evaluate label s src = case labeledReadExpr label src of
+evaluate label s src = labeledReadExpr label src >>= \case
   Right v -> evaluateExpr s v
   Left e  -> pure (Left e, s)
 
@@ -65,8 +66,8 @@ evaluateExpr s e = Evaluation.evaluateExpr s callExpander
 bootstrapRead :: FilePath -> IO (Either LispErr [Val])
 bootstrapRead fname = do
   fpath <- getDataFileName fname
-  fsrc  <- readFile fpath
-  return $ labeledReadExprList fpath fsrc
+  port  <- pOpenInputFile $ pack fpath
+  return $ labeledReadExprList fpath port
 
 -- | Load a bootstrap scheme file from the data dir, read all
 -- the forms in it, and then evaluate it in the given state.
@@ -80,9 +81,9 @@ bootstrapLoad fname s = do
 -- | Execute a single given scheme expression and evaluate it
 -- in the given state. Useful for the initial import.
 bootstrapExec :: String -> EvalState -> IO ()
-bootstrapExec src s =
-  let Right expr = labeledReadExpr "bootstrap" src
-  in void $ evaluateExpr s expr
+bootstrapExec src s = do
+  Right expr <- labeledReadExpr "bootstrap" src
+  void $ evaluateExpr s expr
 
 stdlibName :: FilePath
 stdlibName = "lib/stdlib.scm"

@@ -1,5 +1,5 @@
 name:                Thcheme
-version:             0.2.10.2
+version:             0.2.11.0
 github:              "JKTKops/Thcheme"
 license:             BSD3
 author:              "Max Kopinsky"
@@ -39,7 +39,6 @@ dependencies:
 - mtl
 - random
 - text
-# - time
 - transformers
 - union-find
 - unordered-containers

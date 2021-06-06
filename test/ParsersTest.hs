@@ -218,7 +218,7 @@ testParseExpr testBuilder =
     testCaseSteps (testName testBuilder) $ \step -> do
         step "Parsing"
         let pInput = input testBuilder
-            parse = run pInput
+        parse <- run pInput
 
         if isJust $ expectedContents testBuilder
         then do
@@ -529,7 +529,7 @@ charParserTests = testGroup "Parsing Chars" $ map testCharParser
 listParserTests :: TestTree
 listParserTests = testGroup "Parsing Lists"
     [ testCase "\"(5 a #\\a)\"" $ do
-        let p = run "(5 a #\\a)"
+        p <- run "(5 a #\\a)"
         isRight p @? "Parse failed."
         let val = unrollList $ fromRight undefined p
         isJust val @? "Parse did not return a list."
@@ -542,7 +542,7 @@ listParserTests = testGroup "Parsing Lists"
 dotListParserTests :: TestTree
 dotListParserTests = testGroup "Parsing Dotted Lists"
     [ testCase "\"(5 a . #\\a)\"" $ do
-        let p = run "(5 a . #\\a)"
+        p <- run "(5 a . #\\a)"
         isRight p @? "Parse failed."
         let Right val = p
             mpair = unrollDList val
@@ -556,11 +556,11 @@ dotListParserTests = testGroup "Parsing Dotted Lists"
 vectorParserTests :: TestTree
 vectorParserTests = testGroup "Parsing vectors"
     [ testCase "\"#(1 #\\x ())\"" $ do
-        let p = run "#(1 #\\x ())"
+        p <- run "#(1 #\\x ())"
         val <- verify p
         fromJust val @?= V.fromList [Number 1, Char 'x', Nil]
     , testCase "\"#()\"" $ do
-        let p = run "#()"
+        p <- run "#()"
         val <- verify p
         fromJust val @?= V.empty
     ]
@@ -573,42 +573,46 @@ vectorParserTests = testGroup "Parsing vectors"
             return val
 
 -- PROPERTY TESTS
+prop_QuoteParser :: TestTree
 prop_QuoteParser = testProperty "tick always results in quote" $
-    withMaxSuccess 50 $ \input ->
-        let result = run ('\'' : show (input :: Val))
-        in isRight result ==> case result of
+    withMaxSuccess 50 $ \input -> ioProperty $ do
+        result <- run ('\'' : show (input :: Val))
+        return $ isRight result ==> case result of
             Right (IPair (Symbol "quote") _) -> True
             _ -> False
 
+prop_QuasiquoteParser :: TestTree
 prop_QuasiquoteParser = testProperty "backtick always results in quasiquote" $
-    withMaxSuccess 50 $ \input ->
-        let result = run ('`' : show (input :: Val))
-        in isRight result ==> case result of
+    withMaxSuccess 50 $ \input -> ioProperty $ do
+        result <- run ('`' : show (input :: Val))
+        return $ isRight result ==> case result of
             Right (IPair (Symbol "quasiquote") _)  -> True
             _ -> False
 
+prop_UnquoteParser :: TestTree
 prop_UnquoteParser = testProperty "comma always results in unquote" $
-    withMaxSuccess 50 $ \input ->
-        let result = run (',' : clean (show (input :: Val)))
-        in isRight result ==> case result of
+    withMaxSuccess 50 $ \input -> ioProperty $ do
+        result <- run (',' : clean (show (input :: Val)))
+        return $ isRight result ==> case result of
             Right (IPair (Symbol "unquote") _)  -> True
             _ -> False
   -- if we don't do this, a LispString/Symbol that starts with '@' will turn it into
   -- an unquote splicing, which happened in a test at least once.
   where clean = dropWhile (== '@')
 
+prop_UnquoteSplicingParser :: TestTree
 prop_UnquoteSplicingParser = testProperty "comma@ always results in unquote-splicing" $
-    withMaxSuccess 50 $ \input ->
-        let result = run (",@" ++ show (input :: Val))
-        in isRight result ==> case result of
+    withMaxSuccess 50 $ \input -> ioProperty $ do
+        result <- run (",@" ++ show (input :: Val))
+        return $ isRight result ==> case result of
             Right (IPair (Symbol "unquote-splicing") _)  -> True
             _ -> False
 
-run :: String -> Either LispErr Val
+run :: String -> IO (Either LispErr Val)
 run = labeledReadExpr ""
 
-parseSucceeds :: String -> Bool
-parseSucceeds s = isRight $ run s
+parseSucceeds :: String -> IO Bool
+parseSucceeds s = isRight <$> run s
 
 testStringParser :: TestBuilder Text -> TestTree
 testStringParser tb = testParser tb getString
@@ -649,7 +653,7 @@ testParser :: (Eq a, Show a)
 testParser testBuilder decons =
     testCaseSteps (testName testBuilder) $ \step -> do
         step "Parsing"
-        let parse = run $ input testBuilder
+        parse <- run $ input testBuilder
 
         if isJust $ expectedContents testBuilder
         then do

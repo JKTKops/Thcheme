@@ -32,11 +32,25 @@
 module Primitives.Port where
 
 import Data.Functor ((<&>))
-import Data.IORef
+import Data.IORef (modifyIORef', newIORef, readIORef, writeIORef)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import System.IO
-import System.IO.Error
+    ( hClose,
+      hFlush,
+      hIsOpen,
+      hIsReadable,
+      hIsWritable,
+      hLookAhead,
+      openFile,
+      stderr,
+      stdin,
+      stdout,
+      hGetChar,
+      hPutChar,
+      hReady,
+      IOMode(WriteMode, ReadMode) )
+import System.IO.Error (catchIOError, isEOFError)
 
 import Val
 import EvaluationMonad (panic)

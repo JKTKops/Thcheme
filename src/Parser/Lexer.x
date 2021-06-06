@@ -56,10 +56,11 @@ import Control.Applicative ((<|>))
 import qualified Data.IntMap as M
 import Numeric (readInt, readHex, readFloat)
 
+import Parser.Monad hiding (alex_tab_size)
 import Val
 }
 
-%wrapper "monadUserState"
+-- %wrapper "monadUserState"
 
 -------------------------------------------------------------------------------
 -- Character set macros
@@ -91,6 +92,8 @@ $radix_indicator = [bodxBODX]
 
 $intraline_whitespace = [\ \t]
 
+-- This is no longer used here. If you want to modify this, make sure
+-- to match the 'followedByDelimiter' predicate in Monad.hs
 $delimiter = [$white \| \( \) \[ \] \{ \} \; \"]
 
 -------------------------------------------------------------------------------
@@ -178,7 +181,7 @@ tokens :-
   "`"                       { lex' TokBackquote }
   ","                       { lex' TokComma }
   ",@"                      { lex' TokCommaAt }
-  "." /$delimiter           { lex' TokDot }
+  "." /{ delimited }        { lex' TokDot }
   "#;"                      { lex' TokDatumComment }
   
   \# $dec_digit+ \=         { lex tokLabelDef }
@@ -195,16 +198,16 @@ tokens :-
   -- to go. 'lexNumeric' would have to check if that setting is on to decide
   -- if '#' triggers 'mightBeSymbol' or not. '#' can be safely added back
   -- to $initial with no other complications afaik.
-  "#f"      /$delimiter     { lex' (TokBool False) }
-  "#false"  /$delimiter     { lex' (TokBool False) }
-  "#t"      /$delimiter     { lex' (TokBool True) }
-  "#true"   /$delimiter     { lex' (TokBool True) }
+  "#f"      /{ delimited }     { lex' (TokBool False) }
+  "#false"  /{ delimited }     { lex' (TokBool False) }
+  "#t"      /{ delimited }     { lex' (TokBool True) }
+  "#true"   /{ delimited }     { lex' (TokBool True) }
 
-  \# \\ .              /$delimiter { lexChar }
-  \# \\ x $hex_digit+  /$delimiter { unicodeEscapeChar }
-  \# \\ $letter+       /$delimiter { namedChar }
+  \# \\ .              /{ delimited } { lexChar }
+  \# \\ x $hex_digit+  /{ delimited } { unicodeEscapeChar }
+  \# \\ $letter+       /{ delimited } { namedChar }
 
-  \# \! $initial $subsequent+ /$delimiter { directive }
+  \# \! $initial $subsequent+ /{ delimited } { directive }
 
   \"                        { begin string }
 
@@ -215,21 +218,21 @@ tokens :-
   -- the lexer will match in @prefix @int_hex instead.
   @dec_prefix @int_hex
     @explicit_suffix
-      /$delimiter           { lexNumeric tokDecimal }
+      /{ delimited }        { lexNumeric tokDecimal }
   @prefix @int_hex      
-      /$delimiter           { lexNumeric tokInt }
+      /{ delimited }        { lexNumeric tokInt }
   @prefix @sign @decimal_hex
-      /$delimiter           { lexNumeric tokDecimal }
+      /{ delimited }        { lexNumeric tokDecimal }
   @prefix @rational_hex
-      /$delimiter           { lexNumeric tokRational }
+      /{ delimited }        { lexNumeric tokRational }
   @prefix @infnan         
-      /$delimiter           { lexNumeric tokInfnan }
+      /{ delimited }        { lexNumeric tokInfnan }
   
   @prefix 
     @real_hex \@ @real_hex
-      /$delimiter           { lexNumeric tokComplexPolar }
+      /{ delimited }        { lexNumeric tokComplexPolar }
   @prefix @complex_hex
-      /$delimiter           { lexNumeric tokComplex }
+      /{ delimited }        { lexNumeric tokComplex }
   
   -- Previously, the first two cases were above numbers with a note about
   -- some weird overlap because we lex all number as hex numbers.
@@ -265,7 +268,7 @@ tokens :-
 -- for testing
 -- | Convert a source string into a list of lexemes.
 -- Primarily useful for testing the lexer.
-stream :: String -> Either String [Lexeme]
+stream :: Port -> Either String [Lexeme]
 stream = runAlex' loop "<stream>" where
   loop = do
     l <- alexMonadScan
@@ -273,92 +276,36 @@ stream = runAlex' loop "<stream>" where
       L _ TokEOF -> return []
       other -> (other:) <$> loop
 
-data PState
-  = PState { source_name :: String
-    
-           , workingMap  :: Labels
-           , completeMap :: Labels
-             -- | Don't define new labels while parsing a datum comment.
-             -- Note: we could use one field for both nested block comments
-             -- and nested datum comments, but this would make the code
-             -- harder to maintain without substantial gain. The lexer is
-             -- threaded through the parser, so sometimes we will have to
-             -- lex (nested) block comments in the middle of parsing a (nested)
-             -- datum comment.
-           , datum_comment_depth :: !Int
-           , block_comment_depth :: !Int
-             -- | Used to detect the #0=#0# error. Stores the value of
-             -- the label currently being defined and the location we should
-             -- use if we need to produce an error message.
-           , defining_label :: Maybe (AlexPosn, Int)
-           
-             -- | Used while tokenizing strings and vertical-bar identifiers
-             -- as scratch space to build a string.
-           , scratch_space :: String
+alexMonadScan :: Alex Lexeme
+alexMonadScan = do
+  inp__ <- alexGetInput
+  sc <- alexGetStartCode
+  case alexScan inp__ sc of
+    AlexEOF -> alexEOF
+    AlexError ((AlexPn _ line column),_,_,_,_) -> alexError $ "lexical error at line " ++ show line ++ ", column " ++ (show column)
+    AlexSkip  inp__' _len -> do
+        alexSetInput inp__'
+        alexMonadScan
+    AlexToken inp__' len action -> do
+        alexSetInput inp__'
+        action (setTokenFrom inp__' $ ignorePendingBytes inp__) len
 
-             -- | To integrate with a Scheme implementation, this should be
-             -- replaced by a set of flags as appropriate.
-           , fold_case :: Bool
-           }
+--------------------------------------------------------------------------------
+-- Some useful token actions taken from the templates file,
+-- since we had to move alexMonadScan here as well.
+--------------------------------------------------------------------------------
 
-initializePState :: String -> Labels -> PState
-initializePState srcName completeMap
-  = PState { source_name = srcName
-           , workingMap = M.empty
-           , completeMap = completeMap
-           , datum_comment_depth = 0
-           , block_comment_depth = 0
-           , defining_label = Nothing
-           , scratch_space = ""
-           , fold_case = False
-           }
+-- just ignore this token and scan another one
+skip :: AlexAction Lexeme
+skip _input _len = alexMonadScan
 
-type Labels = M.IntMap Val
-type AlexUserState = PState
+-- ignore this token, but set the start code to a new value
+begin :: Int -> AlexAction Lexeme
+begin code _input _len = do alexSetStartCode code; alexMonadScan
 
-alexInitUserState :: PState
-alexInitUserState = error "someone used runAlex. Use runAlex' instead!"
-
--- | Run an Alex parser, giving a source name and the source itself.
--- Returns either a string representing a lexical error, or the result type
--- of the parser.
--- Handles the black-magic laziness that is used to support datum labels.
-runAlex' :: Alex a -> String -> String -> Either String a
-runAlex' (Alex f) srcName input =
-  let r = f AlexState { alex_pos = alexStartPos
-                        -- append a newline so that $delimiter doesn't choke on EOF
-                      , alex_inp = input ++ "\n"
-                      , alex_chr = '\n'
-                      , alex_bytes = []
-                        -- it is absolutely crucial that the 'mapFromResult r'
-                        -- thunk is never forced until the parse is over. If
-                        -- the parse fails, we won't ever be trying to force
-                        -- problematic vals. If the parse succeeds, then there
-                        -- is a map that we can use and we should be good
-                        -- to go.
-                      , alex_ust = initializePState srcName $ mapFromResult r
-                      , alex_scd = 0
-                      }
-  in case r of
-    Left msg    -> Left msg
-    Right (_,a) -> Right a
-  where
-    mapFromResult Left{} = error "result forced early (but you probably won't see this because it will just hang)"
-    mapFromResult (Right (AlexState{alex_ust = PState{workingMap = m}}, _)) = m
-
-alexState :: (PState -> (a, PState)) -> Alex a
-alexState f = Alex $ \s@AlexState{alex_ust=ust} ->
-  let (a, ust') = f ust in Right (s{alex_ust = ust'}, a)
-{-# INLINE alexState #-}
-
-alexGet :: Alex PState
-alexGet = alexState $ \s -> (s, s)
-
-alexPut :: PState -> Alex ()
-alexPut s = alexState $ const ((), s)
-
-alexModify :: (PState -> PState) -> Alex ()
-alexModify f = fmap f alexGet >>= alexPut
+--------------------------------------------------------------------------------
+-- End actions
+--------------------------------------------------------------------------------
 
 modifyScratchSpace :: (String -> String) -> Alex ()
 modifyScratchSpace f = alexModify $ \s -> 
@@ -495,22 +442,27 @@ instance Show Numeric where
   show _ = "NumericToken"
 
 lex :: (String -> Token) -> AlexAction Lexeme
-lex f = \(p,_,_,s) i -> return $ L p (f (take i s))
+lex f = \(p,_,_,tok,_port) i -> return $ L p (f tok)
 
 lex' :: Token -> AlexAction Lexeme
 lex' = lex . const
 
 lexFolded :: (String -> Token) -> AlexAction Lexeme
-lexFolded f = \(p,_,_,s) i -> do
+lexFolded f = \(p,_,_,tok,_port) _i -> do
   fold <- getFoldFun
-  return $ L p $ f $ fold $ take i s
+  return $ L p $ f $ fold tok
 
 partialLex :: AlexAction a -> AlexAction Lexeme
 partialLex act = \s i -> act s i >> skip s i
 
+alexGetPos :: Alex AlexPosn
+alexGetPos = do
+  (p,_,_,_,_) <- alexGetInput
+  return p
+
 alexEOF :: Alex Lexeme
 alexEOF = do
-  (p,_,_,_) <- alexGetInput
+  p <- alexGetPos
   return $ L p TokEOF
 
 tokLabelDef, tokLabelRef :: String -> Token
@@ -518,8 +470,8 @@ tokLabelDef ('#' : tl) = TokLabelDef $ read $ init tl
 tokLabelRef ('#' : tl) = TokLabelRef $ read $ init tl
 
 directive :: AlexAction Lexeme
-directive = partialLex $ \a@(p,_,_,s) i ->
-  let name = drop 2 $ take i s in
+directive = partialLex $ \a@(p,_,_,tok,_port) _i ->
+  let name = drop 2 tok in
   case name of
     "fold-case" -> alexModify $ \s -> s { fold_case = True }
     "no-fold-case" -> alexModify $ \s -> s { fold_case = False }
@@ -535,7 +487,7 @@ getFoldFun = do
 -------------------------------------------------------------------------------
 
 endString :: AlexAction Lexeme
-endString = \(p,_,_,_) _ -> do
+endString = \(p,_,_,_,_) _ -> do
   scratch <- scratch_space <$> alexGet
   modifyScratchSpace $ const ""
   alexSetStartCode 0
@@ -545,10 +497,10 @@ addScratch :: Char -> Alex ()
 addScratch c = modifyScratchSpace (c:)
 
 stringChar :: AlexAction Lexeme
-stringChar = partialLex $ \(_,_,_,(c:_)) _ -> addScratch c
+stringChar = partialLex $ \(_,_,_,(c:_),_) _ -> addScratch c
 
 escapeChar :: AlexAction Lexeme
-escapeChar = partialLex $ \(p,_,_,'\\':e:_) _ -> case e of
+escapeChar = partialLex $ \(p,_,_,'\\':e:_,_) _ -> case e of
   'a' -> addScratch '\a'
   'b' -> addScratch '\b'
   't' -> addScratch '\t'
@@ -561,7 +513,7 @@ escapeChar = partialLex $ \(p,_,_,'\\':e:_) _ -> case e of
 
 -- characters like '\x3bb;'. We use (i-1) to drop the semicolon.
 unicodeEscape :: AlexAction Lexeme
-unicodeEscape = partialLex $ \(p,_,_,s) i ->
+unicodeEscape = partialLex $ \(p,_,_,s,_) i ->
   addScratch =<< unUnicodeEscape p (drop 2 $ take (i-1) s)
 
 -------------------------------------------------------------------------------
@@ -569,7 +521,7 @@ unicodeEscape = partialLex $ \(p,_,_,s) i ->
 -------------------------------------------------------------------------------
 
 endSymbol :: AlexAction Lexeme
-endSymbol = \(p,_,_,_) _ -> do
+endSymbol = \(p,_,_,_,_) _ -> do
   scratch <- scratch_space <$> alexGet
   modifyScratchSpace $ const ""
   alexSetStartCode 0
@@ -597,9 +549,9 @@ charNames =
   ]
 
 namedChar :: AlexAction Lexeme
-namedChar = \(p,_,_,s) i -> do
+namedChar = \(p,_,_,tok,_) _i -> do
   fold <- getFoldFun
-  let name = drop 2 $ take i s
+  let name = drop 2 tok
       mchar = lookup (fold name) charNames
   case mchar of
     Just c  -> return $ L p $ TokChar c
@@ -609,9 +561,9 @@ namedChar = \(p,_,_,s) i -> do
 -- In those, we want to add the character to the scratch space but here we
 -- just want to throw it into a character.
 unicodeEscapeChar :: AlexAction Lexeme
-unicodeEscapeChar = \(p,_,_,s) i -> do
+unicodeEscapeChar = \(p,_,_,tok,_) _i -> do
        -- drop # \ x
-  c <- unUnicodeEscape p $ drop 3 $ take i s
+  c <- unUnicodeEscape p $ drop 3 tok
   return $ L p $ TokChar c
 
 unUnicodeEscape :: AlexPosn -> String -> Alex Char
@@ -653,9 +605,8 @@ catchRadix r e = case e of
 lexNumeric :: (Radix -> Exactness -> String -> Either String Numeric)
                -- ^ parse a number given a radix and exactness
             -> AlexAction Lexeme
-lexNumeric f = \(p,_,_,s) i -> 
-  let tok = take i s
-      (str, r, e) = stripPrefixes tok
+lexNumeric f = \(p,_,_,tok,_) _i -> 
+  let (str, r, e) = stripPrefixes tok
       -- There's some overlap with peculiar identifiers here,
       -- e.x. +deadbeef should be read as a symbol, not as a bad
       -- decimal number.
@@ -908,7 +859,7 @@ alexErrorWithPos (AlexPn _ line col) s = do
 -- | Signal a parse error at the current position of the parser.
 alexError' :: String -> Alex a
 alexError' s = do
-  (p,_,_,_) <- alexGetInput
+  p <- alexGetPos
   alexErrorWithPos p s
 
 }

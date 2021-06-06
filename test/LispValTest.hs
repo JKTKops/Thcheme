@@ -24,6 +24,7 @@ import System.IO.Unsafe (unsafePerformIO) -- be careful! for arbitrary instance
 import Types (extractValue) -- these functions can probably be removed entirely.
 import Primitives
 import Primitives.WriteLib (writeSharedSH, ushowString)
+import Primitives.Port (pStdout)
 
 instance Serial IO Val where
     series = cons1 (Symbol . pack)
@@ -158,7 +159,7 @@ scTests = testGroup "(SmallCheck)"
 -- UNIT TESTS
 testShowPort :: TestTree
 testShowPort = testCase "Ports show correctly" $
-    (show :: Val -> String) (Port stdout) @?= "#<port>"
+    (show :: Val -> String) (Port pStdout) @?= "#<port>"
 
 testShowPrimitives :: TestTree
 testShowPrimitives = testCase "Primitives show correctly" $

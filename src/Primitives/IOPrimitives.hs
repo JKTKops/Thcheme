@@ -6,7 +6,7 @@ import Control.Monad (unless)
 
 import Val
 import EvaluationMonad
-import Parsers (readExpr, load)
+import Parsers (load, labeledReadExprFromPort)
 import Primitives.Port
 import Primitives.Unwrappers (unwrapStr, unwrapPort)
 import Primitives.WriteLib (writeSH, writeSimpleSH, writeSharedSH, displaySH)
@@ -27,7 +27,9 @@ makeFilePort :: Symbol -> (Text -> IO Port) -> Primitive
 makeFilePort name fnToPort = Prim name (Exactly 1) $ \case
   [val] -> do
     filename <- unwrapStr val
-    liftIO $ Port <$> fnToPort filename
+    liftIO $ catchError (Port <$> fnToPort filename) $ \_ioe ->
+      return (Bool False) -- TODO: should be an object satisfying
+                          -- file-error?
   _ -> panic $ "makePort@" ++ symbolAsString name ++ " arity"
 
 openInputFile, openOutputFile :: Primitive
@@ -53,13 +55,16 @@ readP :: Primitive
 readP = Prim "read" (Between 0 1) read
   where
     read :: Builtin
-    read []       = read [Port pStdin]
+    read []  = --read [Port pStdin]
+               throwError $ Default "currently, attempting to (read) stdin will hang"
     read [v] = do
       p <- unwrapOpenTextualInputPort v
-      mtxt <- liftIO (pReadLine p)
-      case mtxt of
-        Nothing -> return $ Bool False -- TODO: eof-object
-        Just txt -> liftEither $ readExpr $ unpack txt
+      let ev = labeledReadExprFromPort "read" p
+      -- TODO: correct the errors (or maybe change 'alexError' to be more
+      -- informative?) specifically:
+      --   1) EOF but read no characters: return #<eof>
+      --   2) any other lexing/parsing error: read-error
+      liftEither ev
     read _ = panic "read arity"
 
 readLineP :: Primitive

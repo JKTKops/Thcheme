@@ -211,8 +211,16 @@ rerootDynPoint there@(Point dataRef parentRef) = do
 -- Primary entrypoints
 -------------------------------------------------------------------------------
 
+-- TODO: Currently these just open an InputTextPort via 'labeledReadExpr'
+-- but it would be better to make the input be a port and then track these
+-- back to the use sites and give a port instead of whatever String IO is
+-- being used currently.
+-- Actually, there's a problem with that: the REPL needs to output its
+-- prompt and keep the input buffer clear between invocations. However,
+-- The REPL can simply produce an InputTextPort to hand over.
+
 evaluate :: String -> EvalState -> String -> IO (Either LispErr Val, EvalState)
-evaluate label state input = case labeledReadExpr label input of
+evaluate label state input = labeledReadExpr label input >>= \case
   Right expr -> evaluateExpr state expr
   Left e     -> pure (Left e, state)
 

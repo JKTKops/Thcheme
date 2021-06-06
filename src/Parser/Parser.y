@@ -209,13 +209,13 @@ happyError (L p t) =
 -- | Given an indication of origin and a string,
 -- attempt to parse the string as though it contained
 -- exactly one valid Scheme datum.
-parseDatum :: String -> String -> Either String Val
+parseDatum :: String -> Port -> Either String Val
 parseDatum = runAlex' parse
 
 -- | Given an indication of origin and a string,
 -- attempt to parse the string as though it contains
 -- a sequence of 0 or more valid Scheme data.
-parseDatumSeq :: String -> String -> Either String [Val]
+parseDatumSeq :: String -> Port -> Either String [Val]
 parseDatumSeq = runAlex' (reverse <$> parseSeq)
 
 prefix :: Token -> Val -> Val
