@@ -3,7 +3,7 @@ module Primitives.Bool (primitives, predicate, predicateM, boolBinop) where
 
 import Val
 import EvaluationMonad (EM, panic)
-import Primitives.Unwrappers (unwrapBool)
+import Types.Unwrappers (unwrapBool)
 
 -- | Scheme primitive exports: not, &&, ||.
 --

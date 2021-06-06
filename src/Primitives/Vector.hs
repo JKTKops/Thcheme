@@ -14,7 +14,7 @@ import Control.Monad.Except ( MonadIO(..), MonadError(throwError) )
 
 import Val
 import EvaluationMonad (EM, panic)
-import Primitives.Unwrappers (unwrapExactInteger)
+import Types.Unwrappers (unwrapExactInteger)
 
 primitives :: [Primitive]
 primitives = [vectorP, makeVectorP, vectorLengthP, vectorRefP, vectorSetP]

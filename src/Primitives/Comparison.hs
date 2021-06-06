@@ -21,9 +21,9 @@ import Control.Monad.IO.Class (MonadIO, liftIO)
 import Val
 import EvaluationMonad (EM, panic)
 import Primitives.Bool (boolBinop)
-import Primitives.Unwrappers
 import Primitives.Vector hiding (primitives)
 import Primitives.String hiding (primitives)
+import Types.Unwrappers
 
 -- Used to implement 'equals?'
 import Data.Functor ((<&>))

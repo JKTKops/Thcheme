@@ -14,7 +14,7 @@ import qualified Data.Text as T
 
 import Val
 import EvaluationMonad
-import Primitives.Unwrappers (unwrapExactInteger, unwrapStr)
+import Types.Unwrappers (unwrapExactInteger, unwrapStr)
 
 -- TODO: use Data.CaseInsensitive to add the -foldcase functions
 

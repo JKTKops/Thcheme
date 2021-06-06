@@ -7,7 +7,7 @@ import Control.Monad.Except (throwError)
 
 import Val
 import EvaluationMonad
-import Primitives.Unwrappers (unwrapChar, unwrapExactInteger, unwrapStr)
+import Types.Unwrappers (unwrapChar, unwrapExactInteger, unwrapStr)
 
 primitives :: [Primitive]
 primitives = [ typeTransformer name transform 

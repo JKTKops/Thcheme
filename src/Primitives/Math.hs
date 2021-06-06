@@ -10,7 +10,7 @@ import Data.Ratio (approxRational)
 
 import Val
 import EvaluationMonad (throwError, panic)
-import Primitives.Unwrappers (unwrapNum, unwrapRealNum, unwrapExactInteger)
+import Types.Unwrappers (unwrapNum, unwrapRealNum, unwrapExactInteger)
 import Primitives.Bool (predicate, predicateM)
 import Primitives.Misc (valuesB)
 

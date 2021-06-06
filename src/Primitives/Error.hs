@@ -11,7 +11,7 @@ import EvaluationMonad
   )
 import Evaluation
 import Primitives.Misc (dynamicWindB, valuesB)
-import Primitives.Unwrappers (unwrapStr)
+import Types.Unwrappers (unwrapStr)
 
 primitives :: [Primitive]
 primitives =

@@ -16,7 +16,7 @@ import Parsers (load)
 import Val
 import Evaluation
 import EvaluationMonad
-import Primitives.Unwrappers (unwrapSymbol, unwrapStr)
+import Types.Unwrappers (unwrapSymbol, unwrapStr)
 import Control.Monad.Reader -- for qq
 
 primitives :: [Primitive]
