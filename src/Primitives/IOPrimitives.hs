@@ -51,10 +51,12 @@ readLineB [v] = do
 readLineB _ = panic "readLine arity"
 
 {- TODO: [r7rs]
-We don't define or use 'current-input-port' or any of the
+~~We don't define or use 'current-input-port' or any of the
 port operations like 'with-output-string' or whatever it's called.
 We can/should split these operations into Port.hs and Display.hs or something
-to that effect.
+to that effect.~~
+^^ still have to define current-input-port but splitting and port operations
+happened already.
 
 My thoughts at the moment are that we should prepend 'thcheme:' to the starts
 of these primitives and make them _require_ a port argument.
