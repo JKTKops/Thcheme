@@ -2,7 +2,6 @@
 {-# LANGUAGE RankNTypes #-}
 module Primitives.Math (primitives) where
 
-import Control.Monad (mapM)
 import Data.Complex (Complex(..))
 import Data.Functor ((<&>))
 import Data.List (foldl', foldl1')

@@ -37,7 +37,9 @@ dependencies:
 - haskeline
 - monad-loops
 - mtl
+- parsec
 - random
+- STMonadTrans
 - text
 - transformers
 - union-find
