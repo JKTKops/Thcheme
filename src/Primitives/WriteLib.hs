@@ -12,12 +12,9 @@ import Val
 import Primitives.Vector (vectorElemsPH)
 import Primitives.String (stringSH, unwrapStringPH)
 
-import Control.Monad.IO.Class (MonadIO(..))
 import System.Mem.StableName (StableName, makeStableName)
 
-import Control.Monad (when)
-import Control.Monad.Reader
-    (ReaderT(runReaderT), lift, asks)
+import Control.Monad.Reader (ReaderT(runReaderT), asks)
 import Control.Monad.State
 import qualified Data.HashSet as S
 import qualified Data.HashMap.Strict as M

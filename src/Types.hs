@@ -41,7 +41,6 @@ import Control.Monad.Cont
       Cont )
 import Control.Monad.Except           ( ExceptT, MonadError(..), liftEither
                                       , runExceptT )
-import Control.Monad.Fail             ( MonadFail(..) )
 import Control.Monad.State.Lazy       ( MonadState(get, put), gets, modify )
 import Data.Complex                   ( Complex(..) )
 import Data.HashMap.Strict            ( HashMap )

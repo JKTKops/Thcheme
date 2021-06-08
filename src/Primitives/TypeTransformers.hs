@@ -3,7 +3,6 @@ module Primitives.TypeTransformers (primitives) where
 import Data.Char (chr, ord)
 import qualified Data.Text as T
 import qualified Data.Vector as V
-import Control.Monad.Except (throwError)
 
 import Val
 import EvaluationMonad

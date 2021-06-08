@@ -7,7 +7,6 @@ module Primitives.String
   , unwrapStringPH, stringSH
   ) where
 
-import Control.Monad.IO.Class ( MonadIO(..) )
 import Data.IORef (readIORef)
 import Data.Functor (($>))
 import qualified Data.Text as T
