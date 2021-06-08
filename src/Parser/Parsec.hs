@@ -2,13 +2,14 @@
 -- and an incremental stream architecture.
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE TupleSections #-}
 module Parser.Parsec where
 
 import Control.Monad.Trans (lift)
 import Control.Monad.ST.Trans
 import Data.Complex (Complex(..))
 import Data.Ratio (numerator, denominator, (%))
-import Text.Parsec hiding (runParser, token)
+import Text.Parsec hiding (runParser, token, eof)
 
 import Val
 import EvaluationMonad (panic)
@@ -36,6 +37,7 @@ unconsS (S ref) = do
     Nothing -> do
       lx <- lift alexMonadScan
       restS <- S <$> newSTRef Nothing
+      -- this will put a literal TokEOF in the stream at the end.
       let res = Just (lx, restS)
       writeSTRef ref $ Just res
       return res
@@ -57,8 +59,23 @@ runParser p label inputPort
     Left lexError -> Left lexError
   where
     alex = runSTT $ do
-    initialS <- S <$> newSTRef Nothing
-    runParserT p () label initialS
+      initialS <- S <$> newSTRef Nothing
+      runParserT p () label initialS
+
+liftAlex :: Alex a -> Parser s a
+liftAlex = lift . lift
+
+
+-- ----------------------------------------------------------------------------
+-- Entrypoints
+
+parseDatum :: String -> Port -> Either String Val
+parseDatum = runParser datum
+
+parseDatumSeq :: String -> Port -> Either String [Val]
+parseDatumSeq = runParser $ datumSeq <* eof
+  -- enforce that we reach the end of the stream, since we only
+  -- use this entrypoint to parse whole source files.
 
 -- ----------------------------------------------------------------------------
 -- Token parsers
@@ -70,6 +87,19 @@ token match = tokenPrim show movePos match'
       = setSourceColumn (setSourceLine oldPos line) col
     
     match' (L _ tok) = match tok
+
+tokenWithPos :: (Token -> Maybe a) -> Parser s (a, AlexPosn)
+tokenWithPos match = tokenPrim show movePos match'
+  where
+    movePos oldPos (L (AlexPn _addr line col) _) _stream
+      = setSourceColumn (setSourceLine oldPos line) col
+    
+    match' (L pos tok) = (,pos) <$> match tok
+
+eof :: Parser s ()
+eof = token $ \case
+  TokEOF -> Just ()
+  _other -> Nothing
 
 simpleDatum :: Parser s Val
 simpleDatum = token $ \case
@@ -108,8 +138,123 @@ sugarToken = token $ \case
   TokBackquote -> Just TokBackquote 
   _other -> Nothing
 
+dot :: Parser s ()
+dot = token $ \case
+  TokDot -> Just ()
+  _other -> Nothing
+
+datumCommentStart :: Parser s ()
+datumCommentStart = do
+  token $ \case
+    TokDatumComment -> Just ()
+    _other -> Nothing
+  liftAlex enterDatumComment
+
+datumCommentEnd :: Parser s ()
+datumCommentEnd = liftAlex exitDatumComment
+
+startVector :: Parser s ()
+startVector = token $ \case
+  TokLVector -> Just ()
+  _other -> Nothing
+
+startByteVector :: Parser s ()
+startByteVector = token $ \case
+  TokLByteVector -> Just ()
+  _other -> Nothing
+
+startLabelDef :: Parser s Int
+startLabelDef = do
+  (lbl, pos) <- tokenWithPos $ \case
+    TokLabelDef lbl -> Just lbl
+    _other -> Nothing
+  liftAlex $ startDef pos lbl
+  return lbl
+
+labelReference :: Parser s Val
+labelReference = do
+  lbl <- token $ \case
+    TokLabelRef lbl -> Just lbl
+    _other -> Nothing
+  liftAlex $ lookupLabel lbl
+
+
+-- ----------------------------------------------------------------------------
+-- Core parser
+
+-- trying to be a little bit more aggressive about having a simple grammar
+-- with parsec, since we don't have to satisfy shift/reduce conflicts.
+-- We still have to stratify label definitions, to check well-definedness.
+
+datum :: Parser s Val
+datum = simpleDatum
+        <|> compoundDatum
+        -- <|> definedDatum
+        <|> labelReference
+        <|> (datumComment >> datum)
+        <?> "datum"
+
+-- This parser is not (fully) incremental. It will give up on EOF,
+-- of course, but if the input stream contains only some data
+-- followed by non-data text, it will try to read one "token"
+-- out of the non-data text before returning. This is unavoidable,
+-- otherwise it can't know when to quit.
+datumSeq :: Parser s [Val]
+datumSeq = many datum
+
+datumComment :: Parser s ()
+datumComment = do
+  datumCommentStart
+  _ <- datum
+  datumCommentEnd
+
+compoundDatum :: Parser s Val
+compoundDatum = (prefixSugar <$> sugarToken <*> datum)
+                <|> list
+                <|> vector
+
+list :: Parser s Val
+list = labeled "list" $ bracketed $ do
+  prefix <- many datum
+  maybeDot <- optionMaybe $ dot >> datum
+  case maybeDot of
+    Nothing -> return $ makeImmutableList prefix
+    Just d  -> return $ makeImproperImmutableList prefix d
+
+vector :: Parser s Val
+vector = normalVector <|> byteVector
+
+normalVector :: Parser s Val
+normalVector = labeled "vector" $ do
+  startVector
+  contents <- many datum
+  closeParen
+  return $ makeVector contents
+
+byteVector :: Parser s Val
+byteVector = labeled "bytevector" $ do
+  startByteVector
+  bytes <- many byte
+  closeParen
+  return $ makeByteVector bytes
+
+closeParen :: Parser s ()
+closeParen = token $ \case
+  TokRParen -> Just ()
+  _other -> Nothing
+
+byte :: Parser s Byte
+byte = labeled "byte" $ do
+  (num, pos) <- tokenWithPos $ \case
+    TokNumber n -> Just n
+    _other -> Nothing
+  validateByte pos num
+  
 -- ----------------------------------------------------------------------------
 -- Utilities for constructing/validating Vals
+
+labeled :: String -> Parser s a -> Parser s a
+labeled = flip label
 
 mkNumber :: Numeric -> Val
 mkNumber (LitInteger i)  = Number $ Real $ Bignum i
@@ -123,3 +268,37 @@ numericToNumber (LitInteger i)  = Bignum i
 numericToNumber (LitRational r) = Ratnum r
 numericToNumber (LitFloating f) = Flonum f
 numericToNumber LitComplex{} = panic "numericToNumber: nested complex"
+
+prefixSugar :: Token -> Val -> Val
+prefixSugar tok v = makeImmutableList [Symbol (desugar tok), v]
+  where
+    desugar TokQuote     = "quote"
+    desugar TokBackquote = "quasiquote"
+    desugar TokComma     = "unquote"
+    desugar TokCommaAt   = "unquote-splicing"
+    desugar _ = panic "desugar: not a sugar token!"
+
+validateByte :: AlexPosn -> Numeric -> Parser s Byte
+validateByte p n = case n of
+  LitInteger i -> checkSize i
+  LitRational r
+    | denominator r == 1 -> checkSize $ numerator r
+    | otherwise -> boom
+  LitComplex real imag -> do checkExactZero imag
+                             validateByte p real
+  _other -> boom
+  where
+    checkSize :: Integer -> Parser s Byte
+    checkSize i
+      | i >= 0 && i <= 255 = return $ fromInteger i
+      | otherwise = boom
+
+    checkExactZero :: Numeric -> Parser s ()
+    checkExactZero (LitInteger 0) = pure ()
+    checkExactZero (LitRational r)
+      | r == 0 % 1 = pure ()
+      | otherwise = boom
+    checkExactZero _ = boom
+
+    boom :: Parser s a
+    boom = fail $ show n ++ " is not an exact byte value"

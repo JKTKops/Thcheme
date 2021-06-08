@@ -129,7 +129,7 @@ to parse a regular old Datum, but if the datum is exactly a label
 reference we want to check that it's a well-defined reference.
 An ill-defined reference is like #0=#0#. Because of our lazy method
 of handling datum labels, ill-defined references make the parser hang.
-There are two ways for a reference to be ill-defined:
+There are two (syntactic) ways for a reference to be ill-defined:
  (1) #0 = #0#
  (2) #0 = ( . #0# ) (or nested arbitrarily far).
 
