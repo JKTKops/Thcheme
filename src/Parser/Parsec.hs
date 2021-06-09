@@ -9,7 +9,8 @@ import Control.Monad.Trans (lift)
 import Control.Monad.ST.Trans
 import Data.Complex (Complex(..))
 import Data.Ratio (numerator, denominator, (%))
-import Text.Parsec hiding (runParser, token, eof)
+import Text.Parsec as P hiding (runParser, token, tokenPrim, eof)
+import Text.Parsec.Error
 
 import Val
 import EvaluationMonad (panic)
@@ -85,21 +86,53 @@ parseDatumSeq = runParser $ datumSeq <* eof
 -- ----------------------------------------------------------------------------
 -- Token parsers
 
-token :: (Token -> Maybe a) -> Parser s a
-token match = tokenPrim show movePos match'
+-- | this is like 'Text.Parsec.Prim.tokenPrim', except that 'posFromTok' should
+-- give the position of the _matched_ token, not the next one. We need
+-- something like this because we absolutely cannot allow a lookahead token.
+-- This has the side effect of leaving Parsec's internally stored position
+-- on the previously-lexed token, instead of the start of the next one like
+-- parsec is expecting. This is /more reasonable/ behavior, at least in our
+-- case, and results in better error messages in 'validateByte'.
+--
+-- The previous 'SourcePos' is available to the position-extraction function
+-- so that it can build a 'SourcePos' with parsec's 'setXXX' functions, since
+-- the constructor is not exposed. It's unlikely that you'll actually need to
+-- use the previous 'SourcePos' in a meaningful way.
+tokenPrim :: Stream s m t
+          => (t -> String) -> (SourcePos -> t -> SourcePos) -> (t -> Maybe a)
+          -> ParsecT s u m a
+tokenPrim showTok posFromTok test = mkPT $
+  \(State input pos usr) -> do
+    r <- uncons input
+    pure $ case r of
+      Nothing -> Empty $ pure $ P.Error $ unexpectError "" pos
+      Just (c,rest) -> let newpos = posFromTok pos c
+                       in case test c of
+        Nothing -> Empty $ pure $ P.Error $ unexpectError (showTok c) newpos
+        Just x -> let newState = State rest newpos usr
+                  in newpos `seq` newState `seq`
+                     Consumed $ pure $ Ok x newState (newErrorUnknown newpos)
   where
-    movePos oldPos (L (AlexPn _addr line col) _) _stream
+    unexpectError msg pos = newErrorMessage (SysUnExpect msg) pos
+
+token :: (Token -> Maybe a) -> Parser s a
+token match = tokenPrim displayLexeme movePos match'
+  where
+    movePos oldPos (L (AlexPn _addr line col) _)
       = setSourceColumn (setSourceLine oldPos line) col
     
     match' (L _ tok) = match tok
 
 tokenWithPos :: (Token -> Maybe a) -> Parser s (a, AlexPosn)
-tokenWithPos match = tokenPrim show movePos match'
+tokenWithPos match = tokenPrim displayLexeme movePos match'
   where
-    movePos oldPos (L (AlexPn _addr line col) _) _stream
+    movePos oldPos (L (AlexPn _addr line col) _)
       = setSourceColumn (setSourceLine oldPos line) col
     
     match' (L pos tok) = (,pos) <$> match tok
+
+displayLexeme :: Lexeme -> String
+displayLexeme (L _ t) = "'" ++ show t ++ "'"
 
 eof :: Parser s ()
 eof = token $ \case
