@@ -69,8 +69,13 @@ liftAlex = lift . lift
 -- ----------------------------------------------------------------------------
 -- Entrypoints
 
+-- | Read the next datum parseable from the given port.
+readDatum :: String -> Port -> Either String Val
+readDatum = runParser datum
+
+-- | Parse an input port that contains exactly one datum.
 parseDatum :: String -> Port -> Either String Val
-parseDatum = runParser datum
+parseDatum = runParser $ datum <* eof
 
 parseDatumSeq :: String -> Port -> Either String [Val]
 parseDatumSeq = runParser $ datumSeq <* eof
