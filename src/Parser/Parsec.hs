@@ -304,6 +304,8 @@ byte = labeled "byte" $ do
 definedDatum :: Parser s Val
 definedDatum = do
   lbl <- startLabelDef
+  _ <- fail $ "At the moment, cyclic references will hang, so Thcheme"
+              ++ " refuses all label definitions."
   val <- defDatum
   liftAlex $ do
     endDef
