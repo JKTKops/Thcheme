@@ -4,7 +4,8 @@ module Primitives.IOPrimitives (primitives) where
 
 import Val
 import EvaluationMonad
-import Parsers (load, labeledReadExprFromPort)
+import Parsers (load)
+import Parser.Parsec (readDatum)
 import Types.Port
 import Types.Unwrappers
     ( unwrapStr,
@@ -25,11 +26,12 @@ readP :: Primitive
 readP = Prim "read" (Between 0 1) read
   where
     read :: Builtin
-    read []  = --read [Port pStdin]
-               throwError $ Default "currently, attempting to (read) stdin will hang"
+    read []  = read [Port pStdin]
     read [v] = do
       p <- unwrapOpenTextualInputPort v
-      let ev = labeledReadExprFromPort "read" p
+      let ev = case readDatum "read" p of
+                 Left str -> Left $ Parser str
+                 Right v  -> Right v
       -- TODO: correct the errors (or maybe change 'alexError' to be more
       -- informative?) specifically:
       --   1) EOF but read no characters: return #<eof>
