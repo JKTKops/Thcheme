@@ -10,7 +10,7 @@ module Parsers
 import Control.Monad.Except (MonadError, MonadIO, liftIO)
 
 import Types.Port (pOpenInputFile, pOpenInputString)
-import Parser.Parsec (parseDatum, parseDatumSeq)
+import Parser.Parser (parseDatum, parseDatumSeq)
 import EvaluationMonad (liftEither)
 import Val
 

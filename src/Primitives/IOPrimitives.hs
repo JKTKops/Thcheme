@@ -5,7 +5,7 @@ module Primitives.IOPrimitives (primitives) where
 import Val
 import EvaluationMonad
 import Parsers (load)
-import Parser.Parsec (readDatum)
+import Parser.Parser (readDatum)
 import Types.Port
 import Types.Unwrappers
     ( unwrapStr,
