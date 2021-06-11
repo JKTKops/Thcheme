@@ -1,5 +1,6 @@
 -- | This module defines the 'write-xx' style primitives.
 
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
 module Primitives.WriteLib 
   ( writeSH, writeSimpleSH, writeSharedSH, displaySH
@@ -134,7 +135,7 @@ labelDatum s v = fpmToLabeling <$>
   execStateT (labelDatumWorker s v) M.empty
 
 labelDatumWorker :: Sharing -> Val -> FirstPass
-labelDatumWorker s p 
+labelDatumWorker s !p 
   | pairSH p = labelPair s p
   | vectorSH p = labelVector s p
 labelDatumWorker _s _notNested = pure ()
