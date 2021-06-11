@@ -66,9 +66,6 @@ instance Monad m => Serial m Number where
 instance Monad m => Serial m RealNumber where
     series = cons1 Bignum \/ cons1 Ratnum \/ cons1 Flonum
 
-instance (Monad m, Serial m a) => Serial m (Complex a) where
-    series = cons2 (:+)
-
 instance Arbitrary Val where
     arbitrary = sized lispval'
       where lispval' 0 = oneof simpleCons
