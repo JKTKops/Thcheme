@@ -36,6 +36,8 @@ instance Serial IO Val where
                 \/ cons1 Char
                 \/ cons1 Bool
                 \/ cons0 Undefined
+                \/ cons0 Nil
+                \/ cons0 EOF
                 \/ (series >>= lift . fmap Vector . V.thaw . V.fromList)
                 -- \/ cons3 Primitive
                 -- Primitive function types left off for now
@@ -223,6 +225,7 @@ prop_ShowVal = QC.testProperty "Showing a Val produces correct string" $
         -- im not sure that this is right if s has non-ascii characters
         -- TODO [r7rs]: it's explicitly wrong, but so is 'write' atm.
         referenceShow (FNotList (Symbol s)) = pure $ unpack s
+        referenceShow (FNotList EOF)        = pure   "#<eof>"
         referenceShow (FNotList (Number n)) = pure $ showNumber n
         referenceShow (FNotList (IString s)) = pure $ ushowString (unpack s) ""
         referenceShow (FNotList (Char c)) = pure $ case c of

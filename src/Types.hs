@@ -142,6 +142,7 @@ data Val
    -- standard library record type and this should go.
   | Error Text [Val]
   | Exception LispErr
+  | EOF
 
     -- | Used to identify when a recursive binding refers to itself during
     -- initialization, which is an error.

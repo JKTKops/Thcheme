@@ -52,16 +52,30 @@ type M s = STT s Alex
 -- | The parsec parsing monad.
 type Parser s = ParsecT (S s) () (M s)
 
-runParser :: (forall s. Parser s a) -> String -> Port -> Either String a
+-- | Run a parser, given a label and an input port. The output is:
+-- Left (message, first-token-was-eof?)
+-- Right parsed-value
+runParser :: (forall s. Parser s a) -> String -> Port -> Either (String, Bool) a
 runParser p label inputPort 
   = case runAlex' alex label inputPort of
-    Right (Left parseError) -> Left $ show parseError
+    Right (Left (parseError, b)) -> Left (show parseError, b)
     Right (Right v) -> Right v
-    Left lexError -> Left lexError
+    Left lexError -> Left (lexError, False)
   where
     alex = runSTT $ do
       initialS <- S <$> newSTRef Nothing
-      runParserT p () label initialS
+      let parse = runParserT p () label initialS
+      firstUncons <- unconsS initialS
+      case firstUncons of
+        Just (L _ TokEOF, _) -> mapLeft (,True)  <$> parse
+        _other               -> mapLeft (,False) <$> parse
+
+runParser_ :: (forall s. Parser s a) -> String -> Port -> Either String a
+runParser_ p lbl port = mapLeft fst $ runParser p lbl port
+  
+mapLeft :: (e1 -> e2) -> Either e1 b -> Either e2 b
+mapLeft f (Left  x) = Left (f x)
+mapLeft _ (Right x) = Right x
 
 liftAlex :: Alex a -> Parser s a
 liftAlex = lift . lift
@@ -71,15 +85,15 @@ liftAlex = lift . lift
 -- Entrypoints
 
 -- | Read the next datum parseable from the given port.
-readDatum :: String -> Port -> Either String Val
+readDatum :: String -> Port -> Either (String, Bool) Val
 readDatum = runParser datum
 
 -- | Parse an input port that contains exactly one datum.
 parseDatum :: String -> Port -> Either String Val
-parseDatum = runParser $ datum <* eof
+parseDatum = runParser_ $ datum <* eof
 
 parseDatumSeq :: String -> Port -> Either String [Val]
-parseDatumSeq = runParser $ datumSeq <* eof
+parseDatumSeq = runParser_ $ datumSeq <* eof
   -- enforce that we reach the end of the stream, since we only
   -- use this entrypoint to parse whole source files.
 

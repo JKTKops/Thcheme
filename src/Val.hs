@@ -166,6 +166,7 @@ showVal (IByteVector v) = showString "#u8" . showParen True (showBytes (U.toList
         showBytes [b] = shows b
         showBytes (b:bs) = shows b . showChar ' ' . showBytes bs
 showVal Nil = showString "()"
+showVal EOF = showString "#<eof>"
 showVal (Error msg irritants) = 
   showString "#<error: "
   . prefix (T.unpack msg) 

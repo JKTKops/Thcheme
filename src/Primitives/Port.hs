@@ -96,8 +96,8 @@ openFileB mode [val] = do
   eRes <- liftIO $ tryIOError (Port <$> fnToPort filename)
   case eRes of
     Right port -> return port
-    -- TODO: should throw something that satisfies 'file-error?'
-    Left ioe -> throwError $ Default $ show ioe
+    -- See Note: [file-error? and read-error?] in Primitives/Error.hs
+    Left _ioe -> throwError $ Condition Nothing $ Error "file error" [val]
   where
     fnToPort = case mode of
       ReadMode -> pOpenInputFile

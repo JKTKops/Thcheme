@@ -16,6 +16,7 @@ import Types.Unwrappers (unwrapStr)
 primitives :: [Primitive]
 primitives =
   [ errorObjectP, isErrorObjectP, errorObjectMessageP, errorObjectIrritantsP
+  , isFileErrorP, isReadErrorP
   , errorP, typeErrorP
   , raiseP
   , raiseContinuableP
@@ -36,6 +37,24 @@ isErrorObjectP = Prim "error-object?" (Exactly 1) $ \case
   [Error{}] -> pure $ Bool True
   [_]       -> pure $ Bool False
   _ -> panic "isErrorObject arity"
+
+-- Note: [file-error? and read-error?]
+-- There's no requirements according to r7rs that file-error? and read-error?
+-- be disjoint from anything else. For ease of application, therefore, we
+-- implement file errors as regular Error objects with the message "file error"
+-- and relevant but arbitrary irritants (probably the filename).
+-- Read errors are Exceptions from the Parser.
+isFileErrorP :: Primitive
+isFileErrorP = Prim "file-error?" (Exactly 1) $ \case
+  [Error "file error" _] -> pure $ Bool True
+  [_]                    -> pure $ Bool False
+  _ -> panic "isFileError arity"
+
+isReadErrorP :: Primitive
+isReadErrorP = Prim "read-error?" (Exactly 1) $ \case
+  [Exception Parser{}] -> pure $ Bool True
+  [_]                  -> pure $ Bool False
+  _ -> panic "isReadError arity"
 
 -- TODO:
 -- I think for reasonable semantics, Error objects should really
@@ -85,15 +104,15 @@ withExceptionHandlerP =
 
 withExceptionHandlerB :: [Val] -> EM Val
 withExceptionHandlerB [handler, thunk] =
-  withExceptionHandler2 (makeExceptionHandler handler) thunk
+  withExceptionHandler (makeExceptionHandler handler) thunk
 withExceptionHandlerB _ = panic "withExceptionHandlerB arity"
 
 -- | Low-level version of (scheme base) with-exception-handler.
-withExceptionHandler2 :: ExceptionHandler -- ^ New exception handler to install
-                      -> Val -- ^ Scheme procedure accepting 0 arguments to
-                             -- call with the new handler installed
-                      -> EM Val
-withExceptionHandler2 handler thunk = do
+withExceptionHandler :: ExceptionHandler -- ^ New exception handler to install
+                     -> Val -- ^ Scheme procedure accepting 0 arguments to
+                            -- call with the new handler installed
+                     -> EM Val
+withExceptionHandler handler thunk = do
   handlers <- gets currentHandlers >>= readRef
   let newHandlers = handler : handlers
   dynamicWindB [ makeExceptionHandlersSetter newHandlers

@@ -16,11 +16,18 @@ import Primitives.WriteLib (writeSH, writeSimpleSH, writeSharedSH, displaySH)
 primitives :: [Primitive]
 primitives = [ readP
              , readLineP
+             , isEofObjectP
              , writeP, writeSimpleP, writeSharedP, displayP
              , newlineP
              , readContents
              , readAll
              ]
+
+isEofObjectP :: Primitive
+isEofObjectP = Prim "eof-object?" (Exactly 1) $ \case
+  [EOF] -> pure $ Bool True
+  [_]   -> pure $ Bool False
+  _ -> panic "isEofObject arity"
 
 readP :: Primitive
 readP = Prim "read" (Between 0 1) read
@@ -30,12 +37,12 @@ readP = Prim "read" (Between 0 1) read
     read [v] = do
       p <- unwrapOpenTextualInputPort v
       let ev = case readDatum "read" p of
-                 Left str -> Left $ Parser str
+                 Left (msg, wasEof)
+                   | wasEof -> Right EOF
+                   -- see Note: [file-error? and read-error?]
+                   -- in Primitives/Error.hs
+                   | otherwise -> Left $ Parser msg
                  Right v  -> Right v
-      -- TODO: correct the errors (or maybe change 'alexError' to be more
-      -- informative?) specifically:
-      --   1) EOF but read no characters: return #<eof>
-      --   2) any other lexing/parsing error: read-error
       liftEither ev
     read _ = panic "read arity"
 
@@ -48,7 +55,7 @@ readLineB [v] = do
   p <- unwrapOpenTextualInputPort v
   mln <- liftIO (pReadLine p)
   case mln of
-    Nothing -> return $ Bool False -- TODO: eof-object
+    Nothing -> return EOF
     Just ln -> String <$> newRef ln
 readLineB _ = panic "readLine arity"
 
