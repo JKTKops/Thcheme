@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleInstances, MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE TupleSections #-}
-module Parser.Parsec where
+module Parser.Parsec (readDatum, parseDatum, parseDatumSeq) where
 
 import Control.Monad.Trans (lift)
 import Control.Monad.ST.Trans
@@ -216,6 +216,16 @@ labelReference = do
     _other -> Nothing
   liftAlex $ lookupLabel lbl
 
+-- | Parses a label reference, but additionally ensures
+-- that the parser's internal 'defining_label' field does
+-- not match the parsed label. If it does, raises an error
+-- (at the Alex level).
+safeLabelReference :: Parser s Val
+safeLabelReference = do
+  lbl <- token $ \case
+    TokLabelRef lbl -> Just lbl
+    _other -> Nothing
+  liftAlex $ testRef lbl >> lookupLabel lbl
 
 -- ----------------------------------------------------------------------------
 -- Core parser
@@ -227,7 +237,7 @@ labelReference = do
 datum :: Parser s Val
 datum = simpleDatum
         <|> compoundDatum
-        -- <|> definedDatum
+        <|> definedDatum
         <|> labelReference
         <|> (datumComment >> datum)
         <?> "datum"
@@ -252,7 +262,10 @@ compoundDatum = (prefixSugar <$> sugarToken <*> datum)
                 <|> vector
 
 list :: Parser s Val
-list = labeled "list" $ bracketed $ do
+list = labeled "list" $ bracketed listContents
+
+listContents :: Parser s Val
+listContents = do
   prefix <- many datum
   maybeDot <- optionMaybe $ dot >> datum
   case maybeDot of
@@ -287,6 +300,30 @@ byte = labeled "byte" $ do
     TokNumber n -> Just n
     _other -> Nothing
   validateByte pos num
+
+definedDatum :: Parser s Val
+definedDatum = do
+  lbl <- startLabelDef
+  val <- defDatum
+  liftAlex $ do
+    endDef
+    unlessDatumComment $ defineLabel lbl val
+    return val
+
+defDatum :: Parser s Val
+defDatum = simpleDatum
+           <|> safeLabelReference
+           <|> (prefixSugar <$> sugarToken <*> datum)
+           <|> vector
+           <|> defList
+
+-- | like 'list', but if the list contains only a dot, and that
+-- dot is a reference to a label that is defined as the list itself,
+-- then raises an error as the label is ill-defined.
+defList :: Parser s Val
+-- Note 'listContents -> . d' is a production of the grammar, but it
+-- doesn't matter as long as we test for that case first.
+defList = labeled "list" $ bracketed $ (dot >> defDatum) <|> listContents
   
 -- ----------------------------------------------------------------------------
 -- Utilities for constructing/validating Vals
