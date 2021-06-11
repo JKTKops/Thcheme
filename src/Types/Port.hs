@@ -172,7 +172,7 @@ pReadString _k (OutputTextPort _ _) = notReadablePanic "pReadString"
 -- | Write a character (not it's external representation) to the given
 -- textual output port. To file- (or system device-) backed ports,
 -- the underlying Haskell handle will perform native newline conversion
--- by default. To string input or output ports, Thcheme will always
+-- by default. To string input or output ports, Thcheme programs should always
 -- represent a newline as #\newline, the linefeed character.
 pWriteChar :: Char -> Port -> IO ()
 pWriteChar c (HandlePort hdl) = hPutChar hdl c
