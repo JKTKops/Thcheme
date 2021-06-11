@@ -128,7 +128,10 @@ data Val
 
   | Nil
   | Pair !(Ref Val) !(Ref Val)
-  | IPair !Val !Val
+  -- this can't be made strict, else, attempting to construct an
+  -- cyclic static data structure containing a pair /anywhere in the structure/
+  -- would hang!
+  | IPair Val Val
 
   | Vector  !(V.IOVector Val)
   | IVector !(V.Vector Val)
