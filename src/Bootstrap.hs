@@ -28,7 +28,7 @@ makePrimitiveBindings = do
   s <- Evaluation.initEvalState env noOpts
   forM_ orderedBootstrapFiles $ \f ->
     bootstrapLoad f s
-  bootstrapExec "(import (rnrs base))" s
+  bootstrapExec "(import (scheme base))" s
   return env
 
 primitiveEnv :: Env

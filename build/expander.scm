@@ -180,6 +180,7 @@
 (define ex:environment               #f)
 (define ex:environment-bindings      #f)
 (define ex:eval                      #f)
+(define ex:interaction-environment   #f)
 (define ex:load                      #f)
 (define ex:syntax-violation          #f)
 
@@ -2034,6 +2035,9 @@
     (define r6rs-environment-imported-libraries car)
     (define r6rs-environment-env                cdr)
 
+    (define (r7rs-interaction-environment)
+      (make-r6rs-environment '() *usage-env*))
+
     (define (environment . import-specs)
       (fluid-let ((*usage-env* (make-unit-env)))
         (env-import! eval-template (make-library-language) *usage-env*)
@@ -2221,7 +2225,7 @@
     (define (repl exps)
       (with-toplevel-parameters
        (lambda ()
-         (define results ())
+         (define results '())
          (for-each (lambda (exp)
                      (for-each (lambda (exp)
                                  (for-each (lambda (result)
@@ -2480,6 +2484,7 @@
     (set! ex:environment               environment)
     (set! ex:environment-bindings      environment-bindings)
     (set! ex:eval                      r6rs-eval)
+    (set! ex:interaction-environment   r7rs-interaction-environment)
     (set! ex:load                      r6rs-load)
     (set! ex:syntax-violation          syntax-violation)
 

@@ -16,7 +16,7 @@ import Primitives.WriteLib (writeSH, writeSimpleSH, writeSharedSH, displaySH)
 primitives :: [Primitive]
 primitives = [ readP
              , readLineP
-             , isEofObjectP
+             , isEofObjectP, eofObjectP
              , writeP, writeSimpleP, writeSharedP, displayP
              , newlineP
              , readContents
@@ -28,6 +28,10 @@ isEofObjectP = Prim "eof-object?" (Exactly 1) $ \case
   [EOF] -> pure $ Bool True
   [_]   -> pure $ Bool False
   _ -> panic "isEofObject arity"
+
+eofObjectP :: Primitive
+eofObjectP = Prim "eof-object" (Exactly 0) $
+  \ _ -> pure EOF
 
 readP :: Primitive
 readP = Prim "read" (Between 0 1) read
@@ -178,7 +182,7 @@ mkWriter :: (Val -> IO String) -> Builtin
 mkWriter writer = builtin
   where
     builtin :: Builtin
-    builtin [obj]           = builtin [obj, Port pStdout]
+    builtin [obj]    = builtin [obj, Port pStdout]
     builtin [obj, v] = unwrapOpenTextualOutputPort v >>= \p -> liftIO $ do
       str <- writer obj
       pWriteString (pack str) p
