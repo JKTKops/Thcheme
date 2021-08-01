@@ -264,7 +264,7 @@ There are other ways to do the same optimization. Here, we avoid putting
     (if (null? xs)
         (cdr head)
         (if (p (car xs))
-            (begin (set-cdr! end (car xs))
+            (begin (set-cdr! end (list (car xs)))
                    (set! end (cdr end))
                    (loop (cdr xs)))
             (loop (cdr xs)))))
