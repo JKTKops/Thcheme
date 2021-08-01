@@ -576,6 +576,25 @@
 
   ) ; core define-values
 
+(library (core define-record-type)
+  (export define-record-type)
+  (import (for (prefix (primitives define-record-type) records:) expand)
+          (for (core primitives)                                 expand run)
+          (for (primitives apply)                                expand))
+  
+  (define-syntax define-record-type
+    (lambda (x)
+      (syntax-case x ()
+        ((k name constr pred field* ...)
+         (datum->syntax (syntax k)
+           (apply records:define-record-type
+             (syntax->datum (syntax name))
+             (syntax->datum (syntax constr))
+             (syntax->datum (syntax pred))
+             (syntax->datum (syntax (field* ...)))))))))
+
+  )
+
 (library (rnrs control (6))
   (export when unless do case-lambda)
   (import (for (core primitives)   expand run)
@@ -806,7 +825,7 @@
    
    let let* letrec letrec* let-values let*-values
    case cond else =>
-   define-values
+   define-values define-record-type
    ; guard
    when unless do
    parameterize
@@ -845,7 +864,6 @@
    call-with-port call/cc char-ready? char<=? char<? char=? char>=? char>?
    close-input-port close-output-port close-port
    current-input-port current-output-port current-error-port
-   define-record-type
    eof-object eof-object? error error-object-irritants error-object-message
    exact exact-integer-sqrt exact-integer?
    features file-error? floor-quotient floor-remainder floor/ flush-output-port
@@ -875,6 +893,7 @@
    (core quasiquote)
    (core let-values)
    (core define-values)
+   (core define-record-type)
    (rnrs control)
    (thcheme syntax-error)
    (thcheme parameters)
@@ -912,7 +931,6 @@
     binary-port? boolean=? bytevector?
     call-with-port call/cc char-ready? char<=? char<? char=? char>=? char>?
     close-input-port close-output-port close-port
-    define-record-type
     eof-object eof-object? error error-object-irritants error-object-message
     exact exact-integer-sqrt exact-integer?
     features file-error? floor-quotient floor-remainder floor/ flush-output-port
