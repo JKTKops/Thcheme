@@ -58,7 +58,8 @@ evaluate label s src = labeledReadExpr label src >>= \case
 -- 'ex:repl' is defined by lib\/expander\/expander.scm, and it embeds a
 -- macro system into a scheme that doesn't have one.
 evaluateExpr :: EvalState -> Val -> IO (Either LispErr Val, EvalState)
-evaluateExpr s e = Evaluation.evaluateExpr s callExpander
+evaluateExpr s e = do
+  Evaluation.evaluateExpr s callExpander
   where
     quoteE = makeImmutableList [Symbol "quote", makeImmutableList [e]]
     callExpander = makeImmutableList [Symbol "ex:repl", quoteE]
@@ -96,9 +97,11 @@ stdlib = do
 orderedBootstrapFiles :: [FilePath]
 orderedBootstrapFiles =
   [ stdlibName
-  , "lib/records.scm"
+  , "lib/expander/runtime.exp"
+  -- records needs import-libraries-for-run from runtime
+  , "lib/records.exp"
+  -- compat-thcheme needs secondary exports from records
   , "lib/expander/compat-thcheme.scm"
-  , "lib/expander/runtime.scm"
   , "lib/expander/standard-libraries.exp"
   , "lib/expander/expander.exp"
   ]

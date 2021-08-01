@@ -15,10 +15,18 @@
 ;; for other Scheme compilers too. See more info in SRFI 72.
 
 (load "compat-guile.scm")
-(load "../lib/expander/runtime.scm")
+(load "runtime.scm")
 (load "expander.scm")
 (ex:expand-file "standard-libraries.scm" "../lib/expander/standard-libraries.exp")
 (ex:expand-r5rs-file
   "expander.scm"
   "../lib/expander/expander.exp"
+  (ex:environment '(scheme base)))
+(ex:expand-r5rs-file
+  "runtime.scm"
+  "../lib/expander/runtime.exp"
+  (ex:environment '(scheme base)))
+(ex:expand-r5rs-file
+  "records.scm"
+  "../lib/records.exp"
   (ex:environment '(scheme base)))
