@@ -7,6 +7,12 @@
 (define ex:unspecified (if #f #f))
 
 ;; TODO: figure out why this doesn't work
+;; However even if it did work, since we started expanding records.scm,
+;; this file must be loaded first, so the process of bootstrapping becomes
+;; much more complicated as we would have to load expanded versions of files
+;; to bootstrap, then re-expand and re-load.
+;; vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+
 ;;(define-record-type :ex:library
 ;;  (ex:make-library name envs exports imports builds visiter invoker build)
 ;;  ex:library?
