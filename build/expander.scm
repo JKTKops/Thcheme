@@ -1027,15 +1027,7 @@
                               body
                               (lambda (forms syntax-definitions bound-variables)
                                 `(lambda ,formals
-                                  ,@(emit-body forms 'define))))))))))           ; attempt at using Thcheme inner define semantics
-                                  ; this appears to be working
-
-                                  ; ,@(if (null? bound-variables)                ; +++
-                                  ;       (emit-body forms ex:undefined-set!)    ; +++
-                                  ;       `(((lambda ,bound-variables
-                                  ;            ,@(emit-body forms ex:undefined-set!))
-                                  ;          ,@(map (lambda (ignore) `ex:undefined)
-                                  ;                 bound-variables)))))))))))))
+                                  ,@(emit-body forms 'define)))))))))) ; use Thcheme inner define semantics
 
     (define (formals? s)
       (or (null? s)
@@ -1287,8 +1279,9 @@
       (match exp
         ((- e ((? literal? literals) ___) clauses ___)
          (let ((input (generate-guid 'input)))
-           `(let ((,input ,(expand e)))
-              ,(process-clauses clauses input literals))))))
+           `((lambda (,input)
+               ,(process-clauses clauses input literals))
+             ,(expand e))))))
 
     (define (process-clauses clauses input literals)
 
@@ -1301,8 +1294,9 @@
       (define (process-match input pattern sk fk)
         (if (not (symbol? input))
             (let ((temp (generate-guid 'temp)))
-              `(let ((,temp ,input))
-                 ,(process-match temp pattern sk fk)))
+              `((lambda (,temp)
+                  ,(process-match temp pattern sk fk))
+                ,input))
             (match pattern
               ((syntax _)         sk)
               ((syntax ...)       (syntax-violation 'syntax-case "Invalid use of ellipses" pattern))
@@ -1311,15 +1305,14 @@
                                             (ex:free-identifier=? ,input ,(syntax-reflect id)))
                                        ,sk
                                        ,fk))
-              ((? identifier? id) `(let ((,(binding-name (binding id)) ,input)) ,sk))
+              ((? identifier? id) `((lambda (,(binding-name (binding id))) ,sk) ,input))
               ((p (syntax ...))
                (let ((mapped-pvars (map (lambda (pvar) (binding-name (binding pvar)))
                                         (map car (pattern-vars p 0)))))
                  (if (and (identifier? p)                                   ; +++
                           (= (length mapped-pvars) 1))                      ; +++
                      `(if (list? ,input)                                    ; +++
-                          (let ((,(car mapped-pvars) ,input))               ; +++
-                            ,sk)                                            ; +++
+                          ((lambda (,(car mapped-pvars)) ,sk) ,input)       ; +++
                           ,fk)                                              ; +++
                      (let ((columns (generate-guid 'cols))
                            (rest    (generate-guid 'rest)))
@@ -1410,8 +1403,9 @@
          `(ex:invalid-form ,input))
         ((clause clauses ___)
          (let ((fail  (generate-guid 'fail)))
-           `(let ((,fail (lambda () ,(process-clauses clauses input literals))))
-              ,(process-clause clause input `(,fail)))))))
+           `((lambda (,fail)
+               ,(process-clause clause input `(,fail)))
+             (lambda () ,(process-clauses clauses input literals)))))))
 
     ;;=========================================================================
     ;;

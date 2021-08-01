@@ -271,9 +271,11 @@ There are other ways to do the same optimization. Here, we avoid putting
   (loop xs))
 
 (define (all p? lst . lsts) ;; is (p x) truthy for each x in lst?
-  (or (null? lst)
-      (and (apply p? (car lst) (map1 car lsts))
-           (apply all p? (cdr lst) (map1 cdr lsts)))))
+  (if (null? lst)
+      #t
+      (if (apply p? (car lst) (map1 car lsts))
+          (apply all p? (cdr lst) (map1 cdr lsts))
+          #f)))
 
 #|
 This definition of memp is the expansion of this:
