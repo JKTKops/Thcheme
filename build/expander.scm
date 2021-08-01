@@ -102,6 +102,11 @@
 ;;; It would be very easy to abstract or change, but we don't bother for now
 ;;; until implementors other than Larceny show a serious interest.
 ;;;
+;;; Max has modified this for Thcheme, so that this is no longer the case.
+;;; Thcheme's evaluator allows inner defines with seemingly the same letrec* semantics.
+;;; Therefore, we expand internal definitions to... internal definitions.
+;;; letrec and letrec* are handled in standard-libraries.scm.
+;;;
 ;;; METACIRCULARITY AND BOOTSTRAPPING:
 ;;; ----------------------------------
 ;;;
@@ -994,7 +999,8 @@
         ((or) #t)
         ((or e) (expand e))
         ((or e es ___)
-         `(let ((x ,(expand e)))
+         ; see unsafeLet in src/Primitives/Misc.hs
+         `(unsafe-let ((x ,(expand e)))
             (if x x ,(expand `(,or ,@es)))))))
 
     ;;=========================================================================
@@ -1021,12 +1027,15 @@
                               body
                               (lambda (forms syntax-definitions bound-variables)
                                 `(lambda ,formals
-                                   ,@(if (null? bound-variables)                ; +++
-                                         (emit-body forms ex:undefined-set!)    ; +++
-                                         `(((lambda ,bound-variables
-                                              ,@(emit-body forms ex:undefined-set!))
-                                            ,@(map (lambda (ignore) `ex:undefined)
-                                                   bound-variables)))))))))))))
+                                  ,@(emit-body forms 'define))))))))))           ; attempt at using Thcheme inner define semantics
+                                  ; this appears to be working
+
+                                  ; ,@(if (null? bound-variables)                ; +++
+                                  ;       (emit-body forms ex:undefined-set!)    ; +++
+                                  ;       `(((lambda ,bound-variables
+                                  ;            ,@(emit-body forms ex:undefined-set!))
+                                  ;          ,@(map (lambda (ignore) `ex:undefined)
+                                  ;                 bound-variables)))))))))))))
 
     (define (formals? s)
       (or (null? s)

@@ -39,6 +39,7 @@ macros = [ ("quote", quote)
          , ("set-option!", setOpt)
          , ("define", define)
          , ("lambda", lambda)
+         , ("unsafe-let", unsafeLet)
          , ("defmacro", defmacro)
          , ("macroexpand", macroexpand)
          , ("begin", begin)
@@ -190,6 +191,28 @@ lambdaB (formals : body) = do
       [] -> throwError emptyBodyError
       _  -> makeFuncVarargs varargs [] body Nothing
     _notAtomOrList -> throwError $ TypeMismatch "symbol or list" formals
+
+-- | This is not any kind of standard let. It is a raw let form that behaves
+-- just like a define. Only one variable may be bound.
+-- The variable used will not shadow an existing binding for the
+-- same name, it will simply set! it. No new scope is created.
+--
+-- The conditions for this to be correct are _just right_ when implementing an
+-- `or` macro. build/expander.scm uses unsafe-let in expand-or.
+unsafeLet :: Macro
+unsafeLet = Macro (AtLeast 2) unsafeLetB
+  where
+    unsafeLetB tail (binding : body) = do
+      onlyBinding <- carPS binding
+      varV <- carPS onlyBinding
+      let var = case varV of
+            Symbol s -> s
+            _ -> panic "unsafeLet: binding is not a symbol"
+      exp <- (cdrPS >=> carPS) onlyBinding
+      val <- evalBody exp
+      _   <- defineVar var val
+      evalSeq tail body
+    unsafeLetB _ _ = panic "unsafeLet arity"
 
 emptyBodyError :: LispErr
 emptyBodyError = EmptyBody -- historical artifact, feel free to inline
