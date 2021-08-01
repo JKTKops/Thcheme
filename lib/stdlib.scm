@@ -351,6 +351,7 @@ Version with cond for ease of reading:
   (loop list1 lists))
 
 ;;; Smallest possible subset of R7RS 'eval' spec so that the expander can run
+#|
 (let ([prim-eval eval]
       [new-eval #f])
   (let () ;; silly funging to get the correct procedure name into the closure
@@ -358,5 +359,14 @@ Version with cond for ease of reading:
       (prim-eval expr))
     (set! new-eval eval))
   (set! eval new-eval))
+|#
+((lambda (prim-eval new-eval)
+   ((lambda ()
+      (define (eval expr env)
+        (prim-eval expr))
+      (set! new-eval eval)))
+   (set! eval new-eval))
+ eval
+ #f)
 
 (define (interaction-environment) 'interaction-environment)
