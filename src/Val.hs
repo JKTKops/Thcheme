@@ -141,10 +141,6 @@ showVal (Closure args varargs _body _env name) =
 showVal (PrimMacro _ _ name) = showString $ "#<macro "
                                             ++ symbolAsString name
                                             ++ ">"
-showVal (MacroTransformer mname _) = showString $ "#<macro" ++ name ++ ">"
-  where name = case mname of
-                 Nothing -> ""
-                 Just name -> " " ++ symbolAsString name
 showVal Pair{} = showString "<can't show mutable pair>"
 showVal p@IPair{} = showParen True $ showDList $ fromList p
   where

@@ -59,15 +59,6 @@ handleApp tail function args = do
         Continuation{} -> evalCall func
         Closure{}      -> evalCall func
         PrimMacro{}    -> evalPMacro func
-        MacroTransformer _ transformer -> evalTransformer transformer
-        -- TODO: this doesn't play well with the introduction of mutable
-        -- lists, so it really is time to make a proper distinction between
-        -- functions and low-level macros.
-        p@Pair{} -> do
-            fp <- freezeList p
-            case fp of
-                FDottedList [Symbol "macro"] macro@Closure{} -> evalMacro macro
-                _ -> evalCall func
         _              -> evalCall func
 
   where evalCall func = do
@@ -81,18 +72,7 @@ handleApp tail function args = do
         -- My best idea is that PrimMacros need to take an extra arg
         -- that indicates if they are in tail position. This is what's
         -- done here, but it still feels weird.
-        -- For user-defined macros, it Just Works (tm) as long as we
-        -- correctly eval/tailEval, because the macro will expand into
-        -- the current environment and then the expansion should be evaluated
-        -- as though the macro was never there.
         evalPMacro pmacro = apply tail pmacro args
-        evalTransformer transformer = do
-          -- see Note: [keywords in patterns] in Macro.Transformer
-          expansion <- transformer (makeImmutableList $ function:args)
-          eval tail expansion
-        evalMacro macro = do
-            expansion <- call macro args
-            eval tail expansion
 
 evalBody, evalTail :: Val -> EM Val
 evalBody = eval False

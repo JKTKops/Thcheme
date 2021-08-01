@@ -22,7 +22,6 @@ import qualified Primitives.TypeCheck        as TypeCheck
 import qualified Primitives.TypeTransformers as TypeCast
 import qualified Primitives.Vector           as Vector
 import qualified Primitives.IOPrimitives     as IO
-import qualified Expander.SyntaxRules        as SyntaxRules
 
 -- temporary
 import Types
@@ -59,7 +58,7 @@ primitives = foldr1 Map.union
       ]
 
 macros :: HashMap Symbol Macro
-macros = Map.fromList $ SyntaxRules.macros ++ Misc.macros
+macros = Map.fromList Misc.macros
 
 makeMacroPrimitive :: Symbol -> Macro -> Val
 makeMacroPrimitive name (Macro arity func) = PrimMacro arity func name

@@ -122,7 +122,6 @@ data Val
      , cloEnv :: LocalEnv
      , name   :: Maybe Symbol
      }
-  | MacroTransformer (Maybe Symbol) (Val -> EM Val)
 
   | Port Port
 
