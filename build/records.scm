@@ -23,7 +23,7 @@
 ;;----------------------------------------------------------------------
 ;; The records psuedolibrary.
 ;; The surrounding `(let () ... )` prevents the non-exported functions
-;; from leaking into the global namespace. The (single) export,
+;; from leaking into the global namespace. The export,
 ;; define-record-type, is exported at the end using set!.
 ;;----------------------------------------------------------------------
 
@@ -45,13 +45,8 @@
     (and (old-vector? x)
          (eq? (vector-ref x 0) record-token)
          #t))
-  ;; redefine vector? to reject records, thus making record types
-  ;; disjoint from all other types.
-  (set! vector?
-    (lambda (x)
-      (and (old-vector? x)
-           (or (= 0 (vector-length x))
-               (not (eq? (vector-ref x 0) record-token))))))
+  ; vector? is redefined in the export section, since a set!
+  ; can't precede a define.
 
   ;; Given the type descriptor,
   ;; produce a type predicate that determines if an object
@@ -134,15 +129,13 @@
   (define (constructor-spec->field-indices spec fields)
     ;; (<constr name> <field name> ...) -> (<field index> ...)
     (let ([args (cdr spec)])
-      (and (all symbol? args)
-           (define indices
-             (map (lambda (arg)
-                    (cond [(assq arg fields) => second]
-                          [else 
-                           (error "unknown field name in constructor specifier")]))
-                  args))
-           (all id indices)
-           indices)))
+      (if (not (all symbol? args))
+          (error "constructor argument is not a field name"))
+      (map (lambda (arg)
+             (cond [(assq arg fields) => second]
+                   [else 
+                    (error "unknown field name in constructor specifier")]))
+           args)))
 
   ;; Given the output of constructor-spec->field-indices,
   ;; create the equivalent of an <init> procedure in an OO language.
@@ -204,10 +197,16 @@
                        ;; called, not when it is defined
              ,(cons 'list (cdr constr-spec)))))))
 
-  ;; Finally, the define-record-type macro.
+  ;; Finally, the define-record-type procedure.
   ;; Takes a type name, constr-spec, predicate name, and field specs.
   ;; Produces a (somewhat nested) 'begin' form which defines all
-  ;; of the relevant names. Typical output is something like
+  ;; of the relevant names.
+  ;;
+  ;; Take special notice that this is a function, and not a macro. It is
+  ;; intended to be used as the primary code generation backend for
+  ;; a syntax-case macro in the standard library.
+  ;;
+  ;; Typical output is something like
   ;; (define-record-type <pare> (kons x y) pare? (x kar set-kar!) (y kdr))
   ;; =>
   #| (begin (define <pare> '<pare>)
@@ -219,7 +218,7 @@
                    'no-setter)
             '<pare>)
   |#
-  (defmacro real-define-record-type (name constr pred . orig-fields)
+  (define (real-define-record-type name constr pred . orig-fields)
     (define token (make-record-type-descriptor name))
     (define pred+assert
       (make-record-predicate+assertion token))
@@ -243,7 +242,15 @@
             ',name))
   ;; export.
   (set! define-record-type real-define-record-type)
-  
+
+  ;; redefine vector? to reject records, thus making record types
+  ;; disjoint from all other types.
+  (set! vector?
+    (lambda (x)
+      (and (old-vector? x)
+           (or (= 0 (vector-length x))
+               (not (eq? (vector-ref x 0) record-token))))))
+ 
   ;; secondary exports
   (set! records:make-record-type-descriptor
     (lambda (name . _)
