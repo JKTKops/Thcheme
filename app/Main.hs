@@ -23,7 +23,10 @@ runOne (filename : args) = do
                                    $ map (IString . pack) args
     initState <- initEvalState env' noOpts
     result <- evaluateExpr initState $
-        makeImmutableList [Symbol "load", IString $ pack filename]
+      makeImmutableList
+        [ Symbol "ex:run-r6rs-sequence"
+        , makeImmutableList [Symbol "read-all", IString $ pack filename]
+        ]
     case result of
         (Left{},_) -> 
             showResultIO result >>= putStrLn
