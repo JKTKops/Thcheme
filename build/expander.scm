@@ -929,12 +929,17 @@
     ;;=========================================================================
     ;;
     ;; Quote, if, set!, expression begin, expression let[rec]-syntax, and, or:
+    ;; Also macroexpand
     ;;
     ;;=========================================================================
 
     (define (expand-quote exp)
       (match exp
         ((- datum) (syntax->datum exp))))
+
+    (define (expand-macroexpand exp)
+      (match exp
+        ((- m) `(quote ,(car (expand-toplevel-sequence (list m)))))))
 
     (define (expand-if exp)
       (match exp
@@ -1301,8 +1306,9 @@
               ((syntax _)         sk)
               ((syntax ...)       (syntax-violation 'syntax-case "Invalid use of ellipses" pattern))
               (()                 `(if (null? ,input) ,sk ,fk))
-              ((? literal? id)    `(if (and (ex:identifier? ,input)
-                                            (ex:free-identifier=? ,input ,(syntax-reflect id)))
+              ((? literal? id)    `(if (if (ex:identifier? ,input)
+                                           (ex:free-identifier=? ,input ,(syntax-reflect id))
+                                           #f)
                                        ,sk
                                        ,fk))
               ((? identifier? id) `((lambda (,(binding-name (binding id))) ,sk) ,input))
@@ -2432,6 +2438,7 @@
               (syntax-case   . ,expand-syntax-case)
               (and           . ,expand-and)
               (or            . ,expand-or)
+              (macroexpand   . ,expand-macroexpand)
               (define        . ,invalid-form)
               (define-syntax . ,invalid-form)
               (_             . ,invalid-form)

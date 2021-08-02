@@ -36,6 +36,7 @@
 
    begin if lambda quote set! and or
    define define-syntax let-syntax letrec-syntax
+   macroexpand
    _ ... syntax syntax-case
 
    ;; Procedures and values defined in core expander:
@@ -59,6 +60,7 @@
 
      begin if set! and or lambda quote
      define define-syntax let-syntax letrec-syntax
+     macroexpand
      syntax syntax-case _ ...)
 
    ;; An extension to the r6rs import syntax, used here to make
@@ -819,6 +821,7 @@
    
    begin if lambda quote set! and or
    define define-syntax let-syntax letrec-syntax
+   macroexpand
    _ ...
    
    ;; Derived syntax:
