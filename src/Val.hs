@@ -482,11 +482,13 @@ carPS :: MonadIO m => Val -> m Val
 carPS p@Pair{} = liftIO $ readIORef $ carPR p
 carPS (IPair car _) = pure car
 carPS _ = panic "carPS: not a pair"
+{-# SPECIALIZE carPS :: Val -> EM Val #-}
 
 cdrPS :: MonadIO m => Val -> m Val
 cdrPS p@Pair{} = liftIO $ readIORef $ cdrPR p
 cdrPS (IPair _ cdr) = pure cdr
 cdrPS _ = panic "cdrPS: not a pair"
+{-# SPECIALIZE cdrPS :: Val -> EM Val #-}
 
 setCarSSS :: Val -> Val -> EM Val
 setCarSSS (Pair c _d) v = do
