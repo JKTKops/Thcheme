@@ -188,6 +188,10 @@ sugarToken = token $ \case
   TokComma -> Just TokComma
   TokCommaAt -> Just TokCommaAt
   TokBackquote -> Just TokBackquote 
+  TokHashQuote -> Just TokHashQuote
+  TokHashBackquote -> Just TokHashBackquote
+  TokHashComma -> Just TokHashComma
+  TokHashCommaAt -> Just TokHashCommaAt
   _other -> Nothing
 
 dot :: Parser s ()
@@ -363,10 +367,14 @@ numericToNumber LitComplex{} = panic "numericToNumber: nested complex"
 prefixSugar :: Token -> Val -> Val
 prefixSugar tok v = makeImmutableList [Symbol (desugar tok), v]
   where
-    desugar TokQuote     = "quote"
-    desugar TokBackquote = "quasiquote"
-    desugar TokComma     = "unquote"
-    desugar TokCommaAt   = "unquote-splicing"
+    desugar TokQuote         = "quote"
+    desugar TokBackquote     = "quasiquote"
+    desugar TokComma         = "unquote"
+    desugar TokCommaAt       = "unquote-splicing"
+    desugar TokHashQuote     = "syntax"
+    desugar TokHashBackquote = "quasisyntax"
+    desugar TokHashComma     = "unsyntax"
+    desugar TokHashCommaAt   = "unsyntax-splicing"
     desugar _ = panic "desugar: not a sugar token!"
 
 validateByte :: AlexPosn -> Numeric -> Parser s Byte

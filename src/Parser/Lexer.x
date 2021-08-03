@@ -181,6 +181,10 @@ tokens :-
   "`"                       { lex' TokBackquote }
   ","                       { lex' TokComma }
   ",@"                      { lex' TokCommaAt }
+  "#'"                      { lex' TokHashQuote }
+  "#`"                      { lex' TokHashBackquote }
+  "#,"                      { lex' TokHashComma }
+  "#,@"                     { lex' TokHashCommaAt }
   "." /{ delimited }        { lex' TokDot }
   "#;"                      { lex' TokDatumComment }
   
@@ -404,6 +408,10 @@ data Token
   | TokBackquote
   | TokComma
   | TokCommaAt
+  | TokHashQuote
+  | TokHashBackquote
+  | TokHashComma
+  | TokHashCommaAt
   | TokDot
   | TokLabelDef Int
   | TokLabelRef Int
@@ -424,6 +432,8 @@ instance Show Token where
     TokLBrace -> "{"; TokRBrace -> "}"; TokLVector -> "#(";
     TokLByteVector -> "#u8(";
     TokQuote -> "'"; TokBackquote -> "`"; TokComma -> ","; TokCommaAt -> ",@";
+    TokHashQuote -> "#'"; TokHashBackquote -> "#`"; TokHashComma -> "#,";
+    TokHashCommaAt -> "#,@"
     TokDot -> ".";
     TokLabelDef i -> "#" ++ show i ++ "=";
     TokLabelRef i -> "#" ++ show i ++ "#";
