@@ -1,0 +1,10 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "Thcheme:lib"
+
+    - path: "./app"
+      component: "Thcheme:exe:thcheme"
+
+    - path: "./test"
+      component: "Thcheme:test:thcheme-test"
